@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 2,
+  "productKey": "POS",
+  "manifestVersion": "0.1.0",
+  "minimumContractVersion": "2.2.0",
+  "displayName": "DeltCRM POS",
+  "description": "Point of sale, inventory, registers, and receipts",
+  "audience": "pos-api",
+  "routes": {
+    "webPath": "/{locale}/app/pos",
+    "apiPrefix": "/api/pos/v1"
+  },
+  "navigation": {
+    "key": "pos",
+    "labelKey": "products.pos.name",
+    "iconKey": "store",
+    "order": 30,
+    "requiredPermission": "pos.sales.read",
+    "requiredCapability": "POS_CORE"
+  },
+  "permissions": [
+    {
+      "key": "pos.catalog.read",
+      "description": "Read the POS catalog",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.catalog.manage",
+      "description": "Manage catalog items",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.registers.read",
+      "description": "Read registers",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.registers.manage",
+      "description": "Manage registers",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.sales.read",
+      "description": "Read permitted sales",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.sales.create",
+      "description": "Create sales",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.reports.read",
+      "description": "Read POS reports",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.inventory.manage",
+      "description": "Manage inventory movements",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.refunds.create",
+      "description": "Create returns and refunds",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.customers.manage",
+      "description": "Manage customer and loyalty records",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    },
+    {
+      "key": "pos.transfers.manage",
+      "description": "Manage multi-location transfers",
+      "platformPermissionAliases": [],
+      "platformPermissionPrefixAliases": []
+    }
+  ],
+  "capabilities": [
+    {
+      "key": "POS_CORE",
+      "description": "Core POS workspace: catalog, registers, sales, reports",
+      "required": true,
+      "commercialType": "CORE"
+    },
+    {
+      "key": "POS_INVENTORY",
+      "description": "Inventory ledger, stock conditions and adjustments",
+      "required": false,
+      "commercialType": "ADD_ON"
+    },
+    {
+      "key": "POS_REFUNDS",
+      "description": "Returns, refunds and credit notes",
+      "required": false,
+      "commercialType": "ADD_ON"
+    },
+    {
+      "key": "POS_CUSTOMERS",
+      "description": "Customers, store credit and loyalty",
+      "required": false,
+      "commercialType": "ADD_ON"
+    },
+    {
+      "key": "POS_MULTI_LOCATION",
+      "description": "Stock locations and transfers",
+      "required": false,
+      "commercialType": "ADD_ON"
+    }
+  ],
+  "limits": [
+    {
+      "key": "POS_REGISTERS",
+      "unit": "COUNT",
+      "enforcement": "HARD",
+      "description": "Maximum active registers"
+    },
+    {
+      "key": "POS_LOCATIONS",
+      "unit": "COUNT",
+      "enforcement": "HARD",
+      "description": "Maximum active stock locations"
+    }
+  ],
+  "lifecycle": {
+    "mode": "EVENT",
+    "consumes": [
+      "platform.product.activation-requested.v1",
+      "platform.product.suspension-requested.v1",
+      "platform.product.reactivation-requested.v1",
+      "platform.product.deletion-requested.v1"
+    ],
+    "publishes": [
+      "pos.product.activated.v1",
+      "pos.product.suspended.v1",
+      "pos.product.reactivated.v1",
+      "pos.product.deleted.v1"
+    ]
+  },
+  "health": {
+    "livenessPath": "/healthz",
+    "readinessPath": "/readyz"
+  },
+  "localization": {
+    "supportedLocales": [
+      "en",
+      "ar"
+    ],
+    "namespaces": [
+      "pos"
+    ]
+  }
+}

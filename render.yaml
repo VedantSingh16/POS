@@ -1,0 +1,41 @@
+# Render Blueprint for the POS API + Postgres.
+# The Next.js web app (apps/web) is deployed on Vercel - see docs/DEPLOY-VERCEL-RENDER.md.
+# Redis is NOT provisioned: the API code does not use it.
+
+databases:
+  - name: pos-db
+    plan: basic-256mb          # free Postgres expires after 30 days - do not use it for a real POS
+    databaseName: deltcrm_pos
+    user: pos_admin
+    postgresMajorVersion: "17"
+    region: singapore          # keep db + api in one region (and near your Vercel function region)
+
+services:
+  - type: web
+    name: pos-api
+    runtime: docker
+    plan: starter              # free web services sleep after 15 min idle - bad for a till
+    region: singapore
+    dockerContext: .
+    dockerfilePath: ./apps/api/Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    # The image's CMD runs: prisma migrate deploy -> prisma db seed (idempotent) -> node dist/main.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase: { name: pos-db, property: connectionString }
+      - key: OBSERVE_ENABLED
+        value: "false"
+      # Browser never calls the API directly, so this is only a safety allow-list.
+      # Set it to your Vercel production URL, e.g. https://your-pos.vercel.app
+      - { key: POS_WEB_ORIGIN, sync: false }
+      - key: POS_ORGANIZATION_NAME
+        value: Your Organisation Name
+      - key: POS_ORGANIZATION_SLUG
+        value: your-org
+      - key: POS_MAX_STORES
+        value: "5"
+      - { key: POS_ORG_ADMIN_EMAIL, sync: false }
+      - { key: POS_ORG_ADMIN_PASSWORD, sync: false }   # >= 12 characters

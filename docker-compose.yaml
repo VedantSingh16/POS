@@ -1,0 +1,144 @@
+services:
+
+  # ==========================================
+  # FRONTEND
+  # ==========================================
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4100/api}
+
+    container_name: deltcrm_pos_web
+
+    environment:
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4100/api}
+      # Server-side address of the API: the web app's login and proxy routes call this, the browser never does.
+      API_INTERNAL_URL: http://api:4000
+
+    ports:
+      - "${POS_WEB_PORT:-3100}:3000"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$${HOSTNAME}:3000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+
+  # ==========================================
+  # BACKEND
+  # ==========================================
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+
+    env_file:
+      - path: .env
+        required: false
+
+    container_name: deltcrm_pos_api
+
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+      # Browser origin(s) allowed by CORS (the web app).
+      POS_WEB_ORIGIN: ${POS_WEB_ORIGIN:-http://localhost:3100}
+      OBSERVE_ENABLED: ${OBSERVE_ENABLED:-false}
+      POS_ORGANIZATION_NAME: ${POS_ORGANIZATION_NAME:-POS Demo Organisation}
+      POS_ORGANIZATION_SLUG: ${POS_ORGANIZATION_SLUG:-pos-demo}
+      POS_MAX_STORES: ${POS_MAX_STORES:-5}
+      POS_ORG_ADMIN_EMAIL: ${POS_ORG_ADMIN_EMAIL:-admin@pos.local}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-deltcrm_pos}
+      REDIS_URL: redis://redis:6379
+
+    ports:
+      - "${POS_API_PORT:-4100}:4000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_started
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+    restart: unless-stopped
+
+
+  # ==========================================
+  # POSTGRESQL
+  # ==========================================
+
+  postgres:
+    image: postgres:17-alpine
+
+    container_name: deltcrm_pos_postgres
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-deltcrm_pos}
+
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+        ]
+
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    restart: unless-stopped
+
+
+  # ==========================================
+  # REDIS
+  # ==========================================
+
+  redis:
+    image: redis:8-alpine
+
+    container_name: deltcrm_pos_redis
+
+    volumes:
+      - redis_data:/data
+
+    restart: unless-stopped
+
+
+# ==========================================
+# VOLUMES
+# ==========================================
+
+volumes:
+
+  postgres_data:
+
+  redis_data:

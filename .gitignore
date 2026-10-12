@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.docker
+.env.*.local
+/data/
+apps/api/data/
+apps/api/src/generated/
+_to_delete/
+*.tsbuildinfo
+.turbo/
+packages/*/dist/

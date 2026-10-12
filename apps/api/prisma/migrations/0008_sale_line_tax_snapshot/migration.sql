@@ -1,0 +1,2 @@
+ALTER TABLE "sale_lines" ADD COLUMN "tax_rate_bps" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "sale_lines" ADD COLUMN "hsn_code" TEXT NOT NULL DEFAULT '';

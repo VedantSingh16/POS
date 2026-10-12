@@ -1,0 +1,21 @@
+import * as React from "react";
+import { cn } from "@/lib/utils";
+
+export function Table({ className, ...props }: React.ComponentProps<"table">) {
+  return (
+    <div className="relative w-full overflow-x-auto">
+      <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
+    </div>
+  );
+}
+export const TableHeader = (p: React.ComponentProps<"thead">) => <thead className="bg-secondary/60 [&_tr]:border-b" {...p} />;
+export const TableBody = (p: React.ComponentProps<"tbody">) => <tbody className="[&_tr:last-child]:border-0" {...p} />;
+export function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+  return <tr className={cn("border-b transition-colors hover:bg-muted/40 data-[clickable=true]:cursor-pointer", className)} {...props} />;
+}
+export function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+  return <th className={cn("h-9 px-3 text-left align-middle text-xs font-semibold text-muted-foreground whitespace-nowrap", className)} {...props} />;
+}
+export function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+  return <td className={cn("h-(--row-compact) px-3 py-1.5 align-middle", className)} {...props} />;
+}

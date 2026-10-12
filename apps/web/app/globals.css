@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* POS design tokens. Warm paper surfaces, a near-black sidebar in BOTH themes, one deep-green brand accent,
+   muted semantic status colours. Every component reads these tokens; do not hardcode colours in components.
+   Density: --row-compact (back office) and --target-touch (POS, onboarding). */
+:root {
+  color-scheme: light;
+  --background: oklch(0.967 0.004 95);
+  --foreground: oklch(0.2 0.006 250);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.42 0.075 172);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.945 0.006 95);
+  --secondary-foreground: oklch(0.28 0.008 250);
+  --muted: oklch(0.945 0.006 95);
+  --muted-foreground: oklch(0.5 0.008 250);
+  --accent: oklch(0.94 0.025 172);
+  --accent-foreground: oklch(0.32 0.06 172);
+  --border: oklch(0.9 0.008 90);
+  --input: oklch(0.84 0.01 90);
+  --ring: oklch(0.5 0.09 172);
+  --success: oklch(0.45 0.1 150);
+  --success-soft: oklch(0.945 0.035 150);
+  --warning: oklch(0.48 0.1 75);
+  --warning-soft: oklch(0.95 0.05 85);
+  --danger: oklch(0.46 0.15 30);
+  --danger-soft: oklch(0.95 0.03 30);
+  --info: oklch(0.42 0.09 255);
+  --info-soft: oklch(0.94 0.02 255);
+  --sidebar: oklch(0.15 0.004 90);
+  --sidebar-foreground: oklch(0.88 0.004 90);
+  --sidebar-muted: oklch(0.64 0.006 90);
+  --sidebar-accent: oklch(0.24 0.005 90);
+  --sidebar-border: oklch(0.27 0.005 90);
+  --sidebar-primary: oklch(0.74 0.13 165);
+  --radius: 0.4rem;
+  --row-compact: 2rem;
+  --target-touch: 2.75rem;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.2 0.004 90);
+  --foreground: oklch(0.95 0.004 90);
+  --card: oklch(0.24 0.005 90);
+  --popover: oklch(0.26 0.006 90);
+  --primary: oklch(0.72 0.12 168);
+  --primary-foreground: oklch(0.16 0.02 170);
+  --secondary: oklch(0.29 0.006 90);
+  --secondary-foreground: oklch(0.95 0.004 90);
+  --muted: oklch(0.29 0.006 90);
+  --muted-foreground: oklch(0.72 0.008 90);
+  --accent: oklch(0.31 0.03 172);
+  --accent-foreground: oklch(0.9 0.05 168);
+  --border: oklch(0.33 0.006 90);
+  --input: oklch(0.38 0.008 90);
+  --ring: oklch(0.72 0.12 168);
+  --success: oklch(0.76 0.13 150);
+  --success-soft: oklch(0.3 0.045 150);
+  --warning: oklch(0.8 0.12 80);
+  --warning-soft: oklch(0.32 0.05 80);
+  --danger: oklch(0.74 0.14 28);
+  --danger-soft: oklch(0.31 0.06 28);
+  --info: oklch(0.76 0.1 250);
+  --info-soft: oklch(0.3 0.04 250);
+  --sidebar: oklch(0.12 0.003 90);
+  --sidebar-accent: oklch(0.21 0.005 90);
+  --sidebar-border: oklch(0.24 0.005 90);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  * { border-color: var(--border); }
+body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { letter-spacing: -0.012em; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+}
+
+@media print {
+  .print\:hidden { display: none !important; }
+  .print-receipt { color: #000 !important; background: #fff !important; }
+  .print-receipt * { color: #000 !important; border-color: #bbb !important; }
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Slim scrollbar that suits the always-dark sidebar. */
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: var(--sidebar-border) transparent; }
+.sidebar-scroll::-webkit-scrollbar { width: 6px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--sidebar-border); border-radius: 9999px; }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--sidebar-muted); }

@@ -1,0 +1,70 @@
+name: POS verification
+
+on:
+  push:
+    branches: [main, phase0, baseline]
+  pull_request:
+
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: deltcrm_pos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d deltcrm_pos"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deltcrm_pos
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/deltcrm_pos_shadow
+      POS_ORGANIZATION_NAME: Test Organisation
+      POS_ORGANIZATION_SLUG: test-organisation
+      POS_MAX_STORES: 2
+      POS_ORG_ADMIN_EMAIL: admin@test.pos
+      POS_ORG_ADMIN_PASSWORD: Test-Admin-Password-2026!
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter api db:generate
+      - name: Validate Prisma schema
+        run: pnpm --filter api exec prisma validate
+      - name: Apply migrations
+        run: pnpm --filter api db:migrate
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Unit tests
+        run: pnpm test
+      - name: API end-to-end tests
+        run: pnpm --filter api test:e2e
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Validate Compose
+        run: docker compose config
+      - name: Build images
+        run: docker compose build
