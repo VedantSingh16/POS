@@ -1,7 +1,13 @@
+import { STORE_READ_ONLY_PERMISSION_CODES } from '@pos/shared/permissions';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
 import { ORGANISATION_ADMINISTRATOR_ROLE } from './permission-catalogue.js';
 import { PermissionGrant, UserContext } from './auth.types.js';
+
+/** Store-scoped reads an organisation admin can use while inspecting a store.
+ * Mutating and export permissions must always come from a store-scoped grant.
+ */
+const organisationStoreReadPermissions = new Set<string>(STORE_READ_ONLY_PERMISSION_CODES);
 
 @Injectable()
 export class AuthorizationService {
@@ -48,7 +54,7 @@ export class AuthorizationService {
 
   /** Everything the web app needs to render and route: identity, organisation, roles, effective permissions per scope, reachable stores. */
   async getSessionProfile(context: UserContext) {
-    const organisation = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { id: true, name: true, slug: true } });
+    const organisation = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { id: true, name: true, slug: true, countryCode: true, currency: true, taxProfileStatus: true } });
     const pinOwner = await this.prisma.user.findUnique({ where: { id: context.userId }, select: { pinHash: true } });
     const settings = await this.prisma.organizationSettings.findUnique({ where: { organizationId: context.organizationId }, select: { settings: true } });
     const onboarding = (settings?.settings as { onboarding?: { required?: unknown; complete?: unknown } } | null)?.onboarding;
@@ -85,33 +91,38 @@ export class AuthorizationService {
   }
 
   hasPermission(context: UserContext, permissionCode: string, storeId?: string): boolean {
-    if (context.isOrganisationAdministrator) return true;
-    const relevant = context.grants.filter((grant) => {
-      if (grant.permissionCode !== permissionCode) return false;
-      if (grant.scopeType === 'ORGANIZATION') return true;
-      return Boolean(storeId && grant.scopeType === 'STORE' && grant.scopeId === storeId);
-    });
-    if (relevant.some((grant) => grant.effect === 'DENY')) return false;
-    return relevant.some((grant) => grant.effect === 'ALLOW' || grant.effect === 'REQUIRE_APPROVAL');
+    if (!storeId && context.isOrganisationAdministrator) return true;
+
+    const applicable = context.grants.filter((grant) => grant.permissionCode === permissionCode && (
+      storeId
+        ? grant.scopeType === 'ORGANIZATION' || (grant.scopeType === 'STORE' && grant.scopeId === storeId)
+        : grant.scopeType === 'ORGANIZATION'
+    ));
+    if (applicable.some((grant) => grant.effect === 'DENY')) return false;
+    const relevant = applicable.filter((grant) => !storeId || grant.scopeType === 'STORE' || organisationStoreReadPermissions.has(permissionCode));
+    if (relevant.some((grant) => grant.effect === 'ALLOW' || grant.effect === 'REQUIRE_APPROVAL')) return true;
+    return Boolean(storeId && context.isOrganisationAdministrator && organisationStoreReadPermissions.has(permissionCode));
   }
 
   permissionEffect(context: UserContext, permissionCode: string, storeId?: string): PermissionGrant['effect'] | null {
-    if (context.isOrganisationAdministrator) return 'ALLOW';
-    const relevant = context.grants.filter((grant) => {
-      if (grant.permissionCode !== permissionCode) return false;
-      if (grant.scopeType === 'ORGANIZATION') return true;
-      return Boolean(storeId && grant.scopeType === 'STORE' && grant.scopeId === storeId);
-    });
-    if (relevant.some((grant) => grant.effect === 'DENY')) return 'DENY';
+    if (!storeId && context.isOrganisationAdministrator) return 'ALLOW';
+    const applicable = context.grants.filter((grant) => grant.permissionCode === permissionCode && (
+      storeId
+        ? grant.scopeType === 'ORGANIZATION' || (grant.scopeType === 'STORE' && grant.scopeId === storeId)
+        : grant.scopeType === 'ORGANIZATION'
+    ));
+    if (applicable.some((grant) => grant.effect === 'DENY')) return 'DENY';
+    const relevant = applicable.filter((grant) => !storeId || grant.scopeType === 'STORE' || organisationStoreReadPermissions.has(permissionCode));
     if (relevant.some((grant) => grant.effect === 'REQUIRE_APPROVAL')) return 'REQUIRE_APPROVAL';
-    return relevant.some((grant) => grant.effect === 'ALLOW') ? 'ALLOW' : null;
+    if (relevant.some((grant) => grant.effect === 'ALLOW')) return 'ALLOW';
+    return storeId && context.isOrganisationAdministrator && organisationStoreReadPermissions.has(permissionCode) ? 'ALLOW' : null;
   }
 
   canAccessStore(context: UserContext, storeId: string): boolean {
     if (context.isOrganisationAdministrator) return true;
     return context.storeIds.includes(storeId) || context.grants.some(
       (grant) => grant.scopeType === 'STORE' && grant.scopeId === storeId,
-    );
+    ) || STORE_READ_ONLY_PERMISSION_CODES.some((permissionCode) => this.hasPermission(context, permissionCode, storeId));
   }
 
   /** Stores where a permission is effective; undefined means organisation-wide access. */

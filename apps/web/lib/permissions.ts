@@ -1,3 +1,5 @@
+import { STORE_READ_ONLY_PERMISSION_CODES } from "@pos/shared/permissions";
+
 // Pure permission helpers shared by server and client code. The API enforces every rule again; this only decides what to show and where to land.
 export type Me = {
   user: { userId: string; email: string; displayName: string; defaultStoreId: string | null; isOrganisationAdministrator: boolean };
@@ -5,7 +7,7 @@ export type Me = {
   /** Minutes of inactivity before a till with a PIN locks; set under Settings → Security. */
   idleLockMinutes?: number;
   onboardingRequired?: boolean;
-  organisation: { id: string; name: string; slug: string };
+  organisation: { id: string; name: string; slug: string; currency?: string; countryCode?: string; taxProfileStatus?: string };
   roles: { name: string; scopeType: "ORGANIZATION" | "STORE"; storeId: string | null }[];
   permissions: { organization: string[]; stores: Record<string, string[]> };
   stores: { id: string; code: string; name: string }[];
@@ -13,9 +15,16 @@ export type Me = {
 
 export function hasPermission(me: Me, code: string, storeId?: string): boolean {
   if (storeId) {
-    return me.user.isOrganisationAdministrator || Boolean(me.permissions.stores[storeId]?.includes(code));
+    return Boolean(me.permissions.stores[storeId]?.includes(code));
   }
   return me.permissions.organization.includes(code);
+}
+
+/** Organization administrators are read-only in a store unless a store-scoped role grants an operation. */
+export function isOrganisationReadOnlyStoreView(me: Me, storeId: string): boolean {
+  if (!me.user.isOrganisationAdministrator) return false;
+  const readOnly = new Set<string>(STORE_READ_ONLY_PERMISSION_CODES);
+  return !(me.permissions.stores[storeId] ?? []).some((code) => !readOnly.has(code));
 }
 
 /** True when the user holds any organisation-wide permission, i.e. may see the organisation area. */

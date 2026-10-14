@@ -32,8 +32,8 @@ if (!stores.stores?.[0]?.id) throw new Error("At least one store is required for
 const storeId = stores.stores[0].id;
 
 const routes = [
-  "/org", "/org/users", "/org/roles", "/org/stores", "/org/catalog/products", "/org/catalog/categories", "/org/catalog/brands", "/org/catalog/import", "/org/catalog/tax", "/org/customers", "/org/reports", "/org/settings/general", "/org/settings/tax", "/org/settings/receipts", "/org/settings/approvals", "/org/settings/security", "/org/audit",
-  `/s/${storeId}`, `/s/${storeId}/sales`, `/s/${storeId}/returns`, `/s/${storeId}/returns/new`, `/s/${storeId}/inventory`, `/s/${storeId}/inventory/ledger`, `/s/${storeId}/inventory/adjust`, `/s/${storeId}/inventory/opening-stock`, `/s/${storeId}/registers`, `/s/${storeId}/approvals`, `/s/${storeId}/alerts`, `/s/${storeId}/staff`, `/s/${storeId}/reports`, `/s/${storeId}/pos`,
+  "/org", "/org/users", "/org/roles", "/org/stores", "/org/catalog/products", "/org/catalog/categories", "/org/catalog/brands", "/org/catalog/import", "/org/catalog/tax", "/org/customers", "/org/reports", "/org/settings/general", "/org/settings/tax", "/org/settings/billing", "/org/settings/receipts", "/org/settings/approvals", "/org/settings/security", "/org/audit",
+  `/s/${storeId}`, `/s/${storeId}/sales`, `/s/${storeId}/returns`, `/s/${storeId}/returns/new`, `/s/${storeId}/inventory`, `/s/${storeId}/inventory/ledger`, `/s/${storeId}/inventory/adjust`, `/s/${storeId}/inventory/opening-stock`, `/s/${storeId}/registers`, `/s/${storeId}/approvals`, `/s/${storeId}/alerts`, `/s/${storeId}/staff`, `/s/${storeId}/reports`, `/s/${storeId}/pos`, `/s/${storeId}/settings`, `/s/${storeId}/settings/profile`, `/s/${storeId}/settings/billing`, `/s/${storeId}/settings/checkout`, `/s/${storeId}/settings/product-fields`,
 ];
 
 const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });

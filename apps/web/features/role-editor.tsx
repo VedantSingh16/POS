@@ -16,6 +16,7 @@ export function RoleEditor({ groups }: { groups: PermissionGroup[] }) {
   const router = useRouter();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
+  const [storeAssignable, setStoreAssignable] = React.useState(false);
   const [effects, setEffects] = React.useState<Record<string, Effect>>(() => Object.fromEntries(groups.flatMap((group) => group.codes).map((code) => [code, "DENY"])));
   const [error, setError] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -29,7 +30,7 @@ export function RoleEditor({ groups }: { groups: PermissionGroup[] }) {
       const permissions = Object.entries(effects).filter(([, effect]) => effect !== "DENY").map(([code]) => code);
       const role = await clientApi<{ id: string }>("/admin/roles", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), description: description.trim(), permissions, permissionEffects: effects }),
+        body: JSON.stringify({ name: name.trim(), description: description.trim(), permissions, permissionEffects: effects, storeAssignable }),
       });
       toast.success("Role created");
       router.replace(`/org/roles/${role.id}`);
@@ -51,6 +52,7 @@ export function RoleEditor({ groups }: { groups: PermissionGroup[] }) {
           <Field label="Role name" htmlFor="role-name"><Input id="role-name" autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} /></Field>
           <Field label="Description" htmlFor="role-description"><Textarea id="role-description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={240} /></Field>
           <p className="text-sm text-muted-foreground sm:col-span-2">This defines what the role can do. Choose organisation or store scope when assigning it to a person.</p>
+          <label className="flex items-start gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={storeAssignable} onChange={(event) => setStoreAssignable(event.target.checked)} /><span><b>Allow store managers to assign this role</b><span className="mt-0.5 block text-xs text-muted-foreground">Managers can assign it only within their store and only when its permissions fit their own access.</span></span></label>
         </CardContent>
       </Card>
 

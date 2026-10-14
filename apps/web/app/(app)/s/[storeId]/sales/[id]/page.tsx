@@ -10,12 +10,12 @@ import { PrintActions } from "@/features/sales/print-actions";
 
 export default async function SaleDetail({ params }: PageProps<"/s/[storeId]/sales/[id]">) {
   const { storeId, id } = await params;
-  await requirePermission("sale.create", storeId);
+  await requirePermission("sale.view", storeId);
   const { data: s } = await api.sale(id, storeId);
   if (!s) notFound();
   return (
     <>
-      <PageHeader title={s.receipt} crumbs={[{ label: "Sales", href: `/s/${storeId}/sales` }, { label: s.receipt }]} actions={<PrintActions storeId={storeId} saleId={id} receipt={s.receipt} />} />
+      <PageHeader title={s.receipt} crumbs={[{ label: "Sales", href: `/s/${storeId}/sales` }, { label: s.receipt }]} backHref={`/s/${storeId}/sales`} backLabel="Back to sales" actions={<PrintActions storeId={storeId} saleId={id} receipt={s.receipt} />} />
       <div className="print-receipt"><Card><CardContent className="grid gap-4 sm:grid-cols-4">
         <div><p className="text-xs text-muted-foreground">Total</p><Money minor={s.totalMinor} /></div>
         <div><p className="text-xs text-muted-foreground">Tender</p><p>{s.tender}</p></div>

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useMaybeMe } from "@/components/app/session-context";
 import { hasOrgScope } from "@/lib/permissions";
 
@@ -37,17 +37,18 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
   );
 }
 
-export function PageHeader({ title, description, actions, crumbs }: { title: string; description?: string; actions?: React.ReactNode; crumbs?: Crumb[] }) {
+export function PageHeader({ title, description, actions, crumbs, backHref, backLabel }: { title: string; description?: string; actions?: React.ReactNode; crumbs?: Crumb[]; backHref?: string; backLabel?: string }) {
   return (
-    <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
+        {backHref && <Link href={backHref} className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"><ArrowLeft className="size-3.5" aria-hidden />{backLabel ?? "Back"}</Link>}
         {crumbs && <Breadcrumbs items={crumbs} />}
         <div className="flex items-center gap-2">
-          <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="truncate text-[1.35rem] font-semibold tracking-tight">{title}</h1>
         </div>
-        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
+        {description && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }

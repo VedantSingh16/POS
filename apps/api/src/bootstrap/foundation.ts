@@ -48,7 +48,7 @@ export async function seedFoundation(prisma: PrismaClient, config: FoundationCon
     });
     const organizationSettings = await tx.organizationSettings.upsert({
       where: { organizationId: organization.id },
-      create: { organizationId: organization.id, settings: { onboarding: { currentStep: 0, completedSteps: [], complete: false, required: true } } },
+      create: { organizationId: organization.id, settings: { enabledTenders: ['CASH'], onboarding: { version: 2, currentStep: 0, completedSteps: [], complete: false, required: true } } },
       update: {},
     });
     const settings = organizationSettings.settings && typeof organizationSettings.settings === 'object' && !Array.isArray(organizationSettings.settings)
@@ -73,8 +73,8 @@ export async function seedFoundation(prisma: PrismaClient, config: FoundationCon
     for (const definition of SYSTEM_ROLES) {
       const role = await tx.role.upsert({
         where: { organizationId_name: { organizationId: organization.id, name: definition.name } },
-        create: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true },
-        update: {},
+        create: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true, storeAssignable: definition.storeAssignable ?? false },
+        update: { storeAssignable: definition.storeAssignable ?? false },
       });
       roleIds.set(definition.name, role.id);
       // System roles are immutable in the app, so startup may safely reconcile their permissions

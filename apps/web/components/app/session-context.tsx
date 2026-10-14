@@ -1,10 +1,13 @@
 "use client";
 import * as React from "react";
 import { hasPermission, type Me } from "@/lib/permissions";
+import { setActiveCurrency } from "@/lib/format";
 
 const SessionContext = React.createContext<Me | null>(null);
 
 export function SessionProvider({ me, children }: { me: Me; children: React.ReactNode }) {
+  // Set during render (not in an effect) so the first paint already uses the organisation's currency.
+  setActiveCurrency(me.organisation.currency);
   return <SessionContext.Provider value={me}>{children}</SessionContext.Provider>;
 }
 

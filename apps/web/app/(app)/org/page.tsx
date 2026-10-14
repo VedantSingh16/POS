@@ -16,30 +16,49 @@ export default async function OrgOverview() {
   const me = await requirePermission("org.overview.view");
   const canCatalog = hasPermission(me, "catalog.view");
   const canTax = hasPermission(me, "tax.view");
-  const [{ data: org }, { data: stores }, { data: users }, { data: audit }, { data: onboarding }, products, taxGroups] = await Promise.all([
+  const [{ data: org }, { data: stores }, { data: users }, { data: audit }, { data: onboarding }, products] = await Promise.all([
     api.org(), api.stores(), api.users(), api.audit(), api.onboarding(),
     canCatalog ? api.products().then((r) => r.data) : Promise.resolve(null),
-    canTax ? api.taxGroups().then((r) => r.data) : Promise.resolve(null),
   ]);
   const activeStores = stores.filter((s) => s.status === "ACTIVE");
-  const ready = activeStores.filter((s) => s.registers > 0 && (s.managers ?? []).length > 0);
+  const storeConfiguration = canTax && canCatalog
+    ? await Promise.all(activeStores.map(async (store) => {
+        const [catalogue, groups] = await Promise.all([
+          api.storeCatalogue(store.id).catch(() => ({ data: [] })),
+          api.storeTaxGroups(store.id).catch(() => ({ data: [] })),
+        ]);
+        return [store.id, { catalogue: catalogue.data, groups: groups.data }] as const;
+      }))
+    : [];
+  const configurationByStore = new Map(storeConfiguration);
+  const taxStatus = org.taxProfileStatus;
+  const taxReviewed = ["REGISTERED", "NOT_REGISTERED", "LEGACY"].includes(taxStatus);
+  const taxReadyForStore = (storeId: string) => {
+    if (taxStatus !== "REGISTERED") return true;
+    const configuration = configurationByStore.get(storeId);
+    const activeGroups = new Set((configuration?.groups ?? []).filter((group) => group.status === "ACTIVE").map((group) => group.id));
+    const activeItems = (configuration?.catalogue ?? []).filter((item) => item.assigned && item.status === "ACTIVE");
+    return activeGroups.size > 0 && activeItems.every((item) => item.storeTaxGroupId !== null && activeGroups.has(item.storeTaxGroupId));
+  };
+  const ready = activeStores.filter((store) => {
+    const activeItems = (configurationByStore.get(store.id)?.catalogue ?? []).filter((item) => item.assigned && item.status === "ACTIVE");
+    return store.registers > 0 && activeItems.length > 0 && taxReadyForStore(store.id);
+  });
   const onboardingDone = (onboarding.onboarding as { complete?: boolean } | undefined)?.complete === true;
-  // Every item is derived from real records; nothing here is a fixed or assumed value.
+  const checkoutReviewed = taxReviewed && activeStores.every((store) => taxReadyForStore(store.id));
   const checklist = [
-    { label: "Organisation profile completed", done: onboardingDone, href: onboardingDone ? "/org/settings/general" : "/onboarding/welcome" },
-    { label: "At least one store created", done: stores.length > 0, href: "/org/stores" },
-    { label: "Every active store has a manager", done: activeStores.length > 0 && activeStores.every((s) => (s.managers ?? []).length > 0), href: "/org/stores" },
-    { label: "Every active store has a register", done: activeStores.length > 0 && activeStores.every((s) => s.registers > 0), href: "/org/stores" },
-    ...(taxGroups ? [{ label: "GST tax groups configured", done: taxGroups.length > 0, href: "/org/catalog/tax" }] : []),
-    ...(products ? [{ label: "Products added to the catalogue", done: products.length > 0, href: "/org/catalog/import" }] : []),
+    { label: "Organisation and first store created", done: onboardingDone && stores.length > 0, href: onboardingDone ? "/org/settings/general" : "/onboarding/organization" },
+    ...(products ? [{ label: "Add your first product", done: products.length > 0, href: "/org/catalog/products" }] : []),
+    { label: "Review store billing and tax settings", done: checkoutReviewed, href: activeStores[0] ? `/s/${activeStores[0].id}/settings/billing` : "/org/stores" },
+    { label: "Invite your team (optional)", done: users.filter((user) => user.status === "ACTIVE").length > 1, href: "/org/users" },
   ];
   const done = checklist.filter((c) => c.done).length;
   return (
     <>
       <PageHeader title="Organisation overview" description={`Organisation-wide view for ${org.name}. Open a store to see its own operations.`} crumbs={[{ label: "Organisation" }, { label: "Overview" }]} />
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 rounded-md border-y bg-card px-4 py-3 sm:grid-cols-4">
         <KpiTile label="Active stores" value={`${activeStores.length} / ${org.maxStores}`} hint="Plan limit across the organisation" icon={Store} />
-        <KpiTile label="Stores ready to trade" value={`${ready.length} / ${activeStores.length}`} hint="Manager and register in place" icon={CheckCircle2} tone={ready.length === activeStores.length && activeStores.length > 0 ? "success" : "warning"} />
+        <KpiTile label="Stores ready to sell" value={`${ready.length} / ${activeStores.length}`} hint="Register, product and tax setup ready" icon={CheckCircle2} tone={ready.length === activeStores.length && activeStores.length > 0 ? "success" : "warning"} />
         <KpiTile label="Active team members" value={users.filter((u) => u.status === "ACTIVE").length} hint={`${users.length} accounts in total`} icon={Users} />
         <KpiTile label="Needs attention" value={checklist.length - done} hint="Open setup items" icon={AlertTriangle} tone={checklist.length - done ? "warning" : "success"} />
       </div>
@@ -53,9 +72,9 @@ export default async function OrgOverview() {
                   <div className="min-w-0 flex-1">
                     <Link href={`/org/stores/${store.id}`} className="font-medium hover:underline">{store.name}</Link>
                     <span className="ml-2 font-mono text-xs text-muted-foreground">{store.code}</span>
-                    <p className="text-xs text-muted-foreground">{(store.managers ?? []).length ? `Manager: ${(store.managers ?? []).map((m) => m.name).join(", ")}` : "No manager assigned"} · {store.registers} register{store.registers === 1 ? "" : "s"} · {store.staff} staff</p>
+                    <p className="text-xs text-muted-foreground">{store.city || "Address not set"} · {store.registers} register{store.registers === 1 ? "" : "s"} · {store.staff} staff</p>
                   </div>
-                  {(store.registers === 0 || (store.managers ?? []).length === 0) && <Badge tone="warning">Setup incomplete</Badge>}
+                  {(store.registers === 0 || !ready.some((entry) => entry.id === store.id)) && <Badge tone="warning">Needs setup</Badge>}
                   <StatusBadge status={store.status} />
                   <Link href={`/s/${store.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>Open store <ArrowRight /></Link>
                 </li>
@@ -66,7 +85,7 @@ export default async function OrgOverview() {
       </Card>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHeader><CardTitle>Setup checklist · {done} of {checklist.length}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Setup checklist · {done} of {checklist.length}</CardTitle><Link href="/onboarding/optional" className="text-xs text-primary hover:underline">Optional setup</Link></CardHeader>
           <CardContent>
             <ul className="grid gap-2">
               {checklist.map((c) => (

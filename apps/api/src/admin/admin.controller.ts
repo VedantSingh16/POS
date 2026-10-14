@@ -26,7 +26,7 @@ export class AdminController {
   @Get('settings')
   @RequirePermissions('org.settings.manage')
   settings(@Req() request: AuthenticatedRequest) {
-    return this.admin.getSettings(request.user!);
+    return this.admin.getSettings(request.user!, true);
   }
 
   @Patch('settings')
@@ -63,6 +63,18 @@ export class AdminController {
   @RequirePermissions('org.settings.manage')
   updateOnboarding(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) {
     return this.admin.updateOnboarding(request.user!, body);
+  }
+
+  @Post('onboarding/required')
+  @RequirePermissions('org.settings.manage')
+  completeRequiredOnboarding(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) {
+    return this.admin.completeRequiredOnboarding(request.user!, body);
+  }
+
+  @Post('onboarding/skip-optional')
+  @RequirePermissions('org.settings.manage')
+  skipOptionalOnboarding(@Req() request: AuthenticatedRequest) {
+    return this.admin.skipOptionalOnboarding(request.user!);
   }
 
   @Post('onboarding/stores')
@@ -162,7 +174,6 @@ export class AdminController {
   }
 
   @Patch('stores/:storeId')
-  @RequirePermissions('stores.manage')
   updateStore(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
     return this.admin.updateStore(request.user!, storeId, body);
   }
@@ -185,6 +196,18 @@ export class AdminController {
     return { users: await this.admin.listStoreStaff(request.user!, storeId) };
   }
 
+  @Get('stores/:storeId/assignable-roles')
+  @RequirePermissions('store.staff.manage')
+  async storeAssignableRoles(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) {
+    return { roles: await this.admin.listStoreAssignableRoles(request.user!, storeId) };
+  }
+
+  @Patch('stores/:storeId/users/:userId/role')
+  @RequirePermissions('store.staff.manage')
+  assignStoreRole(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('userId') userId: string, @Body() body: JsonObject) {
+    return this.admin.assignStoreRole(request.user!, storeId, userId, body);
+  }
+
   @Get('registers')
   @RequirePermissions('registers.view')
   async registers(@Req() request: AuthenticatedRequest) {
@@ -198,13 +221,11 @@ export class AdminController {
   }
 
   @Post('stores/:storeId/registers')
-  @RequirePermissions('registers.manage')
   createRegister(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
     return this.admin.createRegister(request.user!, storeId, body);
   }
 
   @Patch('registers/:registerId')
-  @RequirePermissions('registers.manage')
   updateRegister(@Req() request: AuthenticatedRequest, @Param('registerId') registerId: string, @Body() body: JsonObject) {
     return this.admin.updateRegister(request.user!, registerId, body);
   }
@@ -231,24 +252,6 @@ export class AdminController {
   @RequirePermissions('catalog.manage')
   createUom(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) {
     return this.admin.createUom(request.user!, body);
-  }
-
-  @Get('catalog/tax-groups')
-  @RequirePermissions('tax.view')
-  async taxGroups(@Req() request: AuthenticatedRequest) {
-    return { taxGroups: await this.admin.listTaxGroups(request.user!) };
-  }
-
-  @Post('catalog/tax-groups')
-  @RequirePermissions('tax.manage')
-  createTaxGroup(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) {
-    return this.admin.createTaxGroup(request.user!, body);
-  }
-
-  @Patch('catalog/tax-groups/:taxGroupId')
-  @RequirePermissions('tax.manage')
-  updateTaxGroup(@Req() request: AuthenticatedRequest, @Param('taxGroupId') taxGroupId: string, @Body() body: JsonObject) {
-    return this.admin.updateTaxGroup(request.user!, taxGroupId, body);
   }
 
   @Get('catalog/products')
@@ -280,6 +283,18 @@ export class AdminController {
   deleteBrand(@Req() request: AuthenticatedRequest, @Param('brandId') brandId: string) {
     return this.admin.deleteBrand(request.user!, brandId);
   }
+
+  @Get('catalog/product-types')
+  @RequirePermissions('catalog.view')
+  async productTypes(@Req() request: AuthenticatedRequest) { return { types: await this.admin.listProductTypes(request.user!) }; }
+
+  @Post('catalog/product-types')
+  @RequirePermissions('catalog.manage')
+  createProductType(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.admin.createProductType(request.user!, body); }
+
+  @Patch('catalog/product-types/:typeId')
+  @RequirePermissions('catalog.manage')
+  updateProductType(@Req() request: AuthenticatedRequest, @Param('typeId') typeId: string, @Body() body: JsonObject) { return this.admin.updateProductType(request.user!, typeId, body); }
 
   @Get('catalog/products/:productId')
   @RequirePermissions('catalog.view')

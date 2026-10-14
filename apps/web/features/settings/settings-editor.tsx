@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
+import { CURRENCIES } from "@pos/shared/currency";
 
 type Field = { key: string; label: string; hint: string; kind: "select" | "text" | "number" };
 const SECTIONS: Record<string, Field[]> = {
@@ -73,6 +74,29 @@ export function ApprovalPolicyForm({ initial }: { initial: { enabled: boolean; t
         <span className="text-xs text-muted-foreground">Discounts at or below this share go through; larger ones need a manager PIN or an approved request. When the rule is off, any permitted discount goes through.</span>
       </label>
       <Button className="sm:w-fit" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save rule"}</Button>
+    </div>
+  );
+}
+
+/** Organisation currency. It applies to every store and locks once the first sale exists. */
+export function CurrencyForm({ initial, locked = false }: { initial: string; locked?: boolean }) {
+  const router = useRouter();
+  const [code, setCode] = React.useState(initial);
+  const [busy, setBusy] = React.useState(false);
+  async function save() {
+    setBusy(true);
+    try { await clientApi("/admin/settings", { method: "PATCH", body: JSON.stringify({ currency: code }) }); toast.success("Currency saved"); router.refresh(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Could not save the currency"); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="grid gap-3 sm:max-w-xl">
+      <label className="grid gap-1.5 text-sm">
+        <span className="font-medium">Currency</span>
+        <NativeSelect value={code} disabled={locked || busy} onChange={(e) => setCode(e.target.value)}>{Object.values(CURRENCIES).map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}{c.code === "OMR" ? " (default)" : ""}</option>)}</NativeSelect>
+        <span className="text-xs text-muted-foreground">{locked ? `Locked at ${initial} because this organisation has completed a sale. Past amounts are kept in their original currency.` : "Applies to every store, price, bill, receipt, and invoice. Choose it before the first sale; stores inherit this value."}</span>
+      </label>
+      {!locked && <Button className="sm:w-fit" onClick={() => void save()} disabled={busy || code === initial}>{busy ? "Saving…" : "Save currency"}</Button>}
     </div>
   );
 }

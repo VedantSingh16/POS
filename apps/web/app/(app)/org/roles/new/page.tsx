@@ -11,7 +11,7 @@ export default async function NewRolePage() {
   const { data: groups } = await api.permissionGroups();
   return (
     <>
-      <PageHeader title="New role" description="Choose the actions this role can perform." crumbs={[{ label: "Organisation", href: "/org" }, { label: "Roles", href: "/org/roles" }, { label: "New role" }]} />
+      <PageHeader title="New role" description="Choose the actions this role can perform." crumbs={[{ label: "Organisation", href: "/org" }, { label: "Roles", href: "/org/roles" }, { label: "New role" }]} backHref="/org/roles" backLabel="Back to roles" />
       <RoleEditor groups={groups} />
     </>
   );

@@ -7,7 +7,7 @@ export const metadata = { title: "Sales" };
 
 export default async function Page({ params }: PageProps<"/s/[storeId]/sales">) {
   const { storeId } = await params;
-  await requirePermission("sale.create", storeId);
+  await requirePermission("sale.view", storeId);
   const { data } = await api.sales(storeId);
   return (
     <>

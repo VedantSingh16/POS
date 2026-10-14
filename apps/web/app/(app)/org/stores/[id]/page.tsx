@@ -29,11 +29,10 @@ export default async function StoreDetail({ params }: PageProps<"/org/stores/[id
   const canManageRegisters = org.includes("registers.manage");
   const setupIssues = [
     registers.length === 0 && "This store has no register, so nobody can open a till or sell here.",
-    managers.length === 0 && "This store has no manager assigned.",
   ].filter(Boolean) as string[];
   return (
     <>
-      <PageHeader title={store.name} description={`Store code ${store.code}${store.city ? ` · ${store.city}` : ""}`} crumbs={[{ label: "Organisation", href: "/org" }, { label: "Stores", href: "/org/stores" }, { label: store.name }]}
+      <PageHeader title={store.name} description={`Store code ${store.code}${store.city ? ` · ${store.city}` : ""}`} crumbs={[{ label: "Organisation", href: "/org" }, { label: "Stores", href: "/org/stores" }, { label: store.name }]} backHref="/org/stores" backLabel="Back to stores"
         actions={<>
           <Link href={`/s/${store.id}`} className={buttonVariants()}>Open store operations <ArrowRight /></Link>
           {canManageStore && <StoreStatusButton storeId={store.id} storeName={store.name} status={store.status} />}
@@ -58,9 +57,9 @@ export default async function StoreDetail({ params }: PageProps<"/org/stores/[id
         </TabsContent>
         <TabsContent value="team">
           {canManageUsers && <div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground">People here can only work in {store.name}. Assign the Store Manager role to give someone responsibility for this store.</p><InviteUserSheet roles={roles.map((r) => ({ id: r.id, name: r.name, system: Boolean(r.system) }))} fixedStore={{ id: store.id, name: store.name }} /></div>}
-          <StoreStaffTable data={staff} />
+          <StoreStaffTable data={staff} storeId={id} />
         </TabsContent>
-        <TabsContent value="settings"><Card><CardContent><StoreSettingsForm initial={settings} /></CardContent></Card></TabsContent>
+        <TabsContent value="settings"><Card><CardContent><StoreSettingsForm initial={settings} canEdit={false} /></CardContent></Card></TabsContent>
       </Tabs>
     </>
   );

@@ -30,6 +30,31 @@
       "types": "./src/schemas.ts",
       "node": "./dist/schemas.js",
       "default": "./src/schemas.ts"
+    },
+    "./pricing": {
+      "types": "./src/pricing.ts",
+      "node": "./dist/pricing.js",
+      "default": "./src/pricing.ts"
+    },
+    "./currency": {
+      "types": "./src/currency.ts",
+      "node": "./dist/currency.js",
+      "default": "./src/currency.ts"
+    },
+    "./fiscal": {
+      "types": "./src/fiscal.ts",
+      "node": "./dist/fiscal.js",
+      "default": "./src/fiscal.ts"
+    },
+    "./tax-id": {
+      "types": "./src/tax-id.ts",
+      "node": "./dist/tax-id.js",
+      "default": "./src/tax-id.ts"
+    },
+    "./markets": {
+      "types": "./src/markets.ts",
+      "node": "./dist/markets.js",
+      "default": "./src/markets.ts"
     }
   },
   "scripts": {

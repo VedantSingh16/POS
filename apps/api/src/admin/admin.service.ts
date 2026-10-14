@@ -11,6 +11,12 @@ import { AuthorizationService } from '../auth/authorization.service.js';
 import { UserContext } from '../auth/auth.types.js';
 import { ORGANISATION_ADMINISTRATOR_ROLE, PERMISSIONS } from '../auth/permission-catalogue.js';
 import { JsonObject, money, oneOf, optionalString, requiredString, stringArray, uuid } from '../common/input.js';
+import { validateGstin } from '@pos/shared/tax-id';
+import { isCurrencyCode, minorFactor } from '@pos/shared/currency';
+import { isMarketCode, MARKETS } from '@pos/shared/markets';
+import { cleanAttributeValues, cleanTypeConfig, readTypeConfig, type TypeConfig } from './product-types.js';
+import { applyBillingPatch, BILLING_KEYS, DEFAULT_BILLING_SETTINGS } from '../common/billing-settings.js';
+import { cleanFieldSet, cleanFieldValues, objectField } from '../common/field-config.js';
 import { isUniqueViolation, Tx } from '../database/db.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { PermissionEffect, Prisma, ProductStatus, RecordStatus, UserStatus } from '../generated/prisma/client.js';
@@ -21,7 +27,7 @@ const USER_STATUSES: readonly string[] = Object.values(UserStatus);
 const RECORD_STATUSES: readonly string[] = Object.values(RecordStatus);
 const PRODUCT_STATUSES: readonly string[] = Object.values(ProductStatus);
 
-const SETTINGS_KEYS = ['receiptFooter', 'defaultStoreId', 'inventoryPolicy', 'cashRounding', 'storeCloseHour', 'idleLockMinutes', 'onboarding'] as const;
+const SETTINGS_KEYS = ['defaultStoreId', 'inventoryPolicy', 'storeCloseHour', 'idleLockMinutes', 'onboarding', 'productFields'] as const;
 
 const userInclude = {
   roles: { include: { role: { select: { id: true, name: true } } }, orderBy: { role: { name: 'asc' } } },
@@ -31,13 +37,13 @@ const userInclude = {
 type UserWithAccess = Prisma.UserGetPayload<{ include: typeof userInclude }>;
 
 const productInclude = {
+  productType: { select: { id: true, name: true } },
   category: { select: { id: true, name: true } },
   brandRef: { select: { id: true, name: true } },
   variants: {
     orderBy: { name: 'asc' },
     include: {
       uom: { select: { code: true } },
-      taxGroup: { select: { code: true } },
       barcodes: { select: { code: true }, orderBy: { code: 'asc' } },
       prices: { orderBy: { effectiveFrom: 'desc' } },
     },
@@ -79,6 +85,21 @@ export class AdminService {
 
   async updateOrganization(context: UserContext, input: JsonObject) {
     this.requireOrganizationPermission(context, 'org.settings.manage');
+    const countryCode = input.countryCode === undefined ? undefined : oneOf(input.countryCode, MARKETS.map((market) => market.code), 'countryCode');
+    const taxProfileStatus = input.taxProfileStatus === undefined ? undefined : oneOf(input.taxProfileStatus, ['NOT_REVIEWED', 'REGISTERED', 'NOT_REGISTERED', 'UNSURE', 'LEGACY'] as const, 'taxProfileStatus');
+    const currentProfile = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true, gstin: true, taxProfileStatus: true } });
+    if (taxProfileStatus === 'LEGACY' && currentProfile.taxProfileStatus !== 'LEGACY') throw new BadRequestException('LEGACY is reserved for organisations carried forward from earlier versions');
+    const gstinInput = optionalString(input.gstin);
+    let gstin: string | undefined;
+    if (gstinInput !== undefined) {
+      if (gstinInput) {
+        const result = validateGstin(gstinInput);
+        if (!result.valid) throw new BadRequestException(result.error ?? 'Invalid GSTIN');
+        gstin = result.normalized;
+      } else gstin = '';
+    }
+    const effectiveGstin = gstinInput === undefined ? currentProfile.gstin : gstin;
+    if ((countryCode ?? currentProfile.countryCode) === 'IN' && taxProfileStatus === 'REGISTERED' && !effectiveGstin) throw new BadRequestException('GSTIN is required when GST registration is selected');
     const organization = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.organization.update({
         where: { id: context.organizationId },
@@ -87,9 +108,11 @@ export class AdminService {
           ...(optionalString(input.legalName) !== undefined ? { legalName: optionalString(input.legalName) } : {}),
           ...(optionalString(input.tradeName) !== undefined ? { tradeName: optionalString(input.tradeName) } : {}),
           ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
-          ...(optionalString(input.gstin) !== undefined ? { gstin: optionalString(input.gstin)?.toUpperCase() } : {}),
+          ...(gstin !== undefined ? { gstin } : {}),
           ...(optionalString(input.businessType) !== undefined ? { businessType: optionalString(input.businessType)?.toUpperCase() } : {}),
           ...(optionalString(input.timezone) !== undefined ? { timezone: optionalString(input.timezone) } : {}),
+          ...(countryCode !== undefined ? { countryCode } : {}),
+          ...(taxProfileStatus !== undefined ? { taxProfileStatus } : {}),
         },
       });
       await this.audit.record(context, 'organization.updated', 'Organization', updated.id, { fields: Object.keys(input) }, tx);
@@ -98,28 +121,62 @@ export class AdminService {
     return organization;
   }
 
-  async getSettings(context: UserContext) {
+  async getSettings(context: UserContext, includeCurrencyLock = false) {
     this.requireOrganizationPermission(context, 'org.settings.manage');
-    const row = await this.prisma.organizationSettings.findUnique({ where: { organizationId: context.organizationId } });
-    return { settings: (row?.settings ?? {}) as JsonObject };
+    const [row, organization, sales] = await Promise.all([
+      this.prisma.organizationSettings.findUnique({ where: { organizationId: context.organizationId } }),
+      this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { currency: true } }),
+      includeCurrencyLock ? this.prisma.sale.count({ where: { organizationId: context.organizationId } }) : Promise.resolve(0),
+    ]);
+    const settings = { ...((row?.settings ?? {}) as JsonObject) };
+    for (const key of BILLING_KEYS) delete settings[key];
+    delete settings.checkoutFields;
+    delete settings.requireBillHandler;
+    if (settings.productFields !== undefined) settings.productFields = cleanFieldSet(settings.productFields) as unknown as JsonObject;
+    return { settings, currency: organization.currency, currencyLocked: sales > 0 };
+  }
+
+  /** The organisation's canonical currency code. */
+  private async orgCurrency(organizationId: string): Promise<string> {
+    const organization = await this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { currency: true } });
+    return organization.currency;
   }
 
   async updateSettings(context: UserContext, input: JsonObject) {
     this.requireOrganizationPermission(context, 'org.settings.manage');
+    if (BILLING_KEYS.some((key) => key in input) || 'checkoutFields' in input) {
+      throw new BadRequestException('Billing and checkout settings belong to each store. Open that store’s Billing & Checkout settings.');
+    }
     const next: JsonObject = { ...(await this.getSettings(context)).settings };
+    delete next.currency;
+    delete next.checkoutFields;
+    delete next.requireBillHandler;
+    for (const key of BILLING_KEYS) delete next[key];
+    const previousCurrency = await this.orgCurrency(context.organizationId);
+    let nextCurrency = previousCurrency;
     for (const key of SETTINGS_KEYS) {
       if (key in input) next[key] = input[key];
+    }
+    if ('productFields' in input) next.productFields = cleanFieldSet(input.productFields);
+    if ('currency' in input) {
+      if (!isCurrencyCode(input.currency)) throw new BadRequestException('Choose one of the listed currencies');
+      if (input.currency !== previousCurrency) {
+        // Amounts are stored in the currency's smallest unit with no conversion, so changing it under existing sales would silently change what they mean.
+        const sales = await this.prisma.sale.count({ where: { organizationId: context.organizationId } });
+        if (sales > 0) throw new ConflictException({ code: 'CURRENCY_LOCKED', message: 'The currency cannot be changed after the first sale, because past amounts would change meaning.' });
+      }
+      nextCurrency = input.currency;
     }
     if ('idleLockMinutes' in input) {
       const minutes = Number(input.idleLockMinutes);
       if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) throw new BadRequestException('idleLockMinutes must be a whole number from 1 to 240');
       next.idleLockMinutes = minutes;
     }
-    if ('receiptFooter' in input && (typeof input.receiptFooter !== 'string' || input.receiptFooter.length > 300)) throw new BadRequestException('receiptFooter must be text of at most 300 characters');
     if (typeof next.defaultStoreId === 'string') {
       await this.ensureStore(context.organizationId, uuid(next.defaultStoreId, 'defaultStoreId'));
     }
     await this.prisma.$transaction(async (tx) => {
+      if (nextCurrency !== previousCurrency) await tx.organization.update({ where: { id: context.organizationId }, data: { currency: nextCurrency } });
       await tx.organizationSettings.upsert({
         where: { organizationId: context.organizationId },
         create: { organizationId: context.organizationId, settings: next as Prisma.InputJsonObject },
@@ -127,7 +184,7 @@ export class AdminService {
       });
       await this.audit.record(context, 'organization.settings.updated', 'OrganizationSettings', context.organizationId, { keys: Object.keys(input) }, tx);
     });
-    return { settings: next };
+    return { settings: next, currency: nextCurrency };
   }
 
   async getApprovalPolicy(context: UserContext) {
@@ -246,6 +303,61 @@ export class AdminService {
     }));
   }
 
+  async listStoreAssignableRoles(context: UserContext, storeId: string) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.staff.manage'], id);
+    const roles = await this.prisma.role.findMany({
+      where: { organizationId: context.organizationId, status: 'ACTIVE', storeAssignable: true },
+      include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+    });
+    // A manager can only assign a role whose allowed permissions are already within their own store-level authority.
+    return roles.filter((role) => role.permissions.every((permission) =>
+      permission.effect === 'DENY' || this.authorization.hasPermission(context, permission.permissionCode, id),
+    )).map((role) => ({ id: role.id, name: role.name, description: role.description, isSystem: role.isSystem }));
+  }
+
+  async assignStoreRole(context: UserContext, storeId: string, userId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    const targetId = uuid(userId, 'userId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.staff.manage'], id);
+    await this.ensureStore(context.organizationId, id);
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: targetId,
+        organizationId: context.organizationId,
+        OR: [{ stores: { some: { storeId: id } } }, { roles: { some: { scopeType: 'STORE', storeId: id } } }],
+      },
+      select: { id: true, status: true },
+    });
+    if (!user) throw new NotFoundException('Staff member not found in this store');
+    if (user.status !== 'ACTIVE') throw new BadRequestException('Only active staff can be assigned a store role');
+
+    const roleId = input.roleId === null || input.roleId === '' ? null : uuid(input.roleId, 'roleId');
+    const role = roleId ? await this.prisma.role.findFirst({
+      where: { id: roleId, organizationId: context.organizationId, status: 'ACTIVE', storeAssignable: true },
+      include: { permissions: { select: { permissionCode: true, effect: true } } },
+    }) : null;
+    if (roleId && !role) throw new BadRequestException('Choose a role approved for store-manager assignment');
+    if (role && !role.permissions.every((permission) => permission.effect === 'DENY' || this.authorization.hasPermission(context, permission.permissionCode, id))) {
+      throw new ForbiddenException('This role grants permissions beyond your authority in this store');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userRole.deleteMany({ where: { organizationId: context.organizationId, userId: targetId, scopeType: 'STORE', storeId: id } });
+      if (role) await tx.userRole.create({ data: { organizationId: context.organizationId, userId: targetId, roleId: role.id, scopeType: 'STORE', storeId: id } });
+      await tx.userStore.upsert({
+        where: { userId_storeId: { userId: targetId, storeId: id } },
+        create: { userId: targetId, storeId: id, isDefault: false },
+        update: {},
+      });
+      await this.audit.record(context, 'store.staff.role.updated', 'User', targetId, { storeId: id, roleId: role?.id ?? null, roleName: role?.name ?? null }, tx);
+    });
+    return { userId: targetId, storeId: id, role: role ? { id: role.id, name: role.name } : null };
+  }
+
   async createUser(context: UserContext, input: JsonObject) {
     this.requireOrganizationPermission(context, 'users.manage');
     const email = this.email(input.email);
@@ -317,6 +429,9 @@ export class AdminService {
           ...(storeIds ? { defaultStoreId: storeIds[0] ?? null } : {}),
         },
       });
+      if (nextStatus && nextStatus !== 'ACTIVE') {
+        await tx.session.deleteMany({ where: { userId } });
+      }
       if (storeIds) await tx.userStore.deleteMany({ where: { userId } });
       if (assignments) await tx.userRole.deleteMany({ where: { userId } });
       await this.writeAccess(tx, context.organizationId, userId, assignments ?? [], storeIds ?? []);
@@ -367,6 +482,7 @@ export class AdminService {
             organizationId: context.organizationId,
             name,
             description,
+            storeAssignable: input.storeAssignable === true,
             permissions: { create: [...new Set(permissions)].map((permissionCode) => ({ permissionCode, effect: this.permissionEffect(input, permissionCode) })) },
           },
           include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
@@ -389,6 +505,11 @@ export class AdminService {
 
     const status = typeof input.status === 'string' ? input.status.toUpperCase() : undefined;
     if (status && !RECORD_STATUSES.includes(status)) throw new BadRequestException('Invalid role status');
+    const storeAssignable = input.storeAssignable === undefined ? undefined : input.storeAssignable === true;
+    if (input.storeAssignable !== undefined && typeof input.storeAssignable !== 'boolean') throw new BadRequestException('storeAssignable must be true or false');
+    if (storeAssignable === false && (await this.prisma.userRole.count({ where: { roleId, scopeType: 'STORE' } })) > 0) {
+      throw new ConflictException('Reassign store users before removing this role from store-manager assignment');
+    }
     if (status === 'DISABLED' && (await this.prisma.userRole.count({ where: { roleId } })) > 0) {
       throw new ConflictException('Reassign users before disabling this role');
     }
@@ -403,13 +524,14 @@ export class AdminService {
             name: optionalString(input.name) || role.name,
             ...(optionalString(input.description) !== undefined ? { description: optionalString(input.description) } : {}),
             ...(status ? { status: status as RecordStatus } : {}),
+            ...(storeAssignable !== undefined ? { storeAssignable } : {}),
           },
         });
         if (permissions) {
           await tx.rolePermission.deleteMany({ where: { roleId } });
           await tx.rolePermission.createMany({ data: [...new Set(permissions)].map((permissionCode) => ({ roleId, permissionCode, effect: this.permissionEffect(input, permissionCode) })) });
         }
-        await this.audit.record(context, 'role.updated', 'Role', roleId, { name: input.name, status, permissionsChanged: Boolean(permissions) }, tx);
+        await this.audit.record(context, 'role.updated', 'Role', roleId, { name: input.name, status, storeAssignable, permissionsChanged: Boolean(permissions) }, tx);
         return tx.role.findUniqueOrThrow({
           where: { id: roleId },
           include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
@@ -464,6 +586,10 @@ export class AdminService {
     const code = requiredString(input.code, 'code').toUpperCase();
     const name = requiredString(input.name, 'name');
     const address = optionalString(input.address) ?? '';
+    const city = optionalString(input.city) ?? '';
+    const region = optionalString(input.region) ?? '';
+    const postalCode = optionalString(input.postalCode) ?? '';
+    const phone = optionalString(input.phone) ?? '';
     const timezone = optionalString(input.timezone) || 'Asia/Kolkata';
     const closeHour = input.closeHour === undefined || input.closeHour === null || input.closeHour === '' ? null : Number(input.closeHour);
     if (closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('closeHour must be an integer from 0 to 23');
@@ -479,7 +605,7 @@ export class AdminService {
         if (!entitlement || current >= entitlement.maxStores) {
           throw new ConflictException(`Store limit reached (${entitlement?.maxStores ?? 0})`);
         }
-        const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address, timezone, closeHour } });
+        const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address, city, region, postalCode, phone, timezone, closeHour, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
         await tx.stockLocation.create({
           data: { organizationId: context.organizationId, storeId: store.id, code: `${code}-STOCKROOM`, name: `${name} Stockroom` },
         });
@@ -501,18 +627,36 @@ export class AdminService {
     }
   }
 
+  /** Empty clears the store's own GSTIN (the organisation's is used); anything else must be a valid GSTIN. */
+  private storeTaxNumber(input: JsonObject): { taxNumber: string } | Record<string, never> {
+    if (input.taxNumber === undefined) return {};
+    const raw = optionalString(input.taxNumber) ?? '';
+    if (raw === '') return { taxNumber: '' };
+    const check = validateGstin(raw);
+    if (!check.valid) throw new BadRequestException(check.error ?? 'Invalid GSTIN');
+    return { taxNumber: check.normalized };
+  }
+
   async updateStore(context: UserContext, storeId: string, input: JsonObject) {
+    // Store lifecycle and identity are managed from the organisation's store administration area.
+    this.requireOrganizationPermission(context, 'stores.manage');
     await this.ensureStore(context.organizationId, storeId);
     const status = typeof input.status === 'string' ? input.status.toUpperCase() : undefined;
     if (status && !RECORD_STATUSES.includes(status)) throw new BadRequestException('Invalid store status');
     const closeHour = input.closeHour === undefined || input.closeHour === null || input.closeHour === '' ? undefined : Number(input.closeHour);
     if (closeHour !== undefined && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('closeHour must be an integer from 0 to 23');
+    const taxPatch = this.storeTaxNumber(input);
     await this.prisma.$transaction(async (tx) => {
       await tx.store.update({
         where: { id: storeId },
         data: {
+          ...taxPatch,
           ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
           ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
+          ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
+          ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
+          ...(optionalString(input.postalCode) !== undefined ? { postalCode: optionalString(input.postalCode) ?? '' } : {}),
+          ...(optionalString(input.phone) !== undefined ? { phone: optionalString(input.phone) ?? '' } : {}),
           ...(optionalString(input.timezone) ? { timezone: optionalString(input.timezone) } : {}),
           ...(closeHour !== undefined ? { closeHour } : {}),
           ...(status ? { status: status as RecordStatus } : {}),
@@ -528,25 +672,70 @@ export class AdminService {
     this.authorizationStoreAccess(context, id);
     this.authorization.assertPermissions(context, ['store.settings.view'], id);
     const store = await this.ensureStore(context.organizationId, id);
-    return { id: store.id, code: store.code, name: store.name, address: store.address, timezone: store.timezone, closeHour: store.closeHour };
+    const orgSettings = (await this.getOrganizationSettingsObject(context.organizationId));
+    const fieldSettings = objectField(store.fieldSettings);
+    const organisationProductFields = cleanFieldSet(orgSettings.productFields);
+    const storeCheckoutFields = cleanFieldSet(fieldSettings.checkoutFields, 'CHECKOUT');
+    const billing = { ...DEFAULT_BILLING_SETTINGS, ...objectField(store.billingSettings) };
+    return { id: store.id, code: store.code, name: store.name, address: store.address, city: store.city, region: store.region, postalCode: store.postalCode, phone: store.phone, timezone: store.timezone, closeHour: store.closeHour, taxNumber: store.taxNumber,
+      organisationProductFields, effectiveProductFields: organisationProductFields.fields, effectiveProductCoreFields: organisationProductFields.coreFields,
+      checkoutFieldSettings: storeCheckoutFields, effectiveCheckoutFields: storeCheckoutFields.fields,
+      requireBillHandler: billing.requireBillHandler === true, ...(await this.storeBilling(context.organizationId, billing)) };
+  }
+
+  /** This store's complete billing settings and the organisation's accounting currency. */
+  private async storeBilling(organizationId: string, own: unknown) {
+    const [organization, sales] = await Promise.all([
+      this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { currency: true } }),
+      this.prisma.sale.count({ where: { organizationId } }),
+    ]);
+    return {
+      currency: organization.currency,
+      currencyLocked: sales > 0,
+      billing: { ...DEFAULT_BILLING_SETTINGS, ...((own && typeof own === 'object' && !Array.isArray(own) ? own : {}) as JsonObject) },
+    };
   }
 
   async updateStoreSettings(context: UserContext, storeId: string, input: JsonObject) {
     const id = uuid(storeId, 'storeId');
     this.authorizationStoreAccess(context, id);
     this.authorization.assertPermissions(context, ['store.settings.manage'], id);
+    if ('productFields' in input) throw new BadRequestException('Product fields are owned by the organisation and cannot be changed by a store.');
     const closeHour = !('closeHour' in input) ? undefined : input.closeHour === null || input.closeHour === '' ? null : Number(input.closeHour);
     if (closeHour !== undefined && closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('Close hour must be an integer from 0 to 23');
+    const taxPatch = this.storeTaxNumber(input);
+    if (input.billing !== undefined && (typeof input.billing !== 'object' || input.billing === null || Array.isArray(input.billing))) throw new BadRequestException('billing must be an object');
+    const billingPatch = input.billing === undefined ? undefined : applyBillingPatch({ ...DEFAULT_BILLING_SETTINGS, ...objectField((await this.ensureStore(context.organizationId, id)).billingSettings) }, input.billing as JsonObject);
+    const store = await this.ensureStore(context.organizationId, id);
+    let fieldSettings: Prisma.InputJsonObject | undefined;
+    if (input.checkoutFields !== undefined) {
+      const currentFields = objectField(store.fieldSettings);
+      const nextSettings: JsonObject = { ...currentFields };
+      nextSettings.checkoutFields = cleanFieldSet(input.checkoutFields, 'CHECKOUT') as unknown as JsonObject;
+      fieldSettings = nextSettings as Prisma.InputJsonObject;
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.store.update({ where: { id }, data: {
+        ...taxPatch,
+        ...(billingPatch ? { billingSettings: billingPatch as Prisma.InputJsonObject } : {}),
+        ...(fieldSettings ? { fieldSettings } : {}),
         ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
         ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) ?? '' } : {}),
+        ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
+        ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
+        ...(optionalString(input.postalCode) !== undefined ? { postalCode: optionalString(input.postalCode) ?? '' } : {}),
+        ...(optionalString(input.phone) !== undefined ? { phone: optionalString(input.phone) ?? '' } : {}),
         ...(optionalString(input.timezone) ? { timezone: optionalString(input.timezone) } : {}),
         ...(closeHour !== undefined ? { closeHour } : {}),
       } });
       await this.audit.record(context, 'store.settings.updated', 'Store', id, { fields: Object.keys(input) }, tx);
     });
     return this.getStoreSettings(context, id);
+  }
+
+  private async getOrganizationSettingsObject(organizationId: string): Promise<JsonObject> {
+    const row = await this.prisma.organizationSettings.findUnique({ where: { organizationId }, select: { settings: true } });
+    return (row?.settings ?? {}) as JsonObject;
   }
 
   async listRegisters(context: UserContext, storeId?: string) {
@@ -567,7 +756,10 @@ export class AdminService {
   }
 
   async createRegister(context: UserContext, storeId: string, input: JsonObject) {
+    // Register setup is an organisation-side provisioning action; opening/closing a register remains store-scoped.
     await this.ensureStore(context.organizationId, storeId);
+    this.authorization.assertStoreAccess(context, storeId);
+    this.requireStoreOrOrganizationPermission(context, 'registers.manage', storeId);
     const code = requiredString(input.code, 'code').toUpperCase();
     const name = requiredString(input.name, 'name');
     try {
@@ -586,6 +778,8 @@ export class AdminService {
   async updateRegister(context: UserContext, registerId: string, input: JsonObject) {
     const register = await this.prisma.register.findFirst({ where: { id: registerId, organizationId: context.organizationId } });
     if (!register) throw new NotFoundException('Register not found');
+    this.authorization.assertStoreAccess(context, register.storeId);
+    this.requireStoreOrOrganizationPermission(context, 'registers.manage', register.storeId);
     const status = typeof input.status === 'string' ? input.status.toUpperCase() : undefined;
     if (status && !RECORD_STATUSES.includes(status)) throw new BadRequestException('Invalid register status');
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -693,6 +887,113 @@ export class AdminService {
     return this.taxGroupDto(updated);
   }
 
+  // ───────────── Product types ─────────────
+
+  private async assertTypeTargets(organizationId: string, config: TypeConfig) {
+    if (config.categoryIds.length) {
+      const found = await this.prisma.category.count({ where: { organizationId, id: { in: config.categoryIds } } });
+      if (found !== config.categoryIds.length) throw new BadRequestException('One of the chosen categories was not found');
+    }
+    if (config.brandIds.length) {
+      const found = await this.prisma.brand.count({ where: { organizationId, id: { in: config.brandIds } } });
+      if (found !== config.brandIds.length) throw new BadRequestException('One of the chosen brands was not found');
+    }
+  }
+
+  private productTypeDto(type: { id: string; name: string; description: string; status: RecordStatus; config: unknown; createdAt: Date }, productCount: number) {
+    return { id: type.id, name: type.name, description: type.description, status: type.status, config: readTypeConfig(type.config), productCount, createdAt: type.createdAt };
+  }
+
+  async listProductTypes(context: UserContext) {
+    if (!this.hasOrganizationScope(context, 'catalog.view')) throw new ForbiddenException('Missing organisation-wide permission: catalog.view');
+    const [types, counts] = await Promise.all([
+      this.prisma.productType.findMany({ where: { organizationId: context.organizationId }, orderBy: { name: 'asc' } }),
+      this.prisma.product.groupBy({ by: ['productTypeId'], where: { organizationId: context.organizationId, productTypeId: { not: null } }, _count: { _all: true } }),
+    ]);
+    const byType = new Map(counts.map((row) => [row.productTypeId, row._count._all]));
+    return types.map((type) => this.productTypeDto(type, byType.get(type.id) ?? 0));
+  }
+
+  async createProductType(context: UserContext, input: JsonObject) {
+    this.requireOrganizationPermission(context, 'catalog.manage');
+    const name = requiredString(input.name, 'name');
+    const config = cleanTypeConfig(input.config);
+    await this.assertTypeTargets(context.organizationId, config);
+    try {
+      const type = await this.prisma.productType.create({ data: { organizationId: context.organizationId, name, description: optionalString(input.description) ?? '', config: config as unknown as Prisma.InputJsonObject } });
+      await this.audit.record(context, 'product-type.created', 'ProductType', type.id, { name });
+      return this.productTypeDto(type, 0);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('A product type with this name already exists');
+      throw error;
+    }
+  }
+
+  async updateProductType(context: UserContext, typeId: string, input: JsonObject) {
+    this.requireOrganizationPermission(context, 'catalog.manage');
+    const id = uuid(typeId, 'typeId');
+    const current = await this.prisma.productType.findFirst({ where: { id, organizationId: context.organizationId } });
+    if (!current) throw new NotFoundException('Product type not found');
+    const status = input.status === undefined ? undefined : oneOf(input.status, ['ACTIVE', 'DISABLED'] as const, 'status');
+    const config = input.config === undefined ? undefined : cleanTypeConfig(input.config);
+    if (config) await this.assertTypeTargets(context.organizationId, config);
+    try {
+      const type = await this.prisma.productType.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined ? { name: requiredString(input.name, 'name') } : {}),
+          ...(input.description !== undefined ? { description: optionalString(input.description) ?? '' } : {}),
+          ...(status ? { status } : {}),
+          ...(config ? { config: config as unknown as Prisma.InputJsonObject } : {}),
+        },
+      });
+      await this.audit.record(context, 'product-type.updated', 'ProductType', id, { changed: Object.keys(input) });
+      return this.productTypeDto(type, await this.prisma.product.count({ where: { productTypeId: id } }));
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('A product type with this name already exists');
+      throw error;
+    }
+  }
+
+  /** Loads an active type for a product, or explains why it cannot be used. */
+  private async usableType(organizationId: string, typeId: string) {
+    const type = await this.prisma.productType.findFirst({ where: { id: typeId, organizationId } });
+    if (!type) throw new BadRequestException('Product type not found');
+    if (type.status !== 'ACTIVE') throw new BadRequestException('This product type is switched off');
+    return { id: type.id, name: type.name, config: readTypeConfig(type.config) };
+  }
+
+  private async cleanCustomProductFields(organizationId: string, level: 'PRODUCT' | 'VARIANT', incoming: unknown, current: unknown) {
+    const settings = await this.getOrganizationSettingsObject(organizationId);
+    const definitions = cleanFieldSet(settings.productFields).fields;
+    const known = new Set(definitions.filter((field) => field.level === level).map((field) => field.key));
+    const values = objectField(current);
+    if (incoming !== undefined) {
+      const patch = objectField(incoming);
+      for (const key of Object.keys(patch)) if (!known.has(key)) throw new BadRequestException(`Unknown product field: ${key}`);
+      Object.assign(values, patch);
+    }
+    // Keep values for disabled definitions so re-enabling a field does not erase catalogue data.
+    return cleanFieldValues(definitions.filter((field) => field.level === level), values, { preserveUnknown: true });
+  }
+
+  /** The type's rules for the standard fields. Barcode and tax group are checked when variants are saved. */
+  private assertProductFitsType(type: { name: string; config: TypeConfig }, fields: { categoryId: string | null; brandId: string | null; brandText: string }) {
+    const { config } = type;
+    if (config.requireCategory && !fields.categoryId) throw new BadRequestException(`A category is required for ${type.name} products`);
+    if (fields.categoryId && config.categoryIds.length && !config.categoryIds.includes(fields.categoryId)) throw new BadRequestException(`This category is not allowed for ${type.name} products`);
+    if (config.requireBrand && !fields.brandId && !fields.brandText) throw new BadRequestException(`A brand is required for ${type.name} products`);
+    if (fields.brandId && config.brandIds.length && !config.brandIds.includes(fields.brandId)) throw new BadRequestException(`This brand is not allowed for ${type.name} products`);
+  }
+
+  /** Barcode requirements of the product's type, checked whenever one of its variants is saved. */
+  private async assertVariantFitsType(organizationId: string, productId: string, fields: { hasBarcode: boolean }) {
+    const product = await this.prisma.product.findFirst({ where: { id: productId, organizationId }, select: { productType: { select: { name: true, config: true } } } });
+    if (!product?.productType) return;
+    const config = readTypeConfig(product.productType.config);
+    if (config.requireBarcode && !fields.hasBarcode) throw new BadRequestException(`A barcode is required for ${product.productType.name} products`);
+  }
+
   async listProducts(context: UserContext) {
     this.requireOrganizationPermission(context, 'catalog.view');
     const products = await this.prisma.product.findMany({
@@ -775,15 +1076,34 @@ export class AdminService {
     const id = uuid(productId, 'productId');
     const current = await this.prisma.product.findFirst({ where: { id, organizationId: context.organizationId } });
     if (!current) throw new NotFoundException('Product not found');
+    const customFields = await this.cleanCustomProductFields(context.organizationId, 'PRODUCT', input.customFields, current.customFields);
     const status = input.status === undefined ? undefined : this.productStatus(input.status);
     const categoryId = input.categoryId === null ? null : input.categoryId === undefined ? undefined : uuid(input.categoryId, 'categoryId');
     if (categoryId && !(await this.prisma.category.findFirst({ where: { id: categoryId, organizationId: context.organizationId }, select: { id: true } }))) {
       throw new BadRequestException('Category not found');
     }
+    // Product type rules: checked when the type, category, brand or extra fields change.
+    const typeChanging = input.productTypeId !== undefined;
+    const effectiveTypeId = input.productTypeId === null ? null : typeof input.productTypeId === 'string' ? uuid(input.productTypeId, 'productTypeId') : current.productTypeId;
+    let attributePatch: Record<string, string | number | boolean> | undefined;
+    if (effectiveTypeId) {
+      const touched = typeChanging || input.categoryId !== undefined || input.brandId !== undefined || input.brand !== undefined || input.attributes !== undefined;
+      if (touched) {
+        const type = await this.usableType(context.organizationId, effectiveTypeId);
+        const nextBrandId = input.brandId === null ? null : typeof input.brandId === 'string' ? uuid(input.brandId, 'brandId') : current.brandId;
+        const nextCategoryId = categoryId === undefined ? current.categoryId : categoryId;
+        this.assertProductFitsType(type, { categoryId: nextCategoryId, brandId: nextBrandId, brandText: input.brand !== undefined ? optionalString(input.brand) ?? '' : current.brand });
+        if (input.attributes !== undefined || typeChanging) attributePatch = cleanAttributeValues(type.config, input.attributes !== undefined ? input.attributes : typeChanging ? {} : current.attributes);
+      }
+    } else if (typeChanging) attributePatch = {};
+    else if (input.attributes !== undefined && Object.keys((input.attributes ?? {}) as object).length) throw new BadRequestException('Choose a product type before filling its extra fields');
     const updated = await this.prisma.$transaction(async (tx) => {
       const product = await tx.product.update({
         where: { id },
         data: {
+          ...(typeChanging ? { productTypeId: effectiveTypeId } : {}),
+          ...(attributePatch ? { attributes: attributePatch as Prisma.InputJsonObject } : {}),
+          ...(customFields ? { customFields: customFields as Prisma.InputJsonObject } : {}),
           ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
           ...(optionalString(input.description) !== undefined ? { description: optionalString(input.description) } : {}),
           ...(optionalString(input.brand) !== undefined ? { brand: optionalString(input.brand) } : {}),
@@ -814,12 +1134,24 @@ export class AdminService {
       brandName = brand.name;
     }
     const status = this.productStatus(input.status);
+    const customFields = await this.cleanCustomProductFields(context.organizationId, 'PRODUCT', input.customFields, {});
+    let productTypeId: string | null = null;
+    let attributes: Record<string, string | number | boolean> = {};
+    if (typeof input.productTypeId === 'string' && input.productTypeId) {
+      const type = await this.usableType(context.organizationId, uuid(input.productTypeId, 'productTypeId'));
+      this.assertProductFitsType(type, { categoryId, brandId, brandText: brandName });
+      attributes = cleanAttributeValues(type.config, input.attributes);
+      productTypeId = type.id;
+    } else if (input.attributes !== undefined && Object.keys((input.attributes ?? {}) as object).length) throw new BadRequestException('Choose a product type before filling its extra fields');
     const product = await this.prisma.$transaction(async (tx) => {
       const created = await tx.product.create({
         data: {
           organizationId: context.organizationId,
           categoryId,
           brandId,
+          productTypeId,
+          attributes: attributes as Prisma.InputJsonObject,
+          customFields: customFields as Prisma.InputJsonObject,
           name,
           description: optionalString(input.description) ?? '',
           brand: brandName,
@@ -835,17 +1167,15 @@ export class AdminService {
 
   async createVariant(context: UserContext, productId: string, input: JsonObject) {
     this.requireOrganizationPermission(context, 'catalog.manage');
+    if ('taxGroupId' in input) throw new BadRequestException('Tax groups are assigned by each store, not by the organisation catalog.');
     const product = await this.prisma.product.findFirst({ where: { id: productId, organizationId: context.organizationId }, select: { id: true } });
     if (!product) throw new NotFoundException('Product not found');
+    const customFields = await this.cleanCustomProductFields(context.organizationId, 'VARIANT', input.customFields, {});
     const sku = requiredString(input.sku, 'sku').toUpperCase();
     const name = requiredString(input.name, 'name');
     const uomId = typeof input.uomId === 'string' ? uuid(input.uomId, 'uomId') : null;
-    const taxGroupId = typeof input.taxGroupId === 'string' ? uuid(input.taxGroupId, 'taxGroupId') : null;
     if (uomId && !(await this.prisma.unitOfMeasure.findFirst({ where: { id: uomId, organizationId: context.organizationId }, select: { id: true } }))) {
       throw new BadRequestException('Unit of measure not found');
-    }
-    if (taxGroupId && !(await this.prisma.taxGroup.findFirst({ where: { id: taxGroupId, organizationId: context.organizationId, storeId: null }, select: { id: true } }))) {
-      throw new BadRequestException('Tax group not found');
     }
     let amountCents: number | undefined;
     if (input.amountCents !== undefined) {
@@ -853,13 +1183,16 @@ export class AdminService {
       if (!Number.isInteger(amountCents) || amountCents < 0) throw new BadRequestException('amountCents must be a non-negative integer');
     }
     const barcode = optionalString(input.barcode);
+    await this.assertVariantFitsType(context.organizationId, productId, { hasBarcode: Boolean(barcode) });
     const status = this.productStatus(input.status);
     const costCents = input.costCents === undefined ? 0 : money(input.costCents, 'costCents');
+    const openPrice = input.openPrice === true;
+    const floorPriceCents = input.floorPriceCents === undefined ? 0 : money(input.floorPriceCents, 'floorPriceCents');
 
     try {
       await this.prisma.$transaction(async (tx) => {
         const variant = await tx.productVariant.create({
-          data: { organizationId: context.organizationId, productId, sku, name, status, uomId, taxGroupId, costCents },
+          data: { organizationId: context.organizationId, productId, sku, name, status, uomId, costCents, openPrice, floorPriceCents, customFields: customFields as Prisma.InputJsonObject },
         });
         if (barcode) await tx.barcode.create({ data: { organizationId: context.organizationId, variantId: variant.id, code: barcode } });
         if (amountCents !== undefined) {
@@ -868,7 +1201,7 @@ export class AdminService {
               organizationId: context.organizationId,
               variantId: variant.id,
               amountCents,
-              currency: optionalString(input.currency) || 'INR',
+              currency: optionalString(input.currency) || await this.orgCurrency(context.organizationId),
               includesTax: input.includesTax === true,
             },
           });
@@ -885,23 +1218,29 @@ export class AdminService {
 
   async updateVariant(context: UserContext, variantId: string, input: JsonObject) {
     this.requireOrganizationPermission(context, 'catalog.manage');
+    if ('taxGroupId' in input) throw new BadRequestException('Tax groups are assigned by each store, not by the organisation catalog.');
     const id = uuid(variantId, 'variantId');
     const current = await this.prisma.productVariant.findFirst({ where: { id, organizationId: context.organizationId } });
     if (!current) throw new NotFoundException('Variant not found');
+    const customFields = await this.cleanCustomProductFields(context.organizationId, 'VARIANT', input.customFields, current.customFields);
     const status = input.status === undefined ? undefined : this.productStatus(input.status);
     const costCents = input.costCents === undefined ? undefined : money(input.costCents, 'costCents');
     const uomId = input.uomId === null ? null : input.uomId === undefined ? undefined : uuid(input.uomId, 'uomId');
-    const taxGroupId = input.taxGroupId === null ? null : input.taxGroupId === undefined ? undefined : uuid(input.taxGroupId, 'taxGroupId');
     if (uomId && !(await this.prisma.unitOfMeasure.findFirst({ where: { id: uomId, organizationId: context.organizationId }, select: { id: true } }))) throw new BadRequestException('Unit of measure not found');
-    if (taxGroupId && !(await this.prisma.taxGroup.findFirst({ where: { id: taxGroupId, organizationId: context.organizationId, storeId: null }, select: { id: true } }))) throw new BadRequestException('Tax group not found');
+    {
+      const barcodeCount = Array.isArray(input.barcodes) ? stringArray(input.barcodes).length : await this.prisma.barcode.count({ where: { variantId: id } });
+      await this.assertVariantFitsType(context.organizationId, current.productId, { hasBarcode: barcodeCount > 0 });
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
       const variant = await tx.productVariant.update({ where: { id }, data: {
         ...(optionalString(input.sku) ? { sku: optionalString(input.sku)?.toUpperCase() } : {}),
         ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
         ...(status ? { status } : {}),
         ...(costCents !== undefined ? { costCents } : {}),
+        ...(input.openPrice !== undefined ? { openPrice: input.openPrice === true } : {}),
+        ...(input.floorPriceCents !== undefined ? { floorPriceCents: money(input.floorPriceCents, 'floorPriceCents') } : {}),
         ...(uomId !== undefined ? { uomId } : {}),
-        ...(taxGroupId !== undefined ? { taxGroupId } : {}),
+        ...(customFields ? { customFields: customFields as Prisma.InputJsonObject } : {}),
       } });
       if (Array.isArray(input.barcodes)) {
         const codes = stringArray(input.barcodes);
@@ -912,7 +1251,7 @@ export class AdminService {
       }
       if (input.amountCents !== undefined) {
         const amountCents = money(input.amountCents);
-        await tx.variantPrice.create({ data: { organizationId: context.organizationId, variantId: id, amountCents, currency: optionalString(input.currency) || 'INR', includesTax: input.includesTax === true } });
+        await tx.variantPrice.create({ data: { organizationId: context.organizationId, variantId: id, amountCents, currency: optionalString(input.currency) || await this.orgCurrency(context.organizationId), includesTax: input.includesTax === true } });
       }
       await this.audit.record(context, 'product-variant.updated', 'ProductVariant', id, { fields: Object.keys(input) }, tx);
       return variant;
@@ -967,17 +1306,16 @@ export class AdminService {
     const preview = await this.previewCatalogImport(context, input);
     if (preview.errors.length) throw new BadRequestException({ message: 'Import contains validation errors', errors: preview.errors });
     const rows = this.importRows(input.rows);
+    const currency = await this.orgCurrency(context.organizationId);
     await this.prisma.$transaction(async (tx) => {
       const products = new Map<string, { id: string }>();
-      const taxGroups = new Map<number, { id: string }>();
       for (const row of rows) {
         const sku = String(row.sku).trim().toUpperCase();
         const name = String(row.name).trim();
         const productName = optionalString(row.productName) || name;
         const categoryName = optionalString(row.category);
         const brand = optionalString(row.brand) || '';
-        const rate = Number(row.ratePercent ?? row.gst ?? 0);
-        const amountCents = row.priceCents !== undefined ? money(row.priceCents, 'priceCents') : Math.round(Number(row.price) * 100);
+        const amountCents = row.priceCents !== undefined ? money(row.priceCents, 'priceCents') : Math.round(Number(row.price) * minorFactor(currency));
         const category = categoryName ? await tx.category.findFirst({ where: { organizationId: context.organizationId, name: categoryName } }) : null;
         const productKey = `${productName}\u0000${category?.id ?? ''}\u0000${brand}`;
         let product = products.get(productKey);
@@ -985,17 +1323,11 @@ export class AdminService {
           product = await tx.product.create({ data: { organizationId: context.organizationId, categoryId: category?.id ?? null, name: productName, brand }, select: { id: true } });
           products.set(productKey, product);
         }
-        const rateBps = Math.round(rate * 100);
-        let taxGroup = taxGroups.get(rateBps);
-        if (!taxGroup) {
-          taxGroup = await tx.taxGroup.upsert({ where: { organizationId_code: { organizationId: context.organizationId, code: `GST_${rate}` } }, create: { organizationId: context.organizationId, code: `GST_${rate}`, name: `GST ${rate}%`, rateBps }, update: {}, select: { id: true } });
-          taxGroups.set(rateBps, taxGroup);
-        }
         const costCents = row.costCents !== undefined ? money(row.costCents, 'costCents') : 0;
-        const variant = await tx.productVariant.create({ data: { organizationId: context.organizationId, productId: product.id, sku, name, costCents, taxGroupId: taxGroup.id } });
+        const variant = await tx.productVariant.create({ data: { organizationId: context.organizationId, productId: product.id, sku, name, costCents } });
         const barcode = optionalString(row.barcode);
         if (barcode) await tx.barcode.create({ data: { organizationId: context.organizationId, variantId: variant.id, code: barcode } });
-        await tx.variantPrice.create({ data: { organizationId: context.organizationId, variantId: variant.id, amountCents, currency: 'INR', includesTax: row.includesTax === true } });
+        await tx.variantPrice.create({ data: { organizationId: context.organizationId, variantId: variant.id, amountCents, currency, includesTax: row.includesTax === true } });
       }
       await this.audit.record(context, 'catalog.imported', 'Product', null, { rowCount: rows.length }, tx);
     });
@@ -1021,6 +1353,142 @@ export class AdminService {
     const onboarding = { ...current, data: { ...oldData, ...patchData }, currentStep, completedSteps: [...new Set([...completedSteps, currentStep])] } as JsonObject;
     await this.prisma.organizationSettings.upsert({ where: { organizationId: context.organizationId }, create: { organizationId: context.organizationId, settings: { onboarding } as Prisma.InputJsonObject }, update: { settings: { ...(await this.getSettings(context)).settings, onboarding } as Prisma.InputJsonObject } });
     await this.audit.record(context, 'onboarding.progressed', 'OrganizationSettings', context.organizationId, { currentStep }, undefined);
+    return { onboarding };
+  }
+
+  /** Saves the required setup and first store atomically; retrying reuses the first active store. */
+  async completeRequiredOnboarding(context: UserContext, input: JsonObject) {
+    this.requireOrganizationPermission(context, 'org.settings.manage');
+    const orgInput = input.organization && typeof input.organization === 'object' && !Array.isArray(input.organization) ? input.organization as JsonObject : {};
+    const storeInput = input.store && typeof input.store === 'object' && !Array.isArray(input.store) ? input.store as JsonObject : {};
+    const name = requiredString(orgInput.name, 'organization.name');
+    if (name.length < 2 || name.length > 120) throw new BadRequestException('Organisation name must be between 2 and 120 characters');
+    const countryCode = oneOf(orgInput.countryCode, MARKETS.map((market) => market.code), 'organization.countryCode');
+    if (!isMarketCode(countryCode)) throw new BadRequestException('Choose a supported country or region');
+    if (!isCurrencyCode(orgInput.currency)) throw new BadRequestException('Choose a supported base currency');
+    const currency = orgInput.currency;
+    const businessType = oneOf(orgInput.businessType ?? 'RETAIL', ['RETAIL', 'GROCERY', 'PHARMACY', 'OTHER'] as const, 'organization.businessType');
+    const taxProfileStatus = oneOf(orgInput.taxProfileStatus, ['REGISTERED', 'NOT_REGISTERED', 'UNSURE'] as const, 'organization.taxProfileStatus');
+    const rawGstin = optionalString(orgInput.gstin) ?? '';
+    let gstin = '';
+    if (countryCode === 'IN' && taxProfileStatus === 'REGISTERED') {
+      const result = validateGstin(rawGstin);
+      if (!result.valid) throw new BadRequestException(result.error ?? 'Enter a valid GSTIN');
+      gstin = result.normalized;
+    } else if (rawGstin) {
+      const result = validateGstin(rawGstin);
+      if (!result.valid) throw new BadRequestException(result.error ?? 'Enter a valid tax number');
+      gstin = result.normalized;
+    }
+    const market = MARKETS.find((entry) => entry.code === countryCode)!;
+    const organizationTimezone = optionalString(orgInput.timezone) || market.timezone;
+    try { new Intl.DateTimeFormat('en', { timeZone: organizationTimezone }); }
+    catch { throw new BadRequestException('Choose a valid organisation time zone'); }
+
+    const storeName = requiredString(storeInput.name, 'store.name');
+    if (storeName.length > 120) throw new BadRequestException('Store name must be 120 characters or fewer');
+    const address = requiredString(storeInput.address, 'store.address');
+    const city = requiredString(storeInput.city, 'store.city');
+    const region = optionalString(storeInput.region) ?? '';
+    const postalCode = optionalString(storeInput.postalCode) ?? '';
+    const phone = optionalString(storeInput.phone) ?? '';
+    const storeTimezone = optionalString(storeInput.timezone) || organizationTimezone;
+    try { new Intl.DateTimeFormat('en', { timeZone: storeTimezone }); }
+    catch { throw new BadRequestException('Choose a valid store time zone'); }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${context.organizationId}::uuid FOR UPDATE`;
+        const organization = await tx.organization.findUnique({ where: { id: context.organizationId }, select: { status: true } });
+        if (!organization || organization.status !== 'ACTIVE') throw new BadRequestException('Organisation is not active');
+        const entitlement = await tx.organizationEntitlement.findUnique({ where: { organizationId: context.organizationId } });
+        if (!entitlement || entitlement.maxStores < 1) throw new ConflictException('The organisation does not have an available store');
+
+        let store = await tx.store.findFirst({ where: { organizationId: context.organizationId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
+        if (store) {
+          store = await tx.store.update({
+            where: { id: store.id },
+            data: { name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone },
+          });
+        } else {
+          const activeCount = await tx.store.count({ where: { organizationId: context.organizationId, status: 'ACTIVE' } });
+          if (activeCount >= entitlement.maxStores) throw new ConflictException(`Store limit reached (${entitlement.maxStores})`);
+          let code = 'STORE-01';
+          for (let sequence = 1; await tx.store.findUnique({ where: { organizationId_code: { organizationId: context.organizationId, code } }, select: { id: true } }); sequence += 1) {
+            code = `STORE-${String(sequence + 1).padStart(2, '0')}`;
+            if (sequence >= 999) throw new ConflictException('Could not generate a unique store code');
+          }
+          store = await tx.store.create({ data: { organizationId: context.organizationId, code, name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
+        }
+
+        await tx.stockLocation.upsert({
+          where: { organizationId_code: { organizationId: context.organizationId, code: `${store.code}-STOCKROOM` } },
+          create: { organizationId: context.organizationId, storeId: store.id, code: `${store.code}-STOCKROOM`, name: `${store.name} Stockroom` },
+          update: { storeId: store.id, name: `${store.name} Stockroom`, status: 'ACTIVE' },
+        });
+        let register = await tx.register.findFirst({ where: { storeId: store.id, organizationId: context.organizationId, status: 'ACTIVE' }, orderBy: { createdAt: 'asc' } });
+        if (!register) {
+          const existingRegister = await tx.register.findUnique({ where: { storeId_code: { storeId: store.id, code: 'REG-01' } } });
+          register = existingRegister
+            ? await tx.register.update({ where: { id: existingRegister.id }, data: { name: existingRegister.name || 'Front Register', status: 'ACTIVE' } })
+            : await tx.register.create({ data: { organizationId: context.organizationId, storeId: store.id, code: 'REG-01', name: 'Front Register' } });
+        }
+
+        await tx.organization.update({
+          where: { id: context.organizationId },
+          data: { name, countryCode, currency, businessType, timezone: organizationTimezone, taxProfileStatus, gstin },
+        });
+        await tx.user.update({ where: { id: context.userId }, data: { defaultStoreId: store.id } });
+        await tx.userStore.updateMany({ where: { userId: context.userId }, data: { isDefault: false } });
+        await tx.userStore.upsert({
+          where: { userId_storeId: { userId: context.userId, storeId: store.id } },
+          create: { userId: context.userId, storeId: store.id, isDefault: true },
+          update: { isDefault: true },
+        });
+        const storeManagerRole = await tx.role.findUnique({ where: { organizationId_name: { organizationId: context.organizationId, name: 'Store Manager' } }, select: { id: true } });
+        if (!storeManagerRole) throw new ConflictException('The Store Manager role is not configured');
+        const ownerStoreRole = await tx.userRole.findFirst({ where: { userId: context.userId, roleId: storeManagerRole.id, scopeType: 'STORE', storeId: store.id }, select: { id: true } });
+        if (!ownerStoreRole) await tx.userRole.create({ data: { organizationId: context.organizationId, userId: context.userId, roleId: storeManagerRole.id, scopeType: 'STORE', storeId: store.id } });
+
+        const prior = await tx.organizationSettings.findUnique({ where: { organizationId: context.organizationId }, select: { settings: true } });
+        const settings = (prior?.settings && typeof prior.settings === 'object' && !Array.isArray(prior.settings) ? prior.settings : {}) as JsonObject;
+        const existingOnboarding = settings.onboarding && typeof settings.onboarding === 'object' && !Array.isArray(settings.onboarding) ? settings.onboarding as JsonObject : {};
+        const onboarding = {
+          ...existingOnboarding,
+          version: 2,
+          currentStep: 2,
+          completedSteps: [0, 1],
+          complete: true,
+          required: false,
+          optionalSkippedAt: null,
+          data: { ...(existingOnboarding.data && typeof existingOnboarding.data === 'object' && !Array.isArray(existingOnboarding.data) ? existingOnboarding.data as JsonObject : {}), organization: { name, countryCode, currency, businessType, timezone: organizationTimezone, taxProfileStatus, gstin }, store: { name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone } },
+        };
+        const nextSettings: JsonObject = { ...settings, defaultStoreId: store.id, ...(Array.isArray(settings.enabledTenders) ? {} : { enabledTenders: ['CASH'] }), onboarding };
+        await tx.organizationSettings.upsert({
+          where: { organizationId: context.organizationId },
+          create: { organizationId: context.organizationId, settings: nextSettings as Prisma.InputJsonObject },
+          update: { settings: nextSettings as Prisma.InputJsonObject },
+        });
+        await this.audit.record(context, 'onboarding.required-completed', 'OrganizationSettings', context.organizationId, { storeId: store.id, countryCode, currency, taxProfileStatus }, tx);
+        return { onboarding, organization: { name, countryCode, currency, businessType, timezone: organizationTimezone, taxProfileStatus }, store: { id: store.id, code: store.code, name: store.name, register: { id: register.id, code: register.code, name: register.name } } };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('Could not create the first store because its generated code is already in use');
+      throw error;
+    }
+  }
+
+  async skipOptionalOnboarding(context: UserContext) {
+    this.requireOrganizationPermission(context, 'org.settings.manage');
+    const current = (await this.getOnboarding(context)).onboarding;
+    if (current.complete !== true) throw new BadRequestException('Complete the organisation and first-store setup before skipping optional setup');
+    const optionalSkippedAt = new Date().toISOString();
+    await this.prisma.$executeRaw`UPDATE organization_settings
+      SET settings = jsonb_set(settings, '{onboarding}',
+        COALESCE(settings->'onboarding', '{}'::jsonb) || jsonb_build_object('optionalSkippedAt', ${optionalSkippedAt}::text), true)
+      WHERE organization_id = ${context.organizationId}::uuid`;
+    const onboarding = { ...current, optionalSkippedAt } as JsonObject;
+    await this.audit.record(context, 'onboarding.optional-skipped', 'OrganizationSettings', context.organizationId, {}, undefined);
     return { onboarding };
   }
 
@@ -1069,7 +1537,7 @@ export class AdminService {
           const currentStore = existing[index];
           const store = currentStore
             ? await tx.store.update({ where: { id: currentStore.id }, data: { code: draft.code, name: draft.name, address: draft.address, timezone: draft.timezone, closeHour: draft.closeHour, status: 'ACTIVE' } })
-            : await tx.store.create({ data: { organizationId: context.organizationId, code: draft.code, name: draft.name, address: draft.address, timezone: draft.timezone, closeHour: draft.closeHour } });
+            : await tx.store.create({ data: { organizationId: context.organizationId, code: draft.code, name: draft.name, address: draft.address, timezone: draft.timezone, closeHour: draft.closeHour, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
           await tx.stockLocation.upsert({
             where: { organizationId_code: { organizationId: context.organizationId, code: `${draft.code}-STOCKROOM` } },
             create: { organizationId: context.organizationId, storeId: store.id, code: `${draft.code}-STOCKROOM`, name: `${draft.name} Stockroom` },
@@ -1150,16 +1618,13 @@ export class AdminService {
         id: true,
         name: true,
         registers: { where: { status: 'ACTIVE' }, select: { id: true }, take: 1 },
-        userRoles: { where: { scopeType: 'STORE', role: { name: 'Store Manager', status: 'ACTIVE' }, user: { status: 'ACTIVE' } }, select: { id: true }, take: 1 },
       },
     });
     if (stores.length === 0) throw new BadRequestException('Create at least one store before finishing setup');
     const missingRegister = stores.find((store) => store.registers.length === 0);
     if (missingRegister) throw new BadRequestException(`${missingRegister.name} needs an active register`);
-    const missingManager = stores.find((store) => store.userRoles.length === 0);
-    if (missingManager) throw new BadRequestException(`${missingManager.name} needs an assigned Store Manager`);
     const settings = (await this.getSettings(context)).settings;
-    const onboarding = { ...((settings.onboarding ?? {}) as JsonObject), currentStep: 7, completedSteps: [0, 1, 2, 3, 4, 5, 6, 7], complete: true };
+    const onboarding = { ...((settings.onboarding ?? {}) as JsonObject), version: 2, currentStep: 2, completedSteps: [0, 1], complete: true, required: false };
     const next = { ...settings, onboarding } as Prisma.InputJsonObject;
     await this.prisma.organizationSettings.upsert({ where: { organizationId: context.organizationId }, create: { organizationId: context.organizationId, settings: next }, update: { settings: next } });
     await this.audit.record(context, 'onboarding.completed', 'OrganizationSettings', context.organizationId, {}, undefined);
@@ -1210,6 +1675,13 @@ export class AdminService {
 
   private requireOrganizationPermission(context: UserContext, permissionCode: string): void {
     if (!this.hasOrganizationScope(context, permissionCode)) throw new ForbiddenException(`Missing organisation-wide permission: ${permissionCode}`);
+  }
+
+  /** Store provisioning may be performed by organisation admins or by an explicitly authorized store manager. */
+  private requireStoreOrOrganizationPermission(context: UserContext, permissionCode: string, storeId: string): void {
+    if (!this.authorization.hasPermission(context, permissionCode, storeId) && !this.authorization.hasPermission(context, permissionCode)) {
+      throw new ForbiddenException(`Missing permission: ${permissionCode}`);
+    }
   }
 
   private async ensurePermissions(permissionCodes: string[]) {
@@ -1321,6 +1793,7 @@ export class AdminService {
       name: role.name,
       description: role.description,
       isSystem: role.isSystem,
+      storeAssignable: role.storeAssignable,
       status: role.status,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
@@ -1374,6 +1847,10 @@ export class AdminService {
       description: product.description,
       brand: product.brandRef?.name ?? product.brand,
       brandId: product.brandId,
+      productTypeId: product.productTypeId,
+      productType: product.productType,
+      attributes: product.attributes,
+      customFields: product.customFields,
       status: product.status,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
@@ -1383,11 +1860,12 @@ export class AdminService {
         sku: variant.sku,
         name: variant.name,
         costCents: variant.costCents,
+        openPrice: variant.openPrice,
+        floorPriceCents: variant.floorPriceCents,
         status: variant.status,
+        customFields: variant.customFields,
         uomId: variant.uomId,
-        taxGroupId: variant.taxGroupId,
         uomCode: variant.uom?.code ?? null,
-        taxCode: variant.taxGroup?.code ?? null,
         createdAt: variant.createdAt,
         updatedAt: variant.updatedAt,
         barcodes: variant.barcodes.map((barcode) => barcode.code),

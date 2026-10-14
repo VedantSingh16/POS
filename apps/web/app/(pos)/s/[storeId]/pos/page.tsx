@@ -11,11 +11,12 @@ export default async function PosPage({ params }: PageProps<"/s/[storeId]/pos">)
   const store = me.stores.find((s) => s.id === storeId);
   // Each request is independent: if one fails (or is not permitted) the till still opens and says what is missing.
   const problems: string[] = [];
-  const [{ data: products }, { data: categories }, { data: registers }, { data: customers }] = await Promise.all([
+  const [{ data: products }, { data: categories }, { data: registers }, { data: customers }, { data: checkoutConfig }] = await Promise.all([
     soft(api.products(storeId), [], (m) => problems.push(`products: ${m}`)),
     soft(api.categories(storeId), [], (m) => problems.push(`categories: ${m}`)),
     soft(api.registers(storeId), [], (m) => problems.push(`registers: ${m}`)),
     soft(api.customers(storeId), [], (m) => problems.push(`customers: ${m}`)),
+    soft(api.checkoutConfig(storeId), { fields: [], coreFields: ["billHandler", "tender", "cashTendered"], handlers: [], requireBillHandler: false, requireDiscountReasonCode: false, discountReasons: [], discounts: { lineEnabled: true, lineMaxPercent: 100, billEnabled: true, billMaxPercent: 100, allowStacking: true }, productFields: [], productCoreFields: ["name", "sku", "price"] }, (m) => problems.push(`checkout settings: ${m}`)),
   ]);
   return (
     <SessionProvider me={me}>
@@ -23,6 +24,8 @@ export default async function PosPage({ params }: PageProps<"/s/[storeId]/pos">)
         storeId={storeId}
         storeName={store?.name ?? "Store"}
         cashier={me.user.displayName}
+        currentUserId={me.user.userId}
+        checkoutConfig={checkoutConfig}
         products={products.map((product) => ({ ...product, status: product.status === "ACTIVE" || product.status === "SEASONAL" ? "ACTIVE" as const : "INACTIVE" as const }))}
         categories={categories.map((c) => c.name)}
         customers={customers.map((customer) => ({ id: customer.id, name: customer.name, phone: customer.phone }))}

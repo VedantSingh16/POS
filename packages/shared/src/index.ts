@@ -2,3 +2,8 @@ export * from './gst.js';
 export * from './money.js';
 export * from './permissions.js';
 export * from './schemas.js';
+export * from './pricing.js';
+export * from './tax-id.js';
+export * from './fiscal.js';
+export * from './currency.js';
+export * from './markets.js';

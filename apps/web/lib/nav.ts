@@ -1,7 +1,7 @@
 import { hasOrgScope, hasPermission, type Me } from "@/lib/permissions";
 import {
-  LayoutDashboard, Users, ShieldCheck, Store, Package, Tags, FolderTree, Percent, UserRound, BarChart3, Settings,
-  ScrollText, ArrowLeftRight, CircleDollarSign, Ruler, Receipt, Undo2, Boxes, Landmark, CheckCheck, Bell, ShoppingCart, type LucideIcon,
+  LayoutDashboard, Users, ShieldCheck, Store, Package, FolderTree, Percent, UserRound, BarChart3, Settings,
+  ScrollText, ArrowLeftRight, CircleDollarSign, Receipt, Undo2, Boxes, Landmark, CheckCheck, Bell, ShoppingCart, type LucideIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -34,12 +34,10 @@ export const NAV: NavSection[] = [
       { label: "Stock transfers", href: "/org/transfers", icon: ArrowLeftRight, permission: "transfer.manage", group: "Stores & team", keywords: ["move stock", "transfer"] },
       { label: "Distributions", href: "/org/distributions", icon: ArrowLeftRight, permission: "catalog.distribute", group: "Stores & team", keywords: ["push stock", "distribute", "allocation"] },
       { label: "Roles & access", href: "/org/roles", icon: ShieldCheck, permission: "roles.view", group: "Stores & team", keywords: ["permissions"] },
-      { label: "Products", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Product catalogue", keywords: ["catalogue", "items"] },
+      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Product catalogue", keywords: ["products", "items"] },
       { label: "Categories", href: "/org/catalog/categories", icon: FolderTree, permission: "catalog.view", group: "Product catalogue" },
-      { label: "Brands", href: "/org/catalog/brands", icon: Tags, permission: "catalog.view", group: "Product catalogue" },
-      { label: "Tax groups", href: "/org/catalog/tax", icon: Percent, permission: "catalog.view", group: "Product catalogue", keywords: ["gst"] },
-      { label: "Additional charges", href: "/org/catalog/charges", icon: CircleDollarSign, permission: "pricing.view", group: "Product catalogue", keywords: ["packaging", "service charge", "fees"] },
-      { label: "Units", href: "/org/catalog/units", icon: Ruler, permission: "catalog.view", group: "Product catalogue", keywords: ["uom", "measure"] },
+      { label: "Product types", href: "/org/catalog/types", icon: FolderTree, permission: "catalog.manage", group: "Product catalogue", keywords: ["version", "setup"] },
+      { label: "Product fields", href: "/org/catalog/fields", icon: FolderTree, permission: "org.settings.manage", group: "Product catalogue", keywords: ["attributes", "schema"] },
       { label: "Customers", href: "/org/customers", icon: UserRound, permission: "customer.view", group: "Customers & insights" },
       { label: "Reports & analytics", href: "/org/reports", icon: BarChart3, permission: "report.view", group: "Customers & insights", keywords: ["sales", "gst", "compare"] },
       { label: "Organisation settings", href: "/org/settings/general", icon: Settings, permission: "org.settings.manage", group: "Administration" },
@@ -52,19 +50,20 @@ export const NAV: NavSection[] = [
     items: [
       { label: "Store overview", href: "/s/:storeId", icon: LayoutDashboard, permission: "store.overview.view" },
       { label: "Point of sale", href: "/s/:storeId/pos", icon: ShoppingCart, permission: "sale.create", group: "Selling", keywords: ["checkout", "till", "register"] },
-      { label: "Sales", href: "/s/:storeId/sales", icon: Receipt, permission: "sale.create", group: "Selling", keywords: ["receipts", "orders"] },
-      { label: "Returns", href: "/s/:storeId/returns", icon: Undo2, permission: "refund.create", group: "Selling", keywords: ["refund"] },
+      { label: "Sales", href: "/s/:storeId/sales", icon: Receipt, permission: "sale.view", group: "Selling", keywords: ["receipts", "orders"] },
+      { label: "Returns", href: "/s/:storeId/returns", icon: Undo2, permission: "refund.view", group: "Selling", keywords: ["refund"] },
       { label: "Inventory", href: "/s/:storeId/inventory", icon: Boxes, permission: "inventory.view", group: "Stock", keywords: ["stock"] },
       { label: "Products", href: "/s/:storeId/products", icon: Package, permission: "catalog.view", group: "Stock", keywords: ["catalogue", "items"] },
       { label: "Categories", href: "/s/:storeId/categories", icon: FolderTree, permission: "catalog.view", group: "Stock" },
-      { label: "Brands", href: "/s/:storeId/brands", icon: Tags, permission: "catalog.view", group: "Stock" },
-      { label: "Tax & charges", href: "/s/:storeId/pricing", icon: CircleDollarSign, permission: "pricing.view", group: "Stock", keywords: ["gst", "packaging", "service charge"] },
+      { label: "Tax groups & charges", href: "/s/:storeId/settings/tax", icon: CircleDollarSign, permission: "tax.view", group: "Stock", keywords: ["gst", "service charge"] },
+      { label: "Offers & price rules", href: "/s/:storeId/pricing", icon: Percent, permission: "pricing.view", group: "Selling", keywords: ["discounts", "coupons", "offers"] },
       { label: "Registers", href: "/s/:storeId/registers", icon: Landmark, permission: "registers.view", group: "Tills & control", keywords: ["cash", "shift", "till"] },
       { label: "Approvals", href: "/s/:storeId/approvals", icon: CheckCheck, permission: "approval.manage", group: "Tills & control" },
       { label: "Alerts", href: "/s/:storeId/alerts", icon: Bell, permission: "report.view", group: "Tills & control" },
       { label: "Staff", href: "/s/:storeId/staff", icon: Users, permission: "store.staff.view", group: "Store admin" },
       { label: "Store reports", href: "/s/:storeId/reports", icon: BarChart3, permission: "report.view", group: "Store admin" },
-      { label: "Store settings", href: "/s/:storeId/settings", icon: Settings, permission: "store.settings.view", group: "Store admin" },
+      { label: "Store settings", href: "/s/:storeId/settings/profile", icon: Settings, permission: "store.settings.view", group: "Store admin" },
+      { label: "Billing & checkout", href: "/s/:storeId/settings/billing", icon: Receipt, permission: "store.settings.view", group: "Store admin", keywords: ["billing", "checkout", "payment methods", "discounts", "receipt"] },
     ],
   },
 ];
@@ -78,10 +77,10 @@ export const resolveHref = (href: string, storeId: string) => href.replace(":sto
 export const SEGMENT_LABELS: Record<string, string> = {
   org: "Organisation", s: "Stores", users: "Users", roles: "Roles", stores: "Stores", catalog: "Catalogue",
   products: "Products", categories: "Categories", brands: "Brands", tax: "Tax groups", customers: "Customers",
-  reports: "Reports", settings: "Settings", general: "General", receipts: "Receipts", approvals: "Approvals",
+  reports: "Reports", settings: "Settings", general: "General", receipts: "Billing & checkout", billing: "Billing & checkout", profile: "Store profile", approvals: "Approvals",
   security: "Security", audit: "Audit log", sales: "Sales", returns: "Returns", inventory: "Inventory",
   ledger: "Ledger", adjust: "Adjust stock", registers: "Registers", alerts: "Alerts", staff: "Staff",
-  import: "Import", charges: "Additional charges", pricing: "Tax & charges", new: "New", pos: "Point of sale", units: "Units", transfers: "Stock transfers", distributions: "Distributions", account: "My account",
+  import: "Import", fields: "Product fields", charges: "Additional charges", pricing: "Tax & charges", new: "New", pos: "Point of sale", units: "Units", transfers: "Stock transfers", distributions: "Distributions", account: "My account",
 };
 
 

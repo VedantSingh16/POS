@@ -13,7 +13,7 @@ export default async function Page() {
   const [{ data: distributions }, { data: stores }, { data: products }] = await Promise.all([api.distributions(), api.stores(), api.products()]);
   const variants = products
     .filter((p) => p.variantId)
-    .map((p) => ({ id: p.variantId as string, label: `${p.name}${p.sku ? ` (${p.sku})` : ""}`, defaultPriceCents: p.priceMinor ?? 0, defaultTaxGroupId: p.taxGroupId ?? null }));
+    .map((p) => ({ id: p.variantId as string, label: `${p.name}${p.sku ? ` (${p.sku})` : ""}`, defaultPriceCents: p.priceMinor ?? 0 }));
   const canCreate = me.permissions.organization.includes("catalog.distribute");
   return (
     <>

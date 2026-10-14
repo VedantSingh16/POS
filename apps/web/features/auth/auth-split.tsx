@@ -18,12 +18,12 @@ export function AuthSplit({ children }: { children: ReactNode }) {
         <p className="text-xs text-muted-foreground">Sessions are kept in a secure cookie. Never share your PIN.</p>
       </div>
       <aside className="hidden flex-col justify-center gap-7 bg-sidebar p-14 text-sidebar-foreground lg:flex">
-        <p className="max-w-sm text-2xl font-semibold leading-tight tracking-tight text-white">One organisation. Many stores. Clear boundaries.</p>
+        <p className="max-w-sm text-2xl font-semibold leading-tight tracking-tight text-sidebar-foreground">One organisation. Many stores. Clear boundaries.</p>
         <ol className="grid gap-5">
           {LEVELS.map((l) => (
             <li key={l.n} className="flex gap-3">
               <span className="grid size-6 shrink-0 place-items-center rounded-md border border-sidebar-border text-xs font-semibold text-sidebar-primary">{l.n}</span>
-              <div><p className="font-medium text-white">{l.title}</p><p className="text-sm text-sidebar-muted">{l.text}</p></div>
+              <div><p className="font-medium text-sidebar-foreground">{l.title}</p><p className="text-sm text-sidebar-muted">{l.text}</p></div>
             </li>
           ))}
         </ol>

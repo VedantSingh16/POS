@@ -5,12 +5,18 @@ import type { AuthenticatedRequest } from '../auth/auth.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { RequirePermissions } from '../auth/permissions.decorator.js';
 import { PosService } from './pos.service.js';
+import { PricingAdminService } from './pricing-admin.service.js';
+import { PaymentsService } from './payments/payments.service.js';
 import type { JsonObject } from '../common/input.js';
 
 @Controller('api/pos/v1')
 @UseGuards(AuthGuard, PermissionsGuard)
 export class PosController {
-  constructor(private readonly pos: PosService) {}
+  constructor(
+    private readonly pos: PosService,
+    private readonly pricing: PricingAdminService,
+    private readonly payments: PaymentsService,
+  ) {}
 
   @Get('features') features() { return this.pos.featureStatus(); }
 
@@ -20,7 +26,14 @@ export class PosController {
 
   @Get('catalog/search')
   @RequirePermissions('catalog.view')
-  async search(@Req() request: AuthenticatedRequest, @Query('q') query?: string, @Query('storeId') storeId?: string) { return { products: await this.pos.searchProducts(request.user!, query, storeId) }; }
+  async search(@Req() request: AuthenticatedRequest, @Query('q') query?: string, @Query('storeId') storeId?: string, @Query('limit') limit?: string) {
+    const products = await this.pos.searchProducts(request.user!, query, storeId, { limit: limit ? Number(limit) || undefined : undefined });
+    return { products, inventoryPolicy: storeId ? await this.pos.inventoryPolicyFor(request.user!.organizationId, storeId) : undefined };
+  }
+
+  @Get('catalog/top-sellers')
+  @RequirePermissions('catalog.view')
+  topSellers(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string, @Query('days') days?: string, @Query('limit') limit?: string) { return this.pos.topSellers(request.user!, storeId, days, limit); }
 
   @Get('catalog/categories')
   @RequirePermissions('catalog.view')
@@ -31,11 +44,11 @@ export class PosController {
   async storeProducts(@Req() request: AuthenticatedRequest, @Query('storeId') storeId: string) { return { items: await this.pos.listStoreProducts(request.user!, storeId) }; }
 
   @Post('store-products')
-  @RequirePermissions('catalog.manage')
+  @RequirePermissions('catalog.manage.store')
   assignStoreProducts(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.assignStoreProducts(request.user!, body); }
 
   @Patch('store-products')
-  @RequirePermissions('catalog.manage')
+  @RequirePermissions('catalog.manage.store')
   updateStoreProduct(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.updateStoreProduct(request.user!, body); }
 
   @Post('stores/:storeId/products')
@@ -45,7 +58,7 @@ export class PosController {
   }
 
   @Get('stores/:storeId/pending-verification')
-  @RequirePermissions('store-catalog.verify')
+  @RequirePermissions('catalog.view')
   async pendingVerification(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) {
     return { items: await this.pos.listPendingForStore(request.user!, storeId) };
   }
@@ -83,16 +96,49 @@ export class PosController {
   openSession(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.openSession(request.user!, body); }
 
   @Get('sessions/:sessionId/summary')
-  @RequirePermissions('registers.view')
   sessionSummary(@Req() request: AuthenticatedRequest, @Param('sessionId') sessionId: string) { return this.pos.sessionSummary(request.user!, sessionId); }
 
   @Post('sessions/:sessionId/cash')
-  @RequirePermissions('cash.manage')
   cash(@Req() request: AuthenticatedRequest, @Param('sessionId') sessionId: string, @Body() body: JsonObject) { return this.pos.cashMovement(request.user!, sessionId, body); }
 
   @Post('sessions/:sessionId/close')
-  @RequirePermissions('register.close')
   close(@Req() request: AuthenticatedRequest, @Param('sessionId') sessionId: string, @Body() body: JsonObject) { return this.pos.closeSession(request.user!, sessionId, body); }
+
+  @Get('attendance')
+  async attendance(@Req() request: AuthenticatedRequest, @Query('storeId') storeId: string) { return { attendance: await this.pos.attendance(request.user!, storeId) }; }
+
+  @Post('attendance/clock-in')
+  @RequirePermissions('attendance.clock')
+  clockIn(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.clockIn(request.user!, body); }
+
+  @Post('attendance/clock-out')
+  @RequirePermissions('attendance.clock')
+  clockOut(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.clockOut(request.user!, body); }
+
+  @Get('day-closes')
+  @RequirePermissions('report.view')
+  async dayCloses(@Req() request: AuthenticatedRequest, @Query('storeId') storeId: string) { return { dayCloses: await this.pos.listDayCloses(request.user!, storeId) }; }
+
+  @Post('day-closes')
+  @RequirePermissions('dayclose.manage')
+  closeDay(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.closeStoreDay(request.user!, body); }
+
+  @Post('reports/exports')
+  @RequirePermissions('report.export')
+  createReportExport(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.createReportExport(request.user!, body); }
+
+  @Get('reports/exports/:jobId')
+  reportExportStatus(@Req() request: AuthenticatedRequest, @Param('jobId') jobId: string) { return this.pos.getReportExport(request.user!, jobId); }
+
+  @Post('reports/exports/:jobId/retry')
+  retryReportExport(@Req() request: AuthenticatedRequest, @Param('jobId') jobId: string) { return this.pos.retryReportExport(request.user!, jobId); }
+
+  @Get('reports/exports/:jobId/download')
+  async downloadReportExport(@Req() request: AuthenticatedRequest, @Param('jobId') jobId: string, @Res({ passthrough: true }) response: Response) {
+    const file = await this.pos.downloadReportExport(request.user!, jobId);
+    response.set({ 'Content-Type': file.contentType, 'Content-Disposition': `attachment; filename="${file.filename}"`, 'Cache-Control': 'no-store' });
+    return new StreamableFile(file.buffer);
+  }
 
   @Get('holds')
   @RequirePermissions('sale.hold')
@@ -103,7 +149,6 @@ export class PosController {
   hold(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.holdSale(request.user!, body); }
 
   @Post('holds/:holdId/resume')
-  @RequirePermissions('sale.hold')
   resume(@Req() request: AuthenticatedRequest, @Param('holdId') holdId: string) { return this.pos.resumeHold(request.user!, holdId); }
 
   @Get('stores/:storeId/lookups')
@@ -114,6 +159,10 @@ export class PosController {
   @RequirePermissions('catalog.view')
   storeTaxonomy(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) { return this.pos.storeTaxonomy(request.user!, storeId); }
 
+  @Get('stores/:storeId/checkout-config')
+  @RequirePermissions('sale.create')
+  checkoutConfig(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) { return this.pos.checkoutConfig(request.user!, storeId); }
+
   @Post('sales/quote')
   @RequirePermissions('sale.create')
   quote(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.quoteSale(request.user!, body); }
@@ -123,8 +172,12 @@ export class PosController {
   async taxGroups(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { taxGroups: await this.pos.listTaxGroups(request.user!, storeId) }; }
 
   @Post('tax-groups')
-  @RequirePermissions('pricing.manage')
+  @RequirePermissions('tax.manage')
   createStoreTaxGroup(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.createStoreTaxGroup(request.user!, body); }
+
+  @Patch('tax-groups/:taxGroupId')
+  @RequirePermissions('tax.manage')
+  updateStoreTaxGroup(@Req() request: AuthenticatedRequest, @Param('taxGroupId') taxGroupId: string, @Body() body: JsonObject) { return this.pos.updateStoreTaxGroup(request.user!, taxGroupId, body); }
 
   @Get('charges')
   @RequirePermissions('pricing.view')
@@ -143,13 +196,12 @@ export class PosController {
   sale(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.completeSale(request.user!, body); }
 
   @Get('sales')
-  @RequirePermissions('sale.create')
+  @RequirePermissions('sale.view')
   async sales(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string, @Query('from') from?: string, @Query('to') to?: string, @Query('receipt') receipt?: string, @Query('customer') customer?: string) {
     return { sales: await this.pos.listSales(request.user!, storeId, from, to, receipt, customer) };
   }
 
   @Get('sales/:saleId/invoice.pdf')
-  @RequirePermissions('sale.create')
   async invoicePdf(@Req() request: AuthenticatedRequest, @Param('saleId') saleId: string, @Res({ passthrough: true }) response: Response) {
     const { filename, buffer } = await this.pos.invoicePdf(request.user!, saleId);
     response.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${filename}"`, 'Cache-Control': 'no-store' });
@@ -157,15 +209,13 @@ export class PosController {
   }
 
   @Get('sales/:saleId')
-  @RequirePermissions('sale.create')
   saleDetail(@Req() request: AuthenticatedRequest, @Param('saleId') saleId: string) { return this.pos.getSale(request.user!, saleId); }
 
   @Post('approvals')
-  @RequirePermissions('approval.manage')
+  @RequirePermissions('approval.request')
   requestApproval(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.requestApproval(request.user!, body); }
 
   @Patch('approvals/:approvalId')
-  @RequirePermissions('approval.manage')
   decideApproval(@Req() request: AuthenticatedRequest, @Param('approvalId') approvalId: string, @Body() body: JsonObject) { return this.pos.decideApproval(request.user!, approvalId, body); }
 
   @Get('approvals')
@@ -213,11 +263,10 @@ export class PosController {
   returns(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.createReturn(request.user!, body); }
 
   @Get('returns')
-  @RequirePermissions('refund.create')
+  @RequirePermissions('refund.view')
   async returnList(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { returns: await this.pos.listReturns(request.user!, storeId) }; }
 
   @Get('returns/:returnId')
-  @RequirePermissions('refund.create')
   returnDetail(@Req() request: AuthenticatedRequest, @Param('returnId') returnId: string) { return this.pos.getReturn(request.user!, returnId); }
 
   @Get('reports')
@@ -239,8 +288,7 @@ export class PosController {
   async alerts(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { alerts: await this.pos.alerts(request.user!, storeId) }; }
 
   @Patch('alerts/:alertId')
-  @RequirePermissions('report.view')
-  acknowledgeAlert(@Req() request: AuthenticatedRequest, @Param('alertId') alertId: string) { return this.pos.acknowledgeAlert(request.user!, alertId); }
+  acknowledgeAlert(@Req() request: AuthenticatedRequest, @Param('alertId') alertId: string, @Body() body: JsonObject = {}) { return this.pos.acknowledgeAlert(request.user!, alertId, body); }
 
   @Get('customers')
   @RequirePermissions('customer.view')
@@ -254,17 +302,59 @@ export class PosController {
   @RequirePermissions('customer.manage')
   customer(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.createCustomer(request.user!, body); }
 
+  @Patch('customers/:customerId')
+  @RequirePermissions('customer.manage')
+  customerUpdate(@Req() request: AuthenticatedRequest, @Param('customerId') customerId: string, @Body() body: JsonObject) { return this.pos.updateCustomer(request.user!, customerId, body); }
+
   @Post('customers/:customerId/ledger')
   @RequirePermissions('customer.manage')
   customerLedger(@Req() request: AuthenticatedRequest, @Param('customerId') customerId: string, @Body() body: JsonObject) { return this.pos.customerLedger(request.user!, customerId, body); }
 
   @Get('promotions')
-  @RequirePermissions('promotion.manage')
-  async promotions(@Req() request: AuthenticatedRequest) { return { promotions: await this.pos.listPromotions(request.user!) }; }
+  @RequirePermissions('pricing.view')
+  async promotions(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { promotions: await this.pos.listPromotions(request.user!, storeId) }; }
 
   @Post('promotions')
-  @RequirePermissions('promotion.manage')
+  @RequirePermissions('pricing.manage')
   promotion(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.createPromotion(request.user!, body); }
+
+  @Patch('promotions/:promotionId')
+  @RequirePermissions('pricing.manage')
+  promotionUpdate(@Req() request: AuthenticatedRequest, @Param('promotionId') promotionId: string, @Body() body: JsonObject) { return this.pricing.updatePromotion(request.user!, promotionId, body); }
+
+  @Get('price-rules')
+  @RequirePermissions('pricing.view')
+  async priceRules(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { rules: await this.pricing.listPriceRules(request.user!, storeId) }; }
+
+  @Post('price-rules')
+  @RequirePermissions('pricing.manage')
+  priceRule(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pricing.createPriceRule(request.user!, body); }
+
+  @Patch('price-rules/:ruleId')
+  @RequirePermissions('pricing.manage')
+  priceRuleUpdate(@Req() request: AuthenticatedRequest, @Param('ruleId') ruleId: string, @Body() body: JsonObject) { return this.pricing.updatePriceRule(request.user!, ruleId, body); }
+
+  /** With ?storeId= a till reads the active reasons; without it an administrator lists all of them. The service checks the permission. */
+  @Get('discount-reasons')
+  async discountReasons(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { reasons: await this.pricing.listDiscountReasons(request.user!, storeId) }; }
+
+  @Post('discount-reasons')
+  @RequirePermissions('pricing.manage')
+  discountReason(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pricing.createDiscountReason(request.user!, body); }
+
+  @Patch('discount-reasons/:reasonId')
+  @RequirePermissions('pricing.manage')
+  discountReasonUpdate(@Req() request: AuthenticatedRequest, @Param('reasonId') reasonId: string, @Body() body: JsonObject) { return this.pricing.updateDiscountReason(request.user!, reasonId, body); }
+
+  @Post('payments/attempts')
+  @RequirePermissions('sale.create')
+  paymentAttempt(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.payments.createAttempt(request.user!, body); }
+
+  @Get('payments/attempts/:attemptId')
+  paymentAttemptStatus(@Req() request: AuthenticatedRequest, @Param('attemptId') attemptId: string) { return this.payments.refreshAttempt(request.user!, attemptId); }
+
+  @Post('payments/attempts/:attemptId/void')
+  paymentAttemptVoid(@Req() request: AuthenticatedRequest, @Param('attemptId') attemptId: string) { return this.payments.voidAttempt(request.user!, attemptId); }
 
   @Get('bundles')
   @RequirePermissions('promotion.manage')

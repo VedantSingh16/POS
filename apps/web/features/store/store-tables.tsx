@@ -4,32 +4,43 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/data/data-table";
 import { Money, StatusBadge } from "@/components/data/primitives";
 import { StoreProductActions } from "@/features/actions";
+import { StoreStaffRoleSelect } from "@/features/store/store-staff-role-select";
 import type * as M from "@/features/types";
+import { useMemo, useState } from "react";
+import { ProductVersionFilter } from "@/features/catalog/product-version-filter";
 
 type Staff = M.UserRow;
-export function StoreStaffTable({ data }: { data: Staff[] }) {
+export function StoreStaffTable({ data, storeId, roleOptions = [], canManage = false }: { data: Staff[]; storeId: string; roleOptions?: { id: string; name: string }[]; canManage?: boolean }) {
   const columns: ColumnDef<Staff, unknown>[] = [
     { accessorKey: "name", header: "Name", cell: (cell) => <span className="font-medium">{cell.getValue() as string}</span> },
     { accessorKey: "email", header: "Email" },
     { accessorKey: "role", header: "Role" },
     { accessorKey: "status", header: "Status", cell: (cell) => <StatusBadge status={cell.getValue() as string} /> },
     { accessorKey: "lastLogin", header: "Last sign-in" },
+    ...(canManage ? [{ id: "assignRole", header: "Store role", cell: ({ row }) => <StoreStaffRoleSelect storeId={storeId} userId={row.original.id} initialRoleId={row.original.storeRoleId ?? ""} roleOptions={roleOptions} /> } as ColumnDef<Staff, unknown>] : []),
   ];
   return <DataTable columns={columns} data={data} searchPlaceholder="Search this store’s staff…" emptyTitle="No staff assigned" />;
 }
 
-export type StoreProduct = { id: string; sku: string; name: string; category: string; brand: string; priceMinor: number; taxLabel: string; storeTaxGroupId: string | null; stock: number; status: string };
-export function StoreProductsTable({ data, storeId, taxGroups }: { data: StoreProduct[]; storeId: string; taxGroups: { id: string; name: string; ratePercent: number }[] }) {
+export type StoreProduct = { id: string; sku: string; barcode: string; name: string; category: string; brand: string; priceMinor: number; taxLabel: string; storeTaxGroupId: string | null; stock: number; status: string; productTypeId?: string | null; productTypeName?: string; customFields?: Record<string, string | number | boolean> };
+export function StoreProductsTable({ data, storeId, productTypes = [], displayFieldDefinitions = [], coreFields = [] }: { data: StoreProduct[]; storeId: string; productTypes?: { id: string; name: string }[]; displayFieldDefinitions?: import("@/features/settings/configurable-field-values").ConfiguredField[]; coreFields?: string[] }) {
+  const [productTypeId, setProductTypeId] = useState("");
+  const filtered = useMemo(() => productTypeId ? data.filter((product) => product.productTypeId === productTypeId) : data, [data, productTypeId]);
+  const visibleCore = coreFields.length ? coreFields : ["sku", "category", "brand", "price", "status"];
   const columns: ColumnDef<StoreProduct, unknown>[] = [
-    { accessorKey: "sku", header: "SKU" },
+    ...(visibleCore.includes("sku") ? [{ accessorKey: "sku", header: "SKU" } as ColumnDef<StoreProduct, unknown>] : []),
+    { accessorKey: "barcode", header: "Barcodes" },
     { accessorKey: "name", header: "Product", cell: (cell) => <span className="font-medium">{cell.getValue() as string}</span> },
-    { accessorKey: "category", header: "Category", cell: (cell) => (cell.getValue() as string) || "Uncategorised" },
-    { accessorKey: "brand", header: "Brand", cell: (cell) => (cell.getValue() as string) || "—" },
-    { accessorKey: "priceMinor", header: "Base price", cell: (cell) => <Money minor={cell.getValue() as number} /> },
-    { accessorKey: "taxLabel", header: "Tax" },
+    { accessorKey: "productTypeName", header: "Product version", cell: (cell) => (cell.getValue() as string) || "—" },
+    ...(visibleCore.includes("category") ? [{ accessorKey: "category", header: "Category", cell: (cell) => (cell.getValue() as string) || "Uncategorised" } as ColumnDef<StoreProduct, unknown>] : []),
+    ...(visibleCore.includes("brand") ? [{ accessorKey: "brand", header: "Brand", cell: (cell) => (cell.getValue() as string) || "—" } as ColumnDef<StoreProduct, unknown>] : []),
+    ...(visibleCore.includes("price") ? [{ accessorKey: "priceMinor", header: "Base price", cell: (cell) => <Money minor={cell.getValue() as number} /> } as ColumnDef<StoreProduct, unknown>] : []),
+    { accessorKey: "taxLabel", header: "Store tax" },
     { accessorKey: "stock", header: "Store stock" },
-    { accessorKey: "status", header: "Status", cell: (cell) => <StatusBadge status={cell.getValue() as string} /> },
-    { id: "actions", header: "", cell: (cell) => <StoreProductActions storeId={storeId} variantId={cell.row.original.id} status={cell.row.original.status} storeTaxGroupId={cell.row.original.storeTaxGroupId} taxGroups={taxGroups} /> },
+    ...displayFieldDefinitions.filter((field) => field.active && field.showInList).map((field): ColumnDef<StoreProduct, unknown> => ({ id: `custom-${field.key}`, header: field.label, accessorFn: (row) => row.customFields?.[field.key] ?? "—" })),
+    ...(visibleCore.includes("status") ? [{ accessorKey: "status", header: "Status", cell: (cell) => <StatusBadge status={cell.getValue() as string} /> } as ColumnDef<StoreProduct, unknown>] : []),
+    { id: "actions", header: "", cell: (cell) => <StoreProductActions storeId={storeId} variantId={cell.row.original.id} status={cell.row.original.status} /> },
   ];
-  return <DataTable columns={columns} data={data} searchPlaceholder="Search this store’s products…" emptyTitle="No products in this store yet" emptyDescription="Products sent by the organisation appear under Pending until you add them." />;
+  const options = productTypes.length ? productTypes : [...new Map(data.flatMap((item) => item.productTypeId && item.productTypeName ? [[item.productTypeId, { id: item.productTypeId, name: item.productTypeName }] as const] : [])).values()];
+  return <DataTable columns={columns} data={filtered} toolbar={<ProductVersionFilter value={productTypeId} onChange={setProductTypeId} options={options} />} searchPlaceholder="Search product, SKU, barcode, or version…" emptyTitle="No products in this store yet" emptyDescription="Assign organization products to this store to get started." />;
 }

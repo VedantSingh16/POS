@@ -26,14 +26,15 @@ type Props<T> = {
   emptyTitle?: string;
   emptyDescription?: string;
   pageSize?: number;
+  initialVisibility?: VisibilityState;
 };
 
 /** One table for every list in the product. Client-side paging here; swap to server-side with manualPagination in Phase 2+. */
-export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Search…", toolbar, loading, error, emptyTitle = "Nothing here yet", emptyDescription, pageSize = 10 }: Props<T>) {
+export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Search…", toolbar, loading, error, emptyTitle = "Nothing here yet", emptyDescription, pageSize = 10, initialVisibility }: Props<T>) {
   const router = useRouter();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [filter, setFilter] = React.useState("");
-  const [visibility, setVisibility] = React.useState<VisibilityState>({});
+  const [visibility, setVisibility] = React.useState<VisibilityState>(initialVisibility ?? {});
   const table = useReactTable({
     data, columns,
     state: { sorting, globalFilter: filter, columnVisibility: visibility },
@@ -46,8 +47,8 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
   const total = table.getFilteredRowModel().rows.length;
 
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="flex flex-wrap items-center gap-2 border-b p-3">
+    <div className="rounded-md border bg-card">
+      <div className="flex flex-wrap items-center gap-2 border-b p-2.5 sm:p-3">
         <div className="relative min-w-48 flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input aria-label="Search table" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={searchPlaceholder} className="pl-8!" />

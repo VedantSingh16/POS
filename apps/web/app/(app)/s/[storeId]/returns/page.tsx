@@ -10,7 +10,7 @@ export const metadata = { title: "Returns" };
 
 export default async function Page({ params }: PageProps<"/s/[storeId]/returns">) {
   const { storeId } = await params;
-  await requirePermission("refund.create", storeId);
+  await requirePermission("refund.view", storeId);
   const { data } = await api.returns(storeId);
   return (
     <>

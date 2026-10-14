@@ -31,12 +31,17 @@ async function read<T>(path: string, init: RequestInit & { storeId?: string } = 
 
 const real = <T,>(data: T): Result<T> => ({ data });
 
-export type ProductRow = Omit<m.Product, "status"> & { status: string; productId?: string; variantId?: string; variants?: unknown[]; barcodes?: string[]; brand?: string; taxGroupId?: string | null };
+export type ProductRow = Omit<m.Product, "status"> & { status: string; description?: string; attributes?: Record<string, string | number | boolean>; productId?: string; variantId?: string; variants?: unknown[]; barcodes?: string[]; brand?: string; productTypeName?: string; costMinor?: number; uomCode?: string | null; openPrice?: boolean; floorPriceCents?: number; includesTax?: boolean; customFields?: Record<string, string | number | boolean> };
 type ChargeRow = m.ChargeRow;
+export type ProductTypeAttribute = { key: string; label: string; kind: "TEXT" | "NUMBER" | "SELECT" | "DATE" | "YESNO"; required: boolean; options: string[] };
+export type ProductTypeConfig = { categoryIds: string[]; brandIds: string[]; requireCategory: boolean; requireBrand: boolean; requireBarcode: boolean; attributes: ProductTypeAttribute[] };
+export type ProductTypeRow = { id: string; name: string; description: string; status: "ACTIVE" | "DISABLED"; config: ProductTypeConfig; productCount: number };
 export type CatalogProductDetail = {
+  productTypeId?: string | null; productType?: { id: string; name: string } | null; attributes?: Record<string, string | number | boolean>;
+  customFields?: Record<string, string | number | boolean>;
   id: string; name: string; description: string; brand: string; categoryId: string | null;
   category: { id: string; name: string } | null; status: string;
-  variants: { id: string; productId: string; sku: string; name: string; costCents: number; status: string; uomId: string | null; taxGroupId: string | null; barcodes: string[]; prices: { id: string; amountCents: number; currency: string; includesTax: boolean; effectiveFrom: string }[] }[];
+  variants: { id: string; productId: string; sku: string; name: string; costCents: number; openPrice?: boolean; floorPriceCents?: number; status: string; uomId: string | null; customFields?: Record<string, string | number | boolean>; barcodes: string[]; prices: { id: string; amountCents: number; currency: string; includesTax: boolean; effectiveFrom: string }[] }[];
 };
 type UserRow = m.UserRow;
 type RoleRow = m.RoleRow;
@@ -66,9 +71,17 @@ function productRows(products: any[]): ProductRow[] {
         category: product.category?.name ?? product.categoryName ?? "Uncategorised",
         categoryId: product.categoryId ?? null,
         brand: product.brand ?? "",
+        productTypeName: product.productType?.name ?? "",
+        description: product.description ?? "",
+        attributes: product.attributes ?? {},
+        customFields: { ...(product.customFields ?? {}), ...(variant.customFields ?? {}) },
         priceMinor: price?.amountCents ?? 0,
-        taxRate: Number(variant.taxRate ?? variant.taxGroup?.ratePercent ?? 0),
-        taxGroupId: variant.taxGroupId ?? null,
+        taxRate: 0,
+        costMinor: variant.costCents ?? 0,
+        uomCode: variant.uomCode ?? null,
+        openPrice: variant.openPrice === true,
+        floorPriceCents: variant.floorPriceCents ?? 0,
+        includesTax: price?.includesTax === true,
         stock: 0,
         status: variant.status ?? product.status ?? "ACTIVE",
         hot: false,
@@ -102,11 +115,11 @@ export const api = {
   },
   async org() {
     const value = await read<any>("/admin/overview");
-    return real({ id: value.organization.id, name: value.organization.name, maxStores: value.entitlement.maxStores });
+    return real({ id: value.organization.id, name: value.organization.name, maxStores: value.entitlement.maxStores, countryCode: value.organization.countryCode ?? "ZZ", currency: value.organization.currency ?? "OMR", taxProfileStatus: value.organization.taxProfileStatus ?? "LEGACY", timezone: value.organization.timezone ?? "UTC" });
   },
   async orgProfile() {
     const { organization: o } = await read<any>("/admin/overview");
-    return real({ name: o.name ?? "", legalName: o.legalName ?? "", tradeName: o.tradeName ?? "", gstin: o.gstin ?? "", address: o.address ?? "", timezone: o.timezone ?? "Asia/Kolkata", businessType: o.businessType ?? "RETAIL" });
+    return real({ name: o.name ?? "", legalName: o.legalName ?? "", tradeName: o.tradeName ?? "", gstin: o.gstin ?? "", address: o.address ?? "", timezone: o.timezone ?? "Asia/Kolkata", businessType: o.businessType ?? "RETAIL", countryCode: o.countryCode ?? "ZZ", taxProfileStatus: o.taxProfileStatus ?? "LEGACY" });
   },
   async transfers() {
     const value = await read<any>("/pos/v1/transfers");
@@ -118,7 +131,11 @@ export const api = {
   },
   async settings() {
     const value = await read<any>("/admin/settings");
-    return real((value.settings ?? {}) as Record<string, unknown>);
+    return real({ ...(value.settings ?? {}), currency: value.currency, currencyLocked: value.currencyLocked === true } as Record<string, unknown>);
+  },
+  async productTypes() {
+    const value = await read<any>("/admin/catalog/product-types");
+    return real((value.types ?? []) as ProductTypeRow[]);
   },
   async approvalPolicy() {
     const value = await read<any>("/admin/approval-policy");
@@ -127,7 +144,7 @@ export const api = {
   async stores() {
     const value = await read<any>("/admin/stores");
     return real((value.stores ?? []).map((store: any) => ({
-      id: store.id, code: store.code, name: store.name, city: store.address ?? "", status: store.status,
+      id: store.id, code: store.code, name: store.name, city: store.city ?? store.address ?? "", status: store.status,
       registers: Number(store.registerCount ?? 0), staff: Number(store.staffCount ?? 0),
       managers: (store.managers ?? []) as { id: string; name: string; email: string }[],
     })) as StoreRow[]);
@@ -135,14 +152,21 @@ export const api = {
   async store(id: string) {
     const store = await read<any>(`/admin/stores/${id}`);
     // `registers` stays the list returned by the API; `registerCount` is the number to display.
-    return real({ ...store, city: store.address ?? "", registerCount: (store.registers ?? []).length } as typeof store & { city: string; registerCount: number });
+    return real({ ...store, city: store.city ?? "", registerCount: (store.registers ?? []).length } as typeof store & { city: string; registerCount: number });
   },
   async storeSettings(id: string) {
     return real(await read<any>(`/admin/stores/${id}/settings`, { storeId: id }));
   },
+  async checkoutConfig(id: string) {
+    return real(await read<any>(`/pos/v1/stores/${id}/checkout-config`, { storeId: id }));
+  },
   async storeStaff(id: string) {
     const value = await read<any>(`/admin/stores/${id}/users`, { storeId: id });
-    return real((value.users ?? []).map((user: any) => ({ id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role: (user.roles ?? []).map((role: any) => role.name).join(", ") || "Store staff", scope: "This store", status: user.status, lastLogin: user.lastLoginAt ?? "" })) as UserRow[]);
+    return real((value.users ?? []).map((user: any) => ({ id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role: (user.roles ?? []).map((role: any) => role.name).join(", ") || "No store role", storeRoleId: user.roles?.[0]?.id ?? "", scope: "This store", status: user.status, lastLogin: user.lastLoginAt ?? "" })) as (UserRow & { storeRoleId: string })[]);
+  },
+  async storeAssignableRoles(id: string) {
+    const value = await read<any>(`/admin/stores/${id}/assignable-roles`, { storeId: id });
+    return real((value.roles ?? []) as { id: string; name: string; description: string }[]);
   },
   async users() {
     const [value, storeValue] = await Promise.all([read<any>("/admin/users"), read<any>("/admin/stores").catch(() => ({ stores: [] }))]);
@@ -181,7 +205,13 @@ export const api = {
   },
   async products(storeId?: string) {
     if (storeId) {
-      const value = await read<any>(`/pos/v1/catalog/search?storeId=${encodeURIComponent(storeId)}`, { storeId });
+      const [value, top] = await Promise.all([
+        read<any>(`/pos/v1/catalog/search?storeId=${encodeURIComponent(storeId)}`, { storeId }),
+        // Quick keys: pinned items first, then what sold most lately. If this fails the till still opens with every item as a key.
+        read<any>(`/pos/v1/catalog/top-sellers?storeId=${encodeURIComponent(storeId)}&limit=24`, { storeId }).catch(() => null),
+      ]);
+      const sellWithoutStock = (value.inventoryPolicy ?? "BLOCK") !== "BLOCK";
+      const hotIds = top ? new Set<string>((top.products ?? []).map((p: any) => p.variantId)) : null;
       return real((value.products ?? []).map((variant: any) => ({
         id: variant.variantId,
         variantId: variant.variantId,
@@ -196,7 +226,11 @@ export const api = {
         taxRate: (variant.taxBps ?? 0) / 100,
         stock: variant.stock ?? 0,
         status: "ACTIVE" as const,
-        hot: true,
+        hot: hotIds ? hotIds.has(variant.variantId) : true,
+        sellWithoutStock,
+        openPrice: variant.openPrice === true,
+        floorPriceCents: variant.floorPriceCents ?? 0,
+        customFields: variant.customFields ?? {},
       })) as ProductRow[]);
     }
     const value = await read<any>("/admin/catalog/products");
@@ -215,12 +249,24 @@ export const api = {
   /** Organisation-wide tax groups plus the store's own. */
   async storeTaxGroups(storeId: string) {
     const value = await read<any>(`/pos/v1/tax-groups?storeId=${encodeURIComponent(storeId)}`, { storeId });
-    return real((value.taxGroups ?? []) as { id: string; code: string; name: string; hsnCode: string; ratePercent: number; includesTax: boolean; storeId: string | null; scope: "ORGANISATION" | "STORE" }[]);
+    return real((value.taxGroups ?? []) as { id: string; code: string; name: string; hsnCode: string; ratePercent: number; includesTax: boolean; storeId: string; status: "ACTIVE" | "DISABLED"; scope: "STORE" }[]);
   },
   /** storeId omitted = organisation-wide charges only; given = organisation + that store. */
-  async charges(storeId?: string) {
-    const value = await read<any>(`/pos/v1/charges${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ""}`, storeId ? { storeId } : {});
+  async charges(storeId: string) {
+    const value = await read<any>(`/pos/v1/charges?storeId=${encodeURIComponent(storeId)}`, { storeId });
     return real((value.charges ?? []) as ChargeRow[]);
+  },
+  async promotions(storeId: string) {
+    const value = await read<any>(`/pos/v1/promotions?storeId=${encodeURIComponent(storeId)}`, { storeId });
+    return real((value.promotions ?? []) as any[]);
+  },
+  async priceRules(storeId: string) {
+    const value = await read<any>(`/pos/v1/price-rules?storeId=${encodeURIComponent(storeId)}`, { storeId });
+    return real((value.rules ?? []) as any[]);
+  },
+  async discountReasons(storeId: string) {
+    const value = await read<any>(`/pos/v1/discount-reasons?storeId=${encodeURIComponent(storeId)}`, { storeId });
+    return real((value.reasons ?? []) as any[]);
   },
   async storeLookups(storeId: string) {
     const value = await read<any>(`/pos/v1/stores/${storeId}/lookups`, { storeId });
@@ -308,14 +354,23 @@ export const api = {
   },
   async approvals(storeId?: string) {
     const value = await read<any>(`/pos/v1/approvals${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ""}`);
-    return real((value.approvals ?? []).map((approval: any) => ({ id: approval.id, at: approval.createdAt, type: approval.action, requestedBy: approval.requestedBy, detail: approval.reason, status: approval.status, ...approval })) as ApprovalRow[]);
+    return real((value.approvals ?? []).map((approval: any) => ({ id: approval.id, at: approval.createdAt, type: approval.action, requestedBy: approval.requestedBy, detail: approval.reason, status: approval.status, payload: approval.payload, ...approval })) as ApprovalRow[]);
   },
   async alerts(storeId?: string) {
     const value = await read<any>(`/pos/v1/alerts${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ""}`);
     return real((value.alerts ?? []).map((alert: any) => ({ id: alert.id, at: alert.createdAt, severity: String(alert.severity).toLowerCase(), title: alert.type, detail: alert.message, ...alert })) as AlertRow[]);
   },
-  async reports(storeId?: string) {
-    const value = await read<any>(`/pos/v1/reports${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ""}`);
+  async attendance(storeId: string) {
+    const value = await read<any>(`/pos/v1/attendance?storeId=${encodeURIComponent(storeId)}`, { storeId });
+    return real((value.attendance ?? []) as { id: string; userId: string; name: string; status: string; clockedInAt: string; clockedOutAt: string | null; clockedInBy: string; clockedOutBy: string | null; clockOutReason: string }[]);
+  },
+  async dayCloses(storeId: string) {
+    const value = await read<any>(`/pos/v1/day-closes?storeId=${encodeURIComponent(storeId)}`, { storeId });
+    return real((value.dayCloses ?? []) as { id: string; businessDate: string; version: number; status: string; snapshot: Record<string, unknown>; closeReason: string; closedAt: string; closedBy: string; revisions: { version: number; reason: string; createdAt: string }[] }[]);
+  },
+  async reports(storeId?: string, filters: { from?: string; to?: string; registerId?: string; cashierId?: string } = {}) {
+    const params = new URLSearchParams({ ...(storeId ? { storeId } : {}), ...filters });
+    const value = await read<any>(`/pos/v1/reports${params.size ? `?${params.toString()}` : ""}`);
     return real(value);
   },
   async audit() {
@@ -334,8 +389,9 @@ export const api = {
     const detail = (meta: Record<string, unknown> | null | undefined) => Object.entries(meta ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`).join(" · ");
     return real((value.audit ?? []).map((entry: any) => ({ ...entry, id: entry.id, at: entry.createdAt, actor: entry.actorUserId ? people.get(entry.actorUserId) ?? "Former user" : "System", action: entry.action, entity: label(entry), detail: detail(entry.metadata) })) as AuditRow[]);
   },
-  async charts(storeId?: string) {
-    const value = await read<any>(`/pos/v1/reports${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ""}`);
+  async charts(storeId?: string, filters: { from?: string; to?: string; registerId?: string; cashierId?: string } = {}) {
+    const params = new URLSearchParams({ ...(storeId ? { storeId } : {}), ...filters });
+    const value = await read<any>(`/pos/v1/reports${params.size ? `?${params.toString()}` : ""}`);
     const tenderTotal = Number(value.tenderTotalCents ?? 0);
     return real({
       trend: (value.trend ?? []).map((item: any) => ({ day: item.day, sales: item.sales })),

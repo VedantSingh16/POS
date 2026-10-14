@@ -121,17 +121,17 @@ export class AuthService {
 
     try {
       const userId = await this.prisma.$transaction(async (tx) => {
-        const organization = await tx.organization.create({ data: { name: organizationName, slug: organizationSlug } });
+        const organization = await tx.organization.create({ data: { name: organizationName, slug: organizationSlug, countryCode: 'IN', currency: 'INR' } });
         await tx.organizationEntitlement.create({ data: { organizationId: organization.id, maxStores } });
         await tx.organizationSettings.create({
-          data: { organizationId: organization.id, settings: { onboarding: { currentStep: 0, completedSteps: [], complete: false, required: true } } },
+          data: { organizationId: organization.id, settings: { enabledTenders: ['CASH'], onboarding: { version: 2, currentStep: 0, completedSteps: [], complete: false, required: true } } },
         });
         await tx.permission.createMany({ data: PERMISSIONS.map(([code, description]) => ({ code, description })), skipDuplicates: true });
 
         const roleIds = new Map<string, string>();
         for (const definition of SYSTEM_ROLES) {
           const role = await tx.role.create({
-            data: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true },
+            data: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true, storeAssignable: definition.storeAssignable ?? false },
           });
           roleIds.set(definition.name, role.id);
           await tx.rolePermission.createMany({

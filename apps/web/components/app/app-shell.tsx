@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { navMode, resolveHref, visibleNav, type NavItem, type NavMode } from "@/lib/nav";
-import { hasOrgScope } from "@/lib/permissions";
+import { hasOrgScope, isOrganisationReadOnlyStoreView } from "@/lib/permissions";
 import { useMe } from "@/components/app/session-context";
 import { IdleLock, UserMenu } from "@/components/app/user-menu";
 import { cn } from "@/lib/utils";
@@ -25,10 +25,8 @@ function activeStoreId(pathname: string, fallback: string) {
 }
 
 function isActive(pathname: string, href: string) {
-  const parts = href.split("/").length;
   if (href === "/org" || /^\/s\/[^/]+$/.test(href)) return pathname === href;
-  if (href.startsWith("/org/settings")) return pathname.startsWith("/org/settings");
-  return pathname === href || (parts > 2 && pathname.startsWith(href + "/"));
+  return pathname === href || (href.split("/").length > 2 && pathname.startsWith(href + "/"));
 }
 
 /** Tells the user, in the sidebar itself, which area they are in and how to leave it. */
@@ -38,11 +36,11 @@ function ContextCard({ collapsed }: { collapsed: boolean }) {
   const store = stores.find((s) => s.id === storeId);
   const canLeaveToOrg = hasOrgScope(me);
   if (collapsed) {
-    return <div className="mx-2 mt-3 grid h-9 place-items-center rounded-md border border-sidebar-border bg-sidebar-accent text-white" title={mode === "org" ? `Organisation: ${orgName}` : `Store: ${store?.name ?? ""}`}>{mode === "org" ? <Building2 className="size-4" /> : <StoreIcon className="size-4" />}</div>;
+    return <div className="mx-2 mt-3 grid h-9 place-items-center rounded-md border border-sidebar-border bg-sidebar-accent text-sidebar-foreground" title={mode === "org" ? `Organisation: ${orgName}` : `Store: ${store?.name ?? ""}`}>{mode === "org" ? <Building2 className="size-4" /> : <StoreIcon className="size-4" />}</div>;
   }
   return (
-    <div className={cn("mx-2 mt-3 rounded-md border border-sidebar-border bg-sidebar-accent p-3 text-white", mode === "store" && "border-l-2 border-l-sidebar-primary")}>
-      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-sidebar-muted">{mode === "org" ? "Organisation administration" : "Store operations"}</p>
+    <div className={cn("mx-2 mt-3 rounded-md border border-sidebar-border bg-sidebar-accent/55 p-3 text-sidebar-foreground", mode === "store" && "border-l-2 border-l-sidebar-primary")}>
+      <p className="text-xs font-medium text-sidebar-muted">{mode === "org" ? "Organisation" : "Store operations"}</p>
       <p className="mt-1 flex items-center gap-2 truncate text-sm font-semibold">
         {mode === "org" ? <Building2 className="size-4 shrink-0" /> : <StoreIcon className="size-4 shrink-0" />}
         <span className="truncate">{mode === "org" ? orgName : store?.name ?? "Store"}</span>
@@ -75,7 +73,7 @@ function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
       {sections.length === 0 && !collapsed && <p className="px-2 text-xs text-sidebar-muted">No pages are available to your account in this area.</p>}
       {sections.map((section) => groupItems(section.items).map((group, gi) => (
         <div key={`${section.id}-${gi}`} className={cn(gi > 0 && "mt-4")}>
-          {!collapsed && group.title && <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">{group.title}</p>}
+          {!collapsed && group.title && <p className="px-2 pb-1 text-xs font-medium text-sidebar-muted">{group.title}</p>}
           {collapsed && gi > 0 && <hr className="mx-2 my-2 border-sidebar-border" />}
           <ul className="space-y-0.5">
             {group.items.map((item) => {
@@ -84,7 +82,7 @@ function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
               return (
                 <li key={item.href}>
                   <Link href={href} onClick={onNavigate} title={collapsed ? item.label : undefined} aria-current={active ? "page" : undefined}
-                    className={cn("relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-white", active && "bg-sidebar-accent font-medium text-white before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-primary", collapsed && "justify-center px-0")}>
+                    className={cn("relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground", active && "bg-sidebar-accent font-semibold text-sidebar-primary before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-primary", collapsed && "justify-center px-0")}>
                     <item.icon className="size-4 shrink-0" />
                     {!collapsed && <span className="truncate">{item.label}</span>}
                     {collapsed && <span className="sr-only">{item.label}</span>}
@@ -101,8 +99,8 @@ function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
 
 function Brand({ collapsed, home }: { collapsed: boolean; home: string }) {
   return (
-    <Link href={home} aria-label="Home" className={cn("flex h-14 items-center gap-2 border-b border-sidebar-border px-4 text-white", collapsed && "justify-center px-0")}>
-      <span className="grid size-7 place-items-center rounded-md bg-sidebar-primary text-xs font-bold text-sidebar">D</span>
+    <Link href={home} aria-label="Home" className={cn("flex h-14 items-center gap-2 border-b border-sidebar-border px-4 text-sidebar-foreground", collapsed && "justify-center px-0")}>
+      <span className="grid size-7 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">D</span>
       {!collapsed && <span className="font-semibold tracking-tight">DeltCRM POS</span>}
     </Link>
   );
@@ -199,7 +197,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
   const store = stores.find((s) => s.id === storeId);
   const canPickStore = mode === "org" ? hasOrgScope(me) && stores.length > 0 : stores.length > 1;
   return (
-    <header className={cn("sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card px-3 sm:px-4")}>
+    <header className={cn("sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-card px-3 sm:px-4")}>
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenu} aria-label="Open navigation"><Menu /></Button>
       {mode === "store" && <span className="hidden items-center gap-1.5 text-sm font-semibold sm:flex"><Building2 className="size-4 text-muted-foreground" />{orgName}</span>}
       <span className="hidden h-5 w-px bg-border sm:block" />
@@ -227,11 +225,13 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 /** Shown to anyone who can also administer the organisation, so a store view is never mistaken for the organisation. */
 function StoreContextBanner() {
   const { stores, storeId } = useShell();
+  const me = useMe();
   const store = stores.find((s) => s.id === storeId);
+  const readOnly = isOrganisationReadOnlyStoreView(me, storeId);
   return (
     <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-accent px-4 py-2 text-sm text-accent-foreground">
       <StoreIcon className="size-4" />
-      <span>You are viewing <strong>{store?.name ?? "this store"}</strong>. Everything on these pages is for this store only.</span>
+      <span>{readOnly ? <>Organisation view · <strong>{store?.name ?? "this store"}</strong> · Read-only. Store actions require a store-scoped role.</> : <>You are viewing <strong>{store?.name ?? "this store"}</strong>. Everything on these pages is for this store only.</>}</span>
       <Link href="/org" className="ml-auto inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"><ArrowLeft className="size-3.5" /> Back to organisation</Link>
     </div>
   );
@@ -256,13 +256,13 @@ export function AppShell({ stores, orgName, defaultStoreId, home, children }: { 
   return (
     <ShellContext.Provider value={{ stores, storeId, orgName, mode, setPaletteOpen }}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2">Skip to content</a>
-      <div className="flex min-h-screen">
-        <aside className={cn("sticky top-0 hidden h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex", collapsed ? "w-14" : "w-60")}>
+      <div className="flex min-h-dvh">
+        <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex", collapsed ? "w-14" : "w-52")}>
           <Brand collapsed={collapsed} home={home} />
           <ContextCard collapsed={collapsed} />
           <SidebarNav collapsed={collapsed} />
           <button onClick={() => setCollapsed((v) => !v)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="m-2 flex h-9 items-center justify-center rounded-md text-sidebar-muted hover:bg-sidebar-accent hover:text-white">
+            className="m-2 flex h-9 items-center justify-center rounded-md text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground">
             {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           </button>
         </aside>
@@ -278,7 +278,7 @@ export function AppShell({ stores, orgName, defaultStoreId, home, children }: { 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onMenu={() => setMobileOpen(true)} />
           {mode === "store" && hasOrgScope(me) && <StoreContextBanner />}
-          <main id="main" className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">{children}</main>
+          <main id="main" className="mx-auto w-full max-w-[1680px] flex-1 p-4 sm:p-5 xl:p-6">{children}</main>
         </div>
       </div>
       <CommandMenu open={paletteOpen} setOpen={setPaletteOpen} />

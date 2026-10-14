@@ -12,7 +12,7 @@ export default async function NewReturn({ params }: PageProps<"/s/[storeId]/retu
   const sessions = registers.filter((register) => register.sessionId).map((register) => ({ id: register.sessionId, registerName: register.name }));
   return (
     <>
-      <PageHeader title="New return" description="Find the original receipt first." crumbs={[{ label: "Returns", href: `/s/${storeId}/returns` }, { label: "New" }]} />
+      <PageHeader title="New return" description="Find the original receipt first." crumbs={[{ label: "Returns", href: `/s/${storeId}/returns` }, { label: "New" }]} backHref={`/s/${storeId}/returns`} backLabel="Back to returns" />
       <ReturnForm storeId={storeId} sessions={sessions} />
     </>
   );

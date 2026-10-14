@@ -1,6 +1,11 @@
 FROM node:22-alpine AS base
 
-RUN corepack enable
+# Install the exact workspace pnpm version directly. npm retries transient
+# registry failures, while Corepack's first-use download can fail mid-transfer.
+RUN npm install --global pnpm@12.4.1 \
+    --fetch-retries=5 \
+    --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000
 
 # -----------------------------
 # Dependencies

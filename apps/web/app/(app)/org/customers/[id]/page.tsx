@@ -14,7 +14,7 @@ export default async function CustomerDetail({ params }: PageProps<"/org/custome
   if (!c) notFound();
   return (
     <>
-      <PageHeader title={c.name} description={c.phone} crumbs={[{ label: "Customers", href: "/org/customers" }, { label: c.name }]} actions={<CreditSheet customerId={c.id} stores={stores.map((s) => ({ id: s.id, name: s.name }))} />} />
+      <PageHeader title={c.name} description={c.phone} crumbs={[{ label: "Customers", href: "/org/customers" }, { label: c.name }]} backHref="/org/customers" backLabel="Back to customers" actions={<CreditSheet customerId={c.id} stores={stores.map((s) => ({ id: s.id, name: s.name }))} />} />
       <Card><CardContent className="grid gap-4 sm:grid-cols-3">
         <div><p className="text-xs text-muted-foreground">Tier</p><p className="font-medium">{c.tier}</p></div>
         <div><p className="text-xs text-muted-foreground">Wallet</p><Money minor={c.walletMinor} /></div>

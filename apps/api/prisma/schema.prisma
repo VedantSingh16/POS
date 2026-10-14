@@ -77,12 +77,36 @@ enum TenderType {
   CARD
   UPI
   OTHER
+  WALLET
+  POINTS
 }
 
 enum ApprovalStatus {
   PENDING
   APPROVED
   DENIED
+}
+
+enum AttendanceStatus {
+  OPEN
+  CLOSED
+}
+
+enum DayCloseStatus {
+  CLOSED
+  RESTATEMENT_REQUIRED
+}
+
+enum ReportExportFormat {
+  CSV
+  PDF
+}
+
+enum ReportExportStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
 }
 
 enum PermissionEffect {
@@ -147,56 +171,67 @@ enum OutboxStatus {
 // ───────────────────────── Organisation & access ─────────────────────────
 
 model Organization {
-  id        String       @id @default(uuid()) @db.Uuid
-  name      String
-  legalName String       @default("") @map("legal_name")
-  tradeName String       @default("") @map("trade_name")
-  address   String       @default("")
-  gstin     String       @default("")
-  businessType String    @default("RETAIL") @map("business_type")
-  slug      String       @unique
-  status    RecordStatus @default(ACTIVE)
-  currency  String       @default("INR")
-  timezone  String       @default("Asia/Kolkata")
-  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id               String       @id @default(uuid()) @db.Uuid
+  name             String
+  legalName        String       @default("") @map("legal_name")
+  tradeName        String       @default("") @map("trade_name")
+  address          String       @default("")
+  gstin            String       @default("")
+  businessType     String       @default("RETAIL") @map("business_type")
+  countryCode      String       @default("IN") @map("country_code")
+  /// NOT_REVIEWED blocks checkout; LEGACY preserves the behavior of organisations created before tax profiles existed.
+  taxProfileStatus String       @default("NOT_REVIEWED") @map("tax_profile_status")
+  slug             String       @unique
+  status           RecordStatus @default(ACTIVE)
+  currency         String       @default("INR")
+  timezone         String       @default("Asia/Kolkata")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  entitlement      OrganizationEntitlement?
-  settings         OrganizationSettings?
-  users            User[]
-  roles            Role[]
-  stores           Store[]
-  registers        Register[]
-  stockLocations   StockLocation[]
-  categories       Category[]
-  unitsOfMeasure   UnitOfMeasure[]
-  taxGroups        TaxGroup[]
-  charges          Charge[]
-  products         Product[]
-  variants         ProductVariant[]
-  barcodes         Barcode[]
-  prices           VariantPrice[]
-  auditLogs        AuditLog[]
-  registerSessions RegisterSession[]
-  cashMovements    CashMovement[]
-  sales            Sale[]
-  heldSales        HeldSale[]
-  approvalPolicies ApprovalPolicy[]
-  approvals        Approval[]
+  entitlement        OrganizationEntitlement?
+  settings           OrganizationSettings?
+  users              User[]
+  roles              Role[]
+  stores             Store[]
+  registers          Register[]
+  stockLocations     StockLocation[]
+  categories         Category[]
+  unitsOfMeasure     UnitOfMeasure[]
+  taxGroups          TaxGroup[]
+  charges            Charge[]
+  products           Product[]
+  variants           ProductVariant[]
+  barcodes           Barcode[]
+  prices             VariantPrice[]
+  auditLogs          AuditLog[]
+  registerSessions   RegisterSession[]
+  cashMovements      CashMovement[]
+  sales              Sale[]
+  heldSales          HeldSale[]
+  approvalPolicies   ApprovalPolicy[]
+  approvals          Approval[]
   inventoryMovements InventoryMovement[]
   inventoryBalances  InventoryBalance[]
-  returns          SaleReturn[]
-  customers        Customer[]
-  promotions       Promotion[]
-  bundles          Bundle[]
-  transfers        Transfer[]
-  alerts           Alert[]
-  outboxEvents     OutboxEvent[]
-  sequences        DocumentSequence[]
-  sessions         Session[]
-  userRoles        UserRole[]
-  brands           Brand[]
-  distributions    Distribution[]
+  returns            SaleReturn[]
+  customers          Customer[]
+  promotions         Promotion[]
+  bundles            Bundle[]
+  transfers          Transfer[]
+  alerts             Alert[]
+  outboxEvents       OutboxEvent[]
+  sequences          DocumentSequence[]
+  sessions           Session[]
+  userRoles          UserRole[]
+  brands             Brand[]
+  distributions      Distribution[]
+  priceRules         PriceRule[]
+  discountReasons    DiscountReason[]
+  paymentAttempts    PaymentAttempt[]
+  attendance         StaffAttendance[]
+  dayCloses          StoreDayClose[]
+  dayCloseRevisions  DayCloseRevision[]
+  reportExportJobs   ReportExportJob[]
+  productTypes       ProductType[]
 
   @@map("organizations")
 }
@@ -221,7 +256,7 @@ model OrganizationSettings {
 }
 
 model Permission {
-  code        String  @id
+  code        String           @id
   description String
   roles       RolePermission[]
 
@@ -229,14 +264,16 @@ model Permission {
 }
 
 model Role {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  name           String
-  description    String       @default("")
-  isSystem       Boolean      @default(false) @map("is_system")
-  status         RecordStatus @default(ACTIVE)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  name            String
+  description     String       @default("")
+  isSystem        Boolean      @default(false) @map("is_system")
+  /// Organisation-approved for assignment by store managers, within that manager's own store.
+  storeAssignable Boolean      @default(false) @map("store_assignable")
+  status          RecordStatus @default(ACTIVE)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   permissions  RolePermission[]
@@ -247,44 +284,61 @@ model Role {
 }
 
 model RolePermission {
-  roleId         String     @map("role_id") @db.Uuid
-  permissionCode String     @map("permission_code")
+  roleId         String           @map("role_id") @db.Uuid
+  permissionCode String           @map("permission_code")
   effect         PermissionEffect @default(ALLOW)
-  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission     Permission @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+  role           Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission     Permission       @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
 
   @@id([roleId, permissionCode])
   @@map("role_permissions")
 }
 
 model Store {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  code           String
-  name           String
-  status         RecordStatus @default(ACTIVE)
-  address        String       @default("")
-  timezone       String       @default("Asia/Kolkata")
-  closeHour      Int?         @map("close_hour")
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  code            String
+  name            String
+  status          RecordStatus @default(ACTIVE)
+  address         String       @default("")
+  city            String       @default("")
+  region          String       @default("")
+  postalCode      String       @default("") @map("postal_code")
+  phone           String       @default("")
+  /// Store-specific GSTIN / tax number when different from the organisation's. Empty = use the organisation's.
+  taxNumber       String       @default("") @map("tax_number")
+  /// Complete, store-owned billing and checkout rules. Missing legacy keys use system defaults only.
+  billingSettings Json         @default("{}") @map("billing_settings")
+  /// Store-scoped field configuration for merchant-defined product data.
+  fieldSettings   Json         @default("{}") @map("field_settings")
+  timezone        String       @default("Asia/Kolkata")
+  closeHour       Int?         @map("close_hour")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  registers        Register[]
-  stockLocations   StockLocation[]
-  userStores       UserStore[]
-  userRoles        UserRole[]
-  defaultFor       User[]            @relation("userDefaultStore")
-  prices           VariantPrice[]
-  registerSessions RegisterSession[]
-  sales            Sale[]
-  heldSales        HeldSale[]
-  returns          SaleReturn[]
-  sequences        DocumentSequence[]
-  storeVariants    StoreVariant[]
+  organization          Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  registers             Register[]
+  stockLocations        StockLocation[]
+  userStores            UserStore[]
+  userRoles             UserRole[]
+  defaultFor            User[]             @relation("userDefaultStore")
+  prices                VariantPrice[]
+  registerSessions      RegisterSession[]
+  sales                 Sale[]
+  heldSales             HeldSale[]
+  returns               SaleReturn[]
+  sequences             DocumentSequence[]
+  storeVariants         StoreVariant[]
   distributionsReceived Distribution[]
-  taxGroups        TaxGroup[]
-  charges          Charge[]
+  taxGroups             TaxGroup[]
+  promotions            Promotion[]
+  discountReasons       DiscountReason[]
+  charges               Charge[]
+  priceRules            PriceRule[]
+  attendance            StaffAttendance[]
+  dayCloses             StoreDayClose[]
+  reportExportJobs      ReportExportJob[]
+  approvals             Approval[]
 
   @@unique([organizationId, code])
   @@map("stores")
@@ -312,39 +366,51 @@ model Register {
 }
 
 model User {
-  id                 String     @id @default(uuid()) @db.Uuid
-  organizationId     String     @map("organization_id") @db.Uuid
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
   /// Always stored lower-cased (enforced by a CHECK constraint in the migration).
-  email              String
-  passwordHash       String     @map("password_hash")
-  pinHash            String?    @map("pin_hash")
-  firstName          String     @map("first_name")
-  lastName           String     @default("") @map("last_name")
-  status             UserStatus @default(ACTIVE)
-  defaultStoreId     String?    @map("default_store_id") @db.Uuid
-  failedAttempts     Int        @default(0) @map("failed_attempts")
-  lockedUntil        DateTime?  @map("locked_until") @db.Timestamptz(3)
-  lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(3)
-  invitedAt          DateTime?  @map("invited_at") @db.Timestamptz(3)
-  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  email          String
+  passwordHash   String     @map("password_hash")
+  pinHash        String?    @map("pin_hash")
+  firstName      String     @map("first_name")
+  lastName       String     @default("") @map("last_name")
+  status         UserStatus @default(ACTIVE)
+  defaultStoreId String?    @map("default_store_id") @db.Uuid
+  failedAttempts Int        @default(0) @map("failed_attempts")
+  lockedUntil    DateTime?  @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  invitedAt      DateTime?  @map("invited_at") @db.Timestamptz(3)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  defaultStore Store?       @relation("userDefaultStore", fields: [defaultStoreId], references: [id], onDelete: SetNull)
-  roles        UserRole[]
-  stores       UserStore[]
-  sessions     Session[]
-  auditLogs    AuditLog[]
-  registerSessionsOpened RegisterSession[]
-  cashMovements          CashMovement[]
-  salesCreated           Sale[]
-  heldSalesCreated       HeldSale[]
-  approvalsRequested     Approval[] @relation("approvalRequester")
-  approvalsDecided       Approval[] @relation("approvalDecider")
-  returnsCreated         SaleReturn[]
-  transfersCreated       Transfer[]
-  distributionsCreated   Distribution[]
-  inventoryMovements     InventoryMovement[]
+  organization             Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultStore             Store?              @relation("userDefaultStore", fields: [defaultStoreId], references: [id], onDelete: SetNull)
+  roles                    UserRole[]
+  stores                   UserStore[]
+  sessions                 Session[]
+  auditLogs                AuditLog[]
+  registerSessionsOpened   RegisterSession[]
+  cashMovements            CashMovement[]
+  salesCreated             Sale[]
+  salesHandled             Sale[]              @relation("saleHandler")
+  heldSalesCreated         HeldSale[]
+  approvalsRequested       Approval[]          @relation("approvalRequester")
+  approvalsDecided         Approval[]          @relation("approvalDecider")
+  returnsCreated           SaleReturn[]
+  transfersCreated         Transfer[]
+  distributionsCreated     Distribution[]
+  inventoryMovements       InventoryMovement[]
+  attendanceRecords        StaffAttendance[]   @relation("attendanceUser")
+  attendanceClockIns       StaffAttendance[]   @relation("attendanceClockInActor")
+  attendanceClockOuts      StaffAttendance[]   @relation("attendanceClockOutActor")
+  sessionsClosed           RegisterSession[]   @relation("registerSessionCloser")
+  sessionsApproved         RegisterSession[]   @relation("registerSessionApprover")
+  cashMovementsApproved    CashMovement[]      @relation("cashMovementApprover")
+  alertsAcknowledged       Alert[]             @relation("alertAcknowledger")
+  alertsResolved           Alert[]             @relation("alertResolver")
+  dayClosesCreated         StoreDayClose[]     @relation("dayCloseCreator")
+  dayCloseRevisionsCreated DayCloseRevision[]  @relation("dayCloseRevisionCreator")
+  reportExportsCreated     ReportExportJob[]   @relation("reportExportRequester")
 
   @@unique([organizationId, email])
   @@index([email])
@@ -453,27 +519,29 @@ model UnitOfMeasure {
 }
 
 model TaxGroup {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
   code           String
   name           String
-  hsnCode        String   @default("") @map("hsn_code")
+  hsnCode        String       @default("") @map("hsn_code")
   /// Rate in basis points: 1800 = 18.00 %.
-  rateBps        Int      @map("rate_bps")
-  includesTax    Boolean  @default(false) @map("includes_tax")
-  /// NULL = organisation-wide tax group; set = created by, and only visible to, that store.
-  storeId        String?  @map("store_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  rateBps        Int          @map("rate_bps")
+  includesTax    Boolean      @default(false) @map("includes_tax")
+  /// Every active tax group belongs to exactly one store. NULL rows are legacy and quarantined.
+  storeId        String?      @map("store_id") @db.Uuid
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  store        Store?           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  charges      Charge[]
-  variants     ProductVariant[]
-  storeVariants StoreVariant[]
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store             Store?             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  charges           Charge[]
+  variants          ProductVariant[] // Legacy product tax links are retained for migration history and are never used by checkout.
+  storeVariants     StoreVariant[]
   distributionLines DistributionLine[] @relation("distributionSuggestedTax")
 
-  @@unique([organizationId, code])
+  @@unique([organizationId, storeId, code])
+  @@index([organizationId, storeId, status])
   @@map("tax_groups")
 }
 
@@ -485,11 +553,17 @@ model Product {
   description    String        @default("")
   brand          String        @default("")
   brandId        String?       @map("brand_id") @db.Uuid
+  /// The organisation-defined product type, which decides the categories, brands and extra fields this product may use.
+  productTypeId  String?       @map("product_type_id") @db.Uuid
+  /// Values of the product type's extra fields, keyed by field key.
+  attributes     Json          @default("{}")
+  customFields   Json          @default("{}") @map("custom_fields")
   status         ProductStatus @default(ACTIVE)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productType  ProductType?     @relation(fields: [productTypeId], references: [id], onDelete: SetNull)
   category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   brandRef     Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
   variants     ProductVariant[]
@@ -499,17 +573,23 @@ model Product {
 }
 
 model ProductVariant {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  productId      String        @map("product_id") @db.Uuid
-  sku            String
-  name           String
-  costCents      Int           @default(0) @map("cost_cents")
-  status         ProductStatus @default(ACTIVE)
-  uomId          String?       @map("uom_id") @db.Uuid
-  taxGroupId     String?       @map("tax_group_id") @db.Uuid
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String        @id @default(uuid()) @db.Uuid
+  organizationId  String        @map("organization_id") @db.Uuid
+  productId       String        @map("product_id") @db.Uuid
+  sku             String
+  name            String
+  costCents       Int           @default(0) @map("cost_cents")
+  status          ProductStatus @default(ACTIVE)
+  uomId           String?       @map("uom_id") @db.Uuid
+  /// Deprecated: retained until old tax links have been fully retired. Store checkout never reads this value.
+  taxGroupId      String?       @map("tax_group_id") @db.Uuid
+  /// Open-price item: no list price; the cashier enters one with manager approval, never below floorPriceCents.
+  openPrice       Boolean       @default(false) @map("open_price")
+  floorPriceCents Int           @default(0) @map("floor_price_cents")
+  /// Organisation-defined variant fields, keyed by stable field key.
+  customFields    Json          @default("{}") @map("custom_fields")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   product            Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -533,17 +613,22 @@ model ProductVariant {
 
 /// A store's own catalogue: which variants this store sells. Pending items are received but not yet verified.
 model StoreVariant {
-  id             String             @id @default(uuid()) @db.Uuid
-  organizationId String             @map("organization_id") @db.Uuid
-  storeId        String             @map("store_id") @db.Uuid
-  variantId      String             @map("variant_id") @db.Uuid
-  status         StoreVariantStatus @default(ACTIVE)
-  sourceType     StoreVariantSource @default(STORE_CREATED) @map("source_type")
-  taxGroupId     String?            @map("tax_group_id") @db.Uuid
-  verifiedAt     DateTime?          @map("verified_at") @db.Timestamptz(3)
-  verifiedByUserId String?          @map("verified_by_user_id") @db.Uuid
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id               String             @id @default(uuid()) @db.Uuid
+  organizationId   String             @map("organization_id") @db.Uuid
+  storeId          String             @map("store_id") @db.Uuid
+  variantId        String             @map("variant_id") @db.Uuid
+  status           StoreVariantStatus @default(ACTIVE)
+  sourceType       StoreVariantSource @default(STORE_CREATED) @map("source_type")
+  taxGroupId       String?            @map("tax_group_id") @db.Uuid
+  verifiedAt       DateTime?          @map("verified_at") @db.Timestamptz(3)
+  verifiedByUserId String?            @map("verified_by_user_id") @db.Uuid
+  /// Manager-pinned quick key. Lower rank shows first.
+  pinned           Boolean            @default(false)
+  pinnedRank       Int                @default(0) @map("pinned_rank")
+  /// Store-specific field values and permitted overrides for this catalogue entry.
+  customFields     Json               @default("{}") @map("custom_fields")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   store    Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
   variant  ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
@@ -601,15 +686,21 @@ model RegisterSession {
   expectedCashCents Int           @default(0) @map("expected_cash_cents")
   countedCashCents  Int?          @map("counted_cash_cents")
   varianceCents     Int?          @map("variance_cents")
+  closedById        String?       @map("closed_by_id") @db.Uuid
+  closeApprovedById String?       @map("close_approved_by_id") @db.Uuid
+  closeReason       String        @default("") @map("close_reason")
+  forcedClosed      Boolean       @default(false) @map("forced_closed")
   openedAt          DateTime      @default(now()) @map("opened_at") @db.Timestamptz(3)
   closedAt          DateTime?     @map("closed_at") @db.Timestamptz(3)
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  store        Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  register     Register       @relation(fields: [registerId], references: [id], onDelete: Cascade)
-  openedBy     User           @relation(fields: [openedById], references: [id], onDelete: NoAction)
-  cashMovements CashMovement[]
-  sales        Sale[]
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  register        Register       @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  openedBy        User           @relation(fields: [openedById], references: [id], onDelete: NoAction)
+  closedBy        User?          @relation("registerSessionCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closeApprovedBy User?          @relation("registerSessionApprover", fields: [closeApprovedById], references: [id], onDelete: SetNull)
+  cashMovements   CashMovement[]
+  sales           Sale[]
 
   // A partial unique index (one OPEN session per register) is created in the migration.
   @@index([organizationId, storeId, openedAt(sort: Desc)])
@@ -618,56 +709,70 @@ model RegisterSession {
 }
 
 model CashMovement {
-  id             String           @id @default(uuid()) @db.Uuid
-  organizationId String           @map("organization_id") @db.Uuid
-  sessionId      String           @map("session_id") @db.Uuid
-  type           CashMovementType
+  id               String           @id @default(uuid()) @db.Uuid
+  organizationId   String           @map("organization_id") @db.Uuid
+  sessionId        String           @map("session_id") @db.Uuid
+  type             CashMovementType
   /// Signed: negative for cash leaving the drawer.
-  amountCents    Int              @map("amount_cents")
-  reason         String           @default("")
-  actorUserId    String           @map("actor_user_id") @db.Uuid
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  amountCents      Int              @map("amount_cents")
+  reason           String           @default("")
+  actorUserId      String           @map("actor_user_id") @db.Uuid
+  approvedById     String?          @map("approved_by_id") @db.Uuid
+  clientMovementId String?          @map("client_movement_id")
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   session      RegisterSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   actor        User            @relation(fields: [actorUserId], references: [id], onDelete: NoAction)
+  approvedBy   User?           @relation("cashMovementApprover", fields: [approvedById], references: [id], onDelete: SetNull)
 
+  @@unique([organizationId, clientMovementId])
   @@index([sessionId, createdAt(sort: Desc)])
   @@map("cash_movements")
 }
 
 model Sale {
-  id             String     @id @default(uuid()) @db.Uuid
-  organizationId String     @map("organization_id") @db.Uuid
-  storeId        String     @map("store_id") @db.Uuid
-  registerId     String     @map("register_id") @db.Uuid
-  sessionId      String     @map("session_id") @db.Uuid
+  id               String     @id @default(uuid()) @db.Uuid
+  organizationId   String     @map("organization_id") @db.Uuid
+  storeId          String     @map("store_id") @db.Uuid
+  registerId       String     @map("register_id") @db.Uuid
+  sessionId        String     @map("session_id") @db.Uuid
   /// Client-generated idempotency key: a retried checkout returns the original sale.
-  clientSaleId   String     @map("client_sale_id")
-  receiptNumber  String     @map("receipt_number")
-  status         SaleStatus @default(COMPLETED)
-  subtotalCents  Int        @map("subtotal_cents")
-  discountCents  Int        @default(0) @map("discount_cents")
-  taxCents       Int        @default(0) @map("tax_cents")
-  roundingCents  Int        @default(0) @map("rounding_cents")
+  clientSaleId     String     @map("client_sale_id")
+  receiptNumber    String     @map("receipt_number")
+  status           SaleStatus @default(COMPLETED)
+  subtotalCents    Int        @map("subtotal_cents")
+  discountCents    Int        @default(0) @map("discount_cents")
+  taxCents         Int        @default(0) @map("tax_cents")
+  roundingCents    Int        @default(0) @map("rounding_cents")
   /// Additional charges (net of their own tax; that tax is included in taxCents). Detail in `charges`.
-  chargeCents    Int        @default(0) @map("charge_cents")
-  charges        Json       @default("[]")
-  totalCents     Int        @map("total_cents")
-  notes          String     @default("")
-  customerId     String?    @map("customer_id") @db.Uuid
-  createdById    String     @map("created_by_id") @db.Uuid
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  chargeCents      Int        @default(0) @map("charge_cents")
+  charges          Json       @default("[]")
+  /// Promotions applied to this sale: [{ promotionId, code, discountCents }].
+  promotions       Json       @default("[]")
+  /// Seller, buyer and place-of-supply as they were when the sale was made, so a reprint is identical.
+  documentSnapshot Json?      @map("document_snapshot")
+  totalCents       Int        @map("total_cents")
+  notes            String     @default("")
+  /// Configured checkout values captured with this sale.
+  customFields     Json       @default("{}") @map("custom_fields")
+  customerId       String?    @map("customer_id") @db.Uuid
+  createdById      String     @map("created_by_id") @db.Uuid
+  /// Employee selected as the person handling the bill; createdById remains the authenticated actor.
+  handledById      String?    @map("handled_by_id") @db.Uuid
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  store        Store           @relation(fields: [storeId], references: [id], onDelete: NoAction)
-  register     Register        @relation(fields: [registerId], references: [id], onDelete: NoAction)
-  session      RegisterSession @relation(fields: [sessionId], references: [id], onDelete: NoAction)
-  customer     Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  createdBy    User            @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store                 @relation(fields: [storeId], references: [id], onDelete: NoAction)
+  register     Register              @relation(fields: [registerId], references: [id], onDelete: NoAction)
+  session      RegisterSession       @relation(fields: [sessionId], references: [id], onDelete: NoAction)
+  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  createdBy    User                  @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  handledBy    User?                 @relation("saleHandler", fields: [handledById], references: [id], onDelete: SetNull)
   lines        SaleLine[]
   payments     SalePayment[]
   returns      SaleReturn[]
+  redemptions  PromotionRedemption[]
 
   @@unique([organizationId, clientSaleId])
   @@unique([storeId, receiptNumber])
@@ -677,20 +782,20 @@ model Sale {
 }
 
 model SaleLine {
-  id             String   @id @default(uuid()) @db.Uuid
-  saleId         String   @map("sale_id") @db.Uuid
-  variantId      String   @map("variant_id") @db.Uuid
+  id             String  @id @default(uuid()) @db.Uuid
+  saleId         String  @map("sale_id") @db.Uuid
+  variantId      String  @map("variant_id") @db.Uuid
   sku            String
   name           String
-  quantity       Decimal  @db.Decimal(14, 3)
-  unitPriceCents Int      @map("unit_price_cents")
-  unitCostCents  Int      @default(0) @map("unit_cost_cents")
-  discountCents  Int      @default(0) @map("discount_cents")
-  taxRateBps     Int      @default(0) @map("tax_rate_bps")
-  hsnCode        String   @default("") @map("hsn_code")
-  taxCents       Int      @default(0) @map("tax_cents")
-  lineTotalCents Int      @map("line_total_cents")
-  note           String   @default("")
+  quantity       Decimal @db.Decimal(14, 3)
+  unitPriceCents Int     @map("unit_price_cents")
+  unitCostCents  Int     @default(0) @map("unit_cost_cents")
+  discountCents  Int     @default(0) @map("discount_cents")
+  taxRateBps     Int     @default(0) @map("tax_rate_bps")
+  hsnCode        String  @default("") @map("hsn_code")
+  taxCents       Int     @default(0) @map("tax_cents")
+  lineTotalCents Int     @map("line_total_cents")
+  note           String  @default("")
 
   sale        Sale           @relation(fields: [saleId], references: [id], onDelete: Cascade)
   variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: NoAction)
@@ -702,28 +807,33 @@ model SaleLine {
 }
 
 model SalePayment {
-  id          String     @id @default(uuid()) @db.Uuid
-  saleId      String     @map("sale_id") @db.Uuid
-  tenderType  TenderType @map("tender_type")
-  amountCents Int        @map("amount_cents")
-  tenderedCents Int?     @map("tendered_cents")
-  changeCents Int        @default(0) @map("change_cents")
-  reference   String     @default("")
-  sale        Sale       @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  id            String          @id @default(uuid()) @db.Uuid
+  saleId        String          @map("sale_id") @db.Uuid
+  tenderType    TenderType      @map("tender_type")
+  amountCents   Int             @map("amount_cents")
+  tenderedCents Int?            @map("tendered_cents")
+  changeCents   Int             @default(0) @map("change_cents")
+  reference     String          @default("")
+  /// The confirmed payment attempt this payment came from (online / terminal payments).
+  attemptId     String?         @unique @map("attempt_id") @db.Uuid
+  sale          Sale            @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  attempt       PaymentAttempt? @relation(fields: [attemptId], references: [id], onDelete: SetNull)
 
   @@index([saleId])
   @@map("sale_payments")
 }
 
 model HeldSale {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  storeId        String   @map("store_id") @db.Uuid
-  registerId     String   @map("register_id") @db.Uuid
-  clientHoldId   String   @map("client_hold_id")
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  storeId        String    @map("store_id") @db.Uuid
+  registerId     String    @map("register_id") @db.Uuid
+  clientHoldId   String    @map("client_hold_id")
   payload        Json
-  createdById    String   @map("created_by_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdById    String    @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// A hold past this time is listed as expired and cannot be resumed.
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(3)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -757,6 +867,11 @@ model Approval {
   requestedById  String         @map("requested_by_id") @db.Uuid
   approvedById   String?        @map("approved_by_id") @db.Uuid
   reason         String
+  storeId        String?        @map("store_id") @db.Uuid
+  expiresAt      DateTime?      @map("expires_at") @db.Timestamptz(3)
+  consumedAt     DateTime?      @map("consumed_at") @db.Timestamptz(3)
+  payloadHash    String?        @map("payload_hash")
+  payload        Json           @default("{}")
   status         ApprovalStatus @default(PENDING)
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   decidedAt      DateTime?      @map("decided_at") @db.Timestamptz(3)
@@ -764,6 +879,7 @@ model Approval {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   requestedBy  User         @relation("approvalRequester", fields: [requestedById], references: [id], onDelete: NoAction)
   approvedBy   User?        @relation("approvalDecider", fields: [approvedById], references: [id], onDelete: NoAction)
+  store        Store?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, action])
   @@map("approvals")
@@ -931,6 +1047,12 @@ model Customer {
   groupName          String   @default("General") @map("group_name")
   notes              String   @default("")
   consentMarketing   Boolean  @default(false) @map("consent_marketing")
+  /// Business customer (B2B): GSTIN / VAT number, registered name, billing address and state code (first two digits of a GSTIN).
+  isBusiness         Boolean  @default(false) @map("is_business")
+  taxNumber          String   @default("") @map("tax_number")
+  legalName          String   @default("") @map("legal_name")
+  billingAddress     String   @default("") @map("billing_address")
+  stateCode          String   @default("") @map("state_code")
   walletBalanceCents Int      @default(0) @map("wallet_balance_cents")
   pointsBalance      Int      @default(0) @map("points_balance")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -959,20 +1081,30 @@ model CustomerLedger {
 }
 
 model Promotion {
-  id               String        @id @default(uuid()) @db.Uuid
-  organizationId   String        @map("organization_id") @db.Uuid
+  id               String                @id @default(uuid()) @db.Uuid
+  organizationId   String                @map("organization_id") @db.Uuid
+  storeId          String?               @map("store_id") @db.Uuid
   code             String
-  type             PromotionType @default(PERCENT)
-  value            Decimal       @db.Decimal(10, 2)
-  minSubtotalCents Int           @default(0) @map("min_subtotal_cents")
-  usageLimit       Int?          @map("usage_limit")
-  usageCount       Int           @default(0) @map("usage_count")
-  startsAt         DateTime?     @map("starts_at") @db.Timestamptz(3)
-  endsAt           DateTime?     @map("ends_at") @db.Timestamptz(3)
-  status           RecordStatus  @default(ACTIVE)
-  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type             PromotionType         @default(PERCENT)
+  value            Decimal               @db.Decimal(10, 2)
+  minSubtotalCents Int                   @default(0) @map("min_subtotal_cents")
+  usageLimit       Int?                  @map("usage_limit")
+  usageCount       Int                   @default(0) @map("usage_count")
+  startsAt         DateTime?             @map("starts_at") @db.Timestamptz(3)
+  endsAt           DateTime?             @map("ends_at") @db.Timestamptz(3)
+  status           RecordStatus          @default(ACTIVE)
+  scope            PriceRuleScope        @default(ALL)
+  scopeId          String?               @map("scope_id") @db.Uuid
+  autoApply        Boolean               @default(false) @map("auto_apply")
+  priority         Int                   @default(0)
+  stackable        Boolean               @default(false)
+  perCustomerLimit Int?                  @map("per_customer_limit")
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store            Store?                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  redemptions      PromotionRedemption[]
 
-  @@unique([organizationId, code])
+  @@unique([organizationId, storeId, code])
+  @@index([organizationId, storeId, status])
   @@map("promotions")
 }
 
@@ -1004,20 +1136,121 @@ model BundleComponent {
 // ───────────────────────── Alerts, outbox, numbering ─────────────────────────
 
 model Alert {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  storeId        String?       @map("store_id") @db.Uuid
-  type           String
-  severity       AlertSeverity @default(INFO)
-  message        String
-  referenceId    String?       @map("reference_id")
-  status         AlertStatus   @default(OPEN)
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  resolvedAt     DateTime?     @map("resolved_at") @db.Timestamptz(3)
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id               String        @id @default(uuid()) @db.Uuid
+  organizationId   String        @map("organization_id") @db.Uuid
+  storeId          String?       @map("store_id") @db.Uuid
+  type             String
+  severity         AlertSeverity @default(INFO)
+  message          String
+  referenceId      String?       @map("reference_id")
+  /// Non-null only while active; provides a stable, organization-scoped deduplication key.
+  activeDedupeKey  String?       @unique @map("active_dedupe_key")
+  occurrenceCount  Int           @default(1) @map("occurrence_count")
+  lastSeenAt       DateTime      @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  status           AlertStatus   @default(OPEN)
+  acknowledgedById String?       @map("acknowledged_by_id") @db.Uuid
+  acknowledgedAt   DateTime?     @map("acknowledged_at") @db.Timestamptz(3)
+  resolvedById     String?       @map("resolved_by_id") @db.Uuid
+  resolutionNote   String        @default("") @map("resolution_note")
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt       DateTime?     @map("resolved_at") @db.Timestamptz(3)
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  acknowledgedBy   User?         @relation("alertAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  resolvedBy       User?         @relation("alertResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, createdAt(sort: Desc)])
   @@map("alerts")
+}
+
+model StaffAttendance {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  storeId        String           @map("store_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  status         AttendanceStatus @default(OPEN)
+  clockedInAt    DateTime         @default(now()) @map("clocked_in_at") @db.Timestamptz(3)
+  clockedOutAt   DateTime?        @map("clocked_out_at") @db.Timestamptz(3)
+  clockedInById  String           @map("clocked_in_by_id") @db.Uuid
+  clockedOutById String?          @map("clocked_out_by_id") @db.Uuid
+  clockOutReason String           @default("") @map("clock_out_reason")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user         User         @relation("attendanceUser", fields: [userId], references: [id], onDelete: NoAction)
+  clockedInBy  User         @relation("attendanceClockInActor", fields: [clockedInById], references: [id], onDelete: NoAction)
+  clockedOutBy User?        @relation("attendanceClockOutActor", fields: [clockedOutById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, storeId, clockedInAt(sort: Desc)])
+  @@index([userId, clockedInAt(sort: Desc)])
+  @@map("staff_attendance")
+}
+
+model StoreDayClose {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  storeId        String         @map("store_id") @db.Uuid
+  businessDate   DateTime       @map("business_date") @db.Date
+  version        Int            @default(1)
+  status         DayCloseStatus @default(CLOSED)
+  snapshot       Json
+  closeReason    String         @default("") @map("close_reason")
+  closedById     String         @map("closed_by_id") @db.Uuid
+  closedAt       DateTime       @default(now()) @map("closed_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  closedBy     User               @relation("dayCloseCreator", fields: [closedById], references: [id], onDelete: NoAction)
+  revisions    DayCloseRevision[]
+
+  @@unique([storeId, businessDate])
+  @@index([organizationId, businessDate(sort: Desc)])
+  @@map("store_day_closes")
+}
+
+model DayCloseRevision {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  dayCloseId     String   @map("day_close_id") @db.Uuid
+  version        Int
+  snapshot       Json
+  reason         String
+  createdById    String   @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dayClose     StoreDayClose @relation(fields: [dayCloseId], references: [id], onDelete: Cascade)
+  createdBy    User          @relation("dayCloseRevisionCreator", fields: [createdById], references: [id], onDelete: NoAction)
+
+  @@unique([dayCloseId, version])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("day_close_revisions")
+}
+
+model ReportExportJob {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  storeId        String?            @map("store_id") @db.Uuid
+  requestedById  String             @map("requested_by_id") @db.Uuid
+  format         ReportExportFormat
+  status         ReportExportStatus @default(QUEUED)
+  filters        Json
+  resultData     Bytes?             @map("result_data")
+  errorMessage   String             @default("") @map("error_message")
+  attempts       Int                @default(0)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(3)
+  completedAt    DateTime?          @map("completed_at") @db.Timestamptz(3)
+  expiresAt      DateTime           @map("expires_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  requestedBy  User         @relation("reportExportRequester", fields: [requestedById], references: [id], onDelete: NoAction)
+
+  @@index([organizationId, requestedById, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("report_export_jobs")
 }
 
 model OutboxEvent {
@@ -1048,7 +1281,6 @@ model DocumentSequence {
   @@id([storeId, kind])
   @@map("document_sequences")
 }
-
 
 enum StoreVariantStatus {
   PENDING_VERIFICATION
@@ -1087,14 +1319,14 @@ model Brand {
 /// Dispatch moves stock to the destination stockroom as QUARANTINE and creates PENDING store_variants.
 /// Receive moves QUARANTINE -> SELLABLE and marks store_variants ACTIVE.
 model Distribution {
-  id             String             @id @default(uuid()) @db.Uuid
-  organizationId String             @map("organization_id") @db.Uuid
-  toStoreId      String             @map("to_store_id") @db.Uuid
-  status         DistributionStatus @default(DRAFT)
-  notes          String             @default("")
-  createdByUserId String            @map("created_by_user_id") @db.Uuid
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String             @id @default(uuid()) @db.Uuid
+  organizationId  String             @map("organization_id") @db.Uuid
+  toStoreId       String             @map("to_store_id") @db.Uuid
+  status          DistributionStatus @default(DRAFT)
+  notes           String             @default("")
+  createdByUserId String             @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   toStore      Store              @relation(fields: [toStoreId], references: [id], onDelete: NoAction)
@@ -1106,18 +1338,18 @@ model Distribution {
 }
 
 model DistributionLine {
-  id                     String   @id @default(uuid()) @db.Uuid
-  distributionId         String   @map("distribution_id") @db.Uuid
-  variantId              String   @map("variant_id") @db.Uuid
-  quantity               Decimal  @db.Decimal(14, 3)
-  suggestedPriceCents    Int?     @map("suggested_price_cents")
-  suggestedTaxGroupId    String?  @map("suggested_tax_group_id") @db.Uuid
-  acceptedQuantity       Decimal  @default(0) @map("accepted_quantity") @db.Decimal(14, 3)
-  rejectedQuantity       Decimal  @default(0) @map("rejected_quantity") @db.Decimal(14, 3)
+  id                  String  @id @default(uuid()) @db.Uuid
+  distributionId      String  @map("distribution_id") @db.Uuid
+  variantId           String  @map("variant_id") @db.Uuid
+  quantity            Decimal @db.Decimal(14, 3)
+  suggestedPriceCents Int?    @map("suggested_price_cents")
+  suggestedTaxGroupId String? @map("suggested_tax_group_id") @db.Uuid
+  acceptedQuantity    Decimal @default(0) @map("accepted_quantity") @db.Decimal(14, 3)
+  rejectedQuantity    Decimal @default(0) @map("rejected_quantity") @db.Decimal(14, 3)
 
-  distribution Distribution   @relation(fields: [distributionId], references: [id], onDelete: Cascade)
-  variant      ProductVariant @relation(fields: [variantId], references: [id], onDelete: NoAction)
-  suggestedTaxGroup TaxGroup? @relation("distributionSuggestedTax", fields: [suggestedTaxGroupId], references: [id], onDelete: SetNull)
+  distribution      Distribution   @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  variant           ProductVariant @relation(fields: [variantId], references: [id], onDelete: NoAction)
+  suggestedTaxGroup TaxGroup?      @relation("distributionSuggestedTax", fields: [suggestedTaxGroupId], references: [id], onDelete: SetNull)
 
   @@index([distributionId])
   @@map("distribution_lines")
@@ -1154,4 +1386,134 @@ model Charge {
 
   @@index([organizationId, storeId])
   @@map("charges")
+}
+
+// ───────────────────────── Plan 6: price rules, discount reasons, redemptions, payment attempts ─────────────────────────
+
+enum PriceRuleScope {
+  ALL
+  CATEGORY
+  BRAND
+  VARIANT
+}
+
+enum PriceRuleMode {
+  FIXED
+  PERCENT_OFF
+  AMOUNT_OFF
+}
+
+/// Overrides the base price. First matching rule by priority wins; the base price is the last fallback.
+/// `value` is paise for FIXED and AMOUNT_OFF, basis points for PERCENT_OFF.
+model PriceRule {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  name           String
+  priority       Int            @default(0)
+  scope          PriceRuleScope @default(ALL)
+  scopeId        String?        @map("scope_id") @db.Uuid
+  storeId        String?        @map("store_id") @db.Uuid
+  customerGroup  String?        @map("customer_group")
+  minQuantity    Decimal        @default(1) @map("min_quantity") @db.Decimal(14, 3)
+  startsAt       DateTime?      @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime?      @map("ends_at") @db.Timestamptz(3)
+  mode           PriceRuleMode  @default(FIXED)
+  value          Int
+  status         RecordStatus   @default(ACTIVE)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store?       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, storeId, status])
+  @@map("price_rules")
+}
+
+/// A configurable reason a cashier or manager picks when giving a manual discount.
+model DiscountReason {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  storeId        String?      @map("store_id") @db.Uuid
+  code           String
+  name           String
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store?       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, storeId, code])
+  @@index([organizationId, storeId, status])
+  @@map("discount_reasons")
+}
+
+model PromotionRedemption {
+  id            String   @id @default(uuid()) @db.Uuid
+  promotionId   String   @map("promotion_id") @db.Uuid
+  saleId        String   @map("sale_id") @db.Uuid
+  customerId    String?  @map("customer_id") @db.Uuid
+  discountCents Int      @map("discount_cents")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  sale      Sale      @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId, customerId])
+  @@index([saleId])
+  @@map("promotion_redemptions")
+}
+
+enum PaymentAttemptStatus {
+  PENDING
+  CAPTURED
+  FAILED
+  VOIDED
+  UNKNOWN
+}
+
+/// One try to collect money (card, UPI, wallet...). A sale is saved only from CAPTURED attempts.
+/// UNKNOWN means the provider did not answer: it must be resolved with the provider before a retry.
+model PaymentAttempt {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @map("organization_id") @db.Uuid
+  storeId        String               @map("store_id") @db.Uuid
+  provider       String
+  tenderType     TenderType           @map("tender_type")
+  amountCents    Int                  @map("amount_cents")
+  status         PaymentAttemptStatus @default(PENDING)
+  providerRef    String               @default("") @map("provider_ref")
+  idempotencyKey String               @map("idempotency_key")
+  clientSaleId   String               @default("") @map("client_sale_id")
+  failureReason  String               @default("") @map("failure_reason")
+  createdById    String               @map("created_by_id") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment      SalePayment?
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status])
+  @@map("payment_attempts")
+}
+
+/// An organisation-defined kind of product ("Footwear", "Grocery"...). `config` says which categories and brands it may use,
+/// which standard fields are required, and any extra fields (size, expiry...) products of this type carry.
+model ProductType {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String
+  description    String       @default("")
+  status         RecordStatus @default(ACTIVE)
+  config         Json         @default("{}")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([organizationId, name])
+  @@map("product_types")
 }

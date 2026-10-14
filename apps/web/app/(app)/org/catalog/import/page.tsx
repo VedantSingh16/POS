@@ -8,7 +8,7 @@ export default async function ImportPage() {
   await requirePermission("catalog.manage");
   return (
     <>
-      <PageHeader title="Import products" description="Upload a CSV, review the rows, then confirm." crumbs={[{ label: "Catalogue" }, { label: "Products", href: "/org/catalog/products" }, { label: "Import" }]} />
+      <PageHeader title="Import products" description="Upload a CSV, review the rows, then confirm." crumbs={[{ label: "Catalogue" }, { label: "Products", href: "/org/catalog/products" }, { label: "Import" }]} backHref="/org/catalog/products" backLabel="Back to product catalogue" />
       <ImportWizard />
     </>
   );

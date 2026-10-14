@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { setActiveCurrency } from "@/lib/format";
 import { canAccessStore, hasOrgScope, hasPermission, landingPath, type Me } from "@/lib/permissions";
 
 export const SESSION_COOKIE = "pos_session";
@@ -30,7 +31,9 @@ export const getSession = cache(async (): Promise<Me | null> => {
   try {
     const res = await apiFetch("/auth/me", { token });
     if (!res.ok) return null;
-    return (await res.json()) as Me;
+    const me = (await res.json()) as Me;
+    setActiveCurrency(me.organisation.currency);
+    return me;
   } catch {
     return null;
   }

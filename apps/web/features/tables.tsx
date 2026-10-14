@@ -13,6 +13,8 @@ import { ApprovalButtons, EditTaxGroupSheet, RegisterAdminActions, ThresholdShee
 import { useMemo, useState } from "react";
 import { filterCatalogProducts } from "@/features/catalog/product-filters";
 import { FilterBar } from "@/features/catalog/filter-bar";
+import { ProductVersionFilter, type ProductVersionOption } from "@/features/catalog/product-version-filter";
+import type { ConfiguredField } from "@/features/settings/configurable-field-values";
 
 type Row<T> = ColumnDef<T, unknown>[];
 const when = (v: string) => (v ? <span className="text-muted-foreground"><RelativeTime value={v} /></span> : <span className="text-muted-foreground">—</span>);
@@ -58,43 +60,57 @@ export function StoresTable({ data }: { data: Store[] }) {
   return <DataTable columns={cols} data={data} rowHref={(r) => `/org/stores/${r.id}`} searchPlaceholder="Search stores or managers…" emptyTitle="No stores yet" emptyDescription="Create your first store to start trading." />;
 }
 
-type Product = Omit<M.Product, "status"> & { status: string; productId?: string; categoryId?: string | null; brand?: string; taxGroupId?: string | null };
+type Product = Omit<M.Product, "status"> & { status: string; description?: string; attributes?: Record<string, string | number | boolean>; productId?: string; categoryId?: string | null; brand?: string; productTypeName?: string; costMinor?: number; uomCode?: string | null; openPrice?: boolean; floorPriceCents?: number; includesTax?: boolean; customFields?: Record<string, string | number | boolean> };
 type ProductFilterOption = { id: string; name: string };
-export function ProductsTable({ data, categories, brands, taxGroups, stores, selectedStoreId }: {
+export function ProductsTable({ data, categories, brands, stores, selectedStoreId, productTypes = [], customFieldDefinitions = [], coreFields }: {
   data: Product[];
   categories: ProductFilterOption[];
   brands: ProductFilterOption[];
-  taxGroups: { id: string; name: string; rate: number }[];
   stores: { id: string; name: string; code: string }[];
   selectedStoreId?: string;
+  productTypes?: ProductFilterOption[];
+  customFieldDefinitions?: ConfiguredField[];
+  coreFields?: string[];
 }) {
   const [category, setCategory] = useState("");
   const [brand, setBrand] = useState("");
+  const [productTypeName, setProductTypeName] = useState("");
+  const [storeAssignment, setStoreAssignment] = useState<"" | "IN_STORE" | "NOT_IN_STORE">("");
   const [status, setStatus] = useState("");
-  const [taxGroupId, setTaxGroupId] = useState("");
-  const filtered = useMemo(() => filterCatalogProducts(data, { categoryId: category, brand, status, taxGroupId }), [data, category, brand, status, taxGroupId]);
+  const filtered = useMemo(() => filterCatalogProducts(data, { categoryId: category, brand, productTypeName, status, ...(storeAssignment ? { storeAssignment } : {}) }), [data, category, brand, productTypeName, status, storeAssignment]);
+  const visibleCore = coreFields ?? ["name", "description", "productType", "attributes", "brand", "category", "sku", "barcode", "price", "cost", "uom", "status", "openPrice", "floorPrice", "includesTax"];
   const cols: Row<Product> = [
-    { accessorKey: "sku", header: "SKU", cell: (c) => mono(c.getValue() as string) },
+    ...(visibleCore.includes("sku") ? [{ accessorKey: "sku", header: "SKU", cell: (c) => mono(c.getValue() as string) } as ColumnDef<Product, unknown>] : []),
     { accessorKey: "name", header: "Product", cell: (c) => <span className="font-medium">{c.getValue() as string}</span> },
-    { accessorKey: "category", header: "Category" },
-    { accessorKey: "brand", header: "Brand" },
-    { accessorKey: "barcode", header: "Barcode", cell: (c) => mono(c.getValue() as string) },
-    { accessorKey: "priceMinor", header: "Price", cell: (c) => <Money minor={c.getValue() as number} /> },
-    { accessorKey: "taxRate", header: "GST", cell: (c) => <span className="tabular">{c.getValue() as number}%</span> },
-    { accessorKey: "stock", header: "Stock", cell: (c) => num(c.getValue() as number) },
-    { accessorKey: "inStore", header: "In store", cell: (c) => c.getValue() ? <StatusBadge status="ACTIVE" /> : <span className="text-xs text-muted-foreground">Not sold here</span> },
-    { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
+    ...(visibleCore.includes("description") ? [{ accessorKey: "description", header: "Description", cell: (c) => <span className="max-w-56 truncate text-muted-foreground">{(c.getValue() as string) || "—"}</span> } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("category") ? [{ accessorKey: "category", header: "Category" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("productType") ? [{ accessorKey: "productTypeName", header: "Product version", cell: (c) => (c.getValue() as string) || "—" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("attributes") ? [{ id: "attributes", header: "Rule attributes", accessorFn: (row) => Object.values(row.attributes ?? {}).join(" · ") || "—" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("brand") ? [{ accessorKey: "brand", header: "Brand" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("barcode") ? [{ accessorKey: "barcode", header: "Barcode", cell: (c) => mono(c.getValue() as string) } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("price") ? [{ accessorKey: "priceMinor", header: "Price", cell: (c) => <Money minor={c.getValue() as number} /> } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("cost") ? [{ accessorKey: "costMinor", header: "Cost", cell: (c) => <Money minor={c.getValue() as number} /> } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("uom") ? [{ accessorKey: "uomCode", header: "Unit", cell: (c) => (c.getValue() as string) || "—" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("openPrice") ? [{ accessorKey: "openPrice", header: "Open price", cell: (c) => c.getValue() ? "Allowed" : "Fixed" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("floorPrice") ? [{ accessorKey: "floorPriceCents", header: "Minimum price", cell: (c) => <Money minor={c.getValue() as number} /> } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("includesTax") ? [{ accessorKey: "includesTax", header: "Price includes tax", cell: (c) => c.getValue() ? "Yes" : "No" } as ColumnDef<Product, unknown>] : []),
+    ...customFieldDefinitions.filter((field) => field.active && field.showInList).map((field): ColumnDef<Product, unknown> => ({ id: `custom-${field.key}`, header: field.label, accessorFn: (row) => row.customFields?.[field.key] ?? "—" })),
+    ...(selectedStoreId ? [{ accessorKey: "stock", header: "Stock", cell: (c) => num(c.getValue() as number) } as ColumnDef<Product, unknown>] : []),
+    ...(selectedStoreId ? [{ accessorKey: "inStore", header: "In store", cell: (c) => c.getValue() ? <StatusBadge status="ACTIVE" /> : <span className="text-xs text-muted-foreground">Not sold here</span> } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("status") ? [{ accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> } as ColumnDef<Product, unknown>] : []),
   ];
   const toolbar = <div className="flex flex-wrap items-center gap-2" aria-label="Product filters">
     <FilterBar filters={[
-      { key: "category", label: "Category", allLabel: "All categories", value: category, onChange: setCategory, options: categories.map((item) => ({ value: item.id, label: item.name })) },
-      { key: "brand", label: "Brand", allLabel: "All brands", value: brand, onChange: setBrand, options: brands.map((item) => ({ value: item.name, label: item.name })) },
-      { key: "status", label: "Status", allLabel: "All statuses", value: status, onChange: setStatus, options: ["ACTIVE", "DRAFT", "SEASONAL", "DISCONTINUED", "BLOCKED"].map((item) => ({ value: item, label: item.charAt(0) + item.slice(1).toLowerCase() })) },
-      { key: "tax", label: "Tax group", allLabel: "All tax groups", value: taxGroupId, onChange: setTaxGroupId, options: taxGroups.map((item) => ({ value: item.id, label: `${item.name} · ${item.rate}%` })) },
+      ...(visibleCore.includes("category") ? [{ key: "category", label: "Category", allLabel: "All categories", value: category, onChange: setCategory, options: categories.map((item) => ({ value: item.id, label: item.name })) }] : []),
+      ...(visibleCore.includes("productType") ? [{ key: "type", label: "Product version", allLabel: "All versions", value: productTypeName, onChange: setProductTypeName, options: productTypes.map((item) => ({ value: item.name, label: item.name })) }] : []),
+      ...(visibleCore.includes("brand") ? [{ key: "brand", label: "Brand", allLabel: "All brands", value: brand, onChange: setBrand, options: brands.map((item) => ({ value: item.name, label: item.name })) }] : []),
+      ...(selectedStoreId ? [{ key: "store", label: "Store assignment", allLabel: "All products", value: storeAssignment, onChange: (value: string) => setStoreAssignment(value as "" | "IN_STORE" | "NOT_IN_STORE"), options: [{ value: "IN_STORE", label: "In this store" }, { value: "NOT_IN_STORE", label: "Not in this store" }] }] : []),
+      ...(visibleCore.includes("status") ? [{ key: "status", label: "Status", allLabel: "All statuses", value: status, onChange: setStatus, options: ["ACTIVE", "DRAFT", "SEASONAL", "DISCONTINUED", "BLOCKED"].map((item) => ({ value: item, label: item.charAt(0) + item.slice(1).toLowerCase() })) }] : []),
     ]} />
     <form action="/org/catalog/products" method="get" className="flex items-center gap-1.5 text-xs text-muted-foreground"><label htmlFor="stock-store">Stock in</label><NativeSelect id="stock-store" className="h-8 w-auto text-sm" aria-label="Stock store" name="storeId" value={selectedStoreId ?? ""} disabled={stores.length === 0} onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="" disabled>Select store</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} ({store.code})</option>)}</NativeSelect></form>
   </div>;
-  return <DataTable columns={cols} data={filtered} rowHref={(r) => `/org/catalog/products/${r.productId ?? r.id}`} toolbar={toolbar} searchPlaceholder="Search name, SKU, barcode or brand…" />;
+  const initialVisibility = Object.fromEntries(["description", "productTypeName", "attributes", "brand", "barcode", "costMinor", "uomCode", "openPrice", "floorPriceCents", "includesTax"].map((key) => [key, false]));
+  return <DataTable columns={cols} data={filtered} rowHref={(r) => `/org/catalog/products/${r.productId ?? r.id}`} toolbar={toolbar} initialVisibility={initialVisibility} searchPlaceholder="Search product name, SKU or barcode…" />;
 }
 
 type Named = { id: string; name: string; products: number };
@@ -161,16 +177,23 @@ export function ReturnsTable({ data }: { data: Ret[] }) {
 }
 
 type Inv = M.InventoryRow;
-export function InventoryTable({ data, storeId }: { data: Inv[]; storeId: string }) {
+export function InventoryTable({ data, storeId, productTypes = [] }: { data: Inv[]; storeId: string; productTypes?: ProductVersionOption[] }) {
+  const [productTypeId, setProductTypeId] = useState("");
   const cols: Row<Inv> = [
     { accessorKey: "sku", header: "SKU", cell: (c) => mono(c.getValue() as string) },
     { accessorKey: "name", header: "Product", cell: (c) => <span className="font-medium">{c.getValue() as string}</span> },
+    { accessorKey: "productTypeName", header: "Product version", cell: (c) => (c.getValue() as string) || "—" },
+    { accessorKey: "barcode", header: "Barcode" },
     { accessorKey: "onHand", header: "On hand", cell: (c) => num(c.getValue() as number) },
     { accessorKey: "reorderLevel", header: "Reorder level", cell: (c) => num(c.getValue() as number) },
     { accessorKey: "status", header: "Stock", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
     { id: "actions", header: "", cell: (c) => { const r = c.row.original; return r.locationId && r.variantId ? <div className="flex justify-end"><ThresholdSheet storeId={storeId} locationId={r.locationId} variantId={r.variantId} name={r.name} reorderPoint={r.reorderLevel} /></div> : null; } },
   ];
-  return <DataTable columns={cols} data={data} searchPlaceholder="Search product or SKU…" />;
+  const urgency: Record<string, number> = { OUT: 0, LOW: 1 };
+  const prioritized = [...data].sort((a, b) => (urgency[a.status] ?? 2) - (urgency[b.status] ?? 2) || a.onHand - b.onHand);
+  const options = productTypes.length ? productTypes : [...new Map(data.flatMap((item) => item.productTypeId && item.productTypeName ? [[item.productTypeId, { id: item.productTypeId, name: item.productTypeName }] as const] : [])).values()];
+  const visible = prioritized.filter((product) => !productTypeId || product.productTypeId === productTypeId);
+  return <DataTable columns={cols} data={visible} toolbar={<ProductVersionFilter value={productTypeId} onChange={setProductTypeId} options={options} />} searchPlaceholder="Search product, SKU, barcode, or version…" emptyTitle="No stock records" emptyDescription="Stock will appear here after products are assigned to this store." />;
 }
 
 type Led = M.LedgerRow;
@@ -205,7 +228,7 @@ export function ApprovalsTable({ data, storeId }: { data: Appr[]; storeId: strin
     { accessorKey: "at", header: "When", cell: (c) => when(c.getValue() as string) },
     { accessorKey: "type", header: "Type", cell: (c) => <Badge>{(c.getValue() as string).replaceAll("_", " ")}</Badge> },
     { accessorKey: "requestedBy", header: "Requested by" },
-    { accessorKey: "detail", header: "Detail" },
+    { accessorKey: "detail", header: "Requested action", cell: (c) => { const row = c.row.original; const payload = row.payload && Object.keys(row.payload).length ? ` · ${Object.entries(row.payload).map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`).join(" · ")}` : ""; return <span>{row.detail}{payload}</span>; } },
     { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
     { id: "actions", header: "", cell: (c) => <ApprovalButtons id={c.row.original.id} status={c.row.original.status} storeId={storeId} /> },
   ];

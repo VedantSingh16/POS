@@ -2,6 +2,12 @@ packages:
   - apps/*
   - packages/*
 
+# Keep registry installs stable in Docker and constrained CI environments.
+networkConcurrency: 8
+fetchRetries: 5
+fetchRetryMintimeout: 20000
+fetchRetryMaxtimeout: 120000
+
 allowBuilds:
   '@prisma/engines': true
   esbuild: true

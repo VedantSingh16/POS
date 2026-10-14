@@ -11,7 +11,7 @@ export default async function Page({ params }: PageProps<"/s/[storeId]/registers
   const { data } = await api.registers(storeId);
   return (
     <>
-      <PageHeader title="Registers" description="Open a till to start a shift, then sell from the Point of sale." crumbs={[{ label: "Store", href: `/s/${storeId}` }, { label: "Registers" }]} />
+      <PageHeader title="Register shifts" description="Open the till with its counted starting cash before selling. Count and close it when the shift ends." crumbs={[{ label: "Store", href: `/s/${storeId}` }, { label: "Registers" }]} />
       <RegistersBoard storeId={storeId} registers={data.map((r) => ({ id: r.id, name: r.name, code: r.code, status: r.status, sessionId: r.sessionId, cashier: r.cashier, openedAt: r.openedAt, expectedMinor: r.expectedMinor, active: (r.registerStatus ?? "ACTIVE") === "ACTIVE" }))} />
     </>
   );

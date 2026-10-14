@@ -12,6 +12,9 @@ import { ConfirmDialog, FormSheet } from "@/components/form/dialogs";
 import { Can } from "@/components/app/session-context";
 import { clientApi } from "@/features/client-api";
 import type * as M from "@/features/types";
+import { currencyCode, formatMoney, toMinor } from "@/lib/format";
+import { ConfigurableFieldValues, type ConfiguredField } from "@/features/settings/configurable-field-values";
+import { MARKETS } from "@pos/shared/markets";
 
 export function useRun() {
   const router = useRouter();
@@ -26,7 +29,8 @@ export function useRun() {
 }
 export const send = (path: string, method: string, body?: unknown, storeId?: string) =>
   clientApi(path, { method, ...(storeId ? { headers: { "x-store-id": storeId } } : {}), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-export const rupeesToPaise = (value: string) => Math.round(Number(value) * 100);
+/** What a person typed as the smallest currency unit (baisa for OMR, paise for INR). */
+export const rupeesToPaise = (value: string) => toMinor(value);
 export function L({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return <label className="grid gap-1.5 text-sm"><span className="font-medium">{label}</span>{children}{hint && <span className="text-xs text-muted-foreground">{hint}</span>}</label>;
 }
@@ -49,22 +53,29 @@ export function ApprovalButtons({ id, status, storeId }: { id: string; status: s
 }
 export function AckAlertButton({ id, storeId, status }: { id: string; storeId: string; status?: string }) {
   const { busy, run } = useRun();
-  if (status && status !== "OPEN") return <span className="text-xs text-muted-foreground">Acknowledged</span>;
-  return <Can permission="report.view" storeId={storeId}><Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/alerts/${id}`, "PATCH", undefined, storeId), "Alert acknowledged")}>Acknowledge</Button></Can>;
+  if (status === "RESOLVED") return <span className="text-xs text-muted-foreground">Resolved</span>;
+  return <Can permission="alert.manage" storeId={storeId}><div className="flex flex-wrap items-center justify-end gap-2">{(!status || status === "OPEN") ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/alerts/${id}`, "PATCH", { status: "ACKNOWLEDGED" }, storeId), "Alert acknowledged")}>Acknowledge</Button> : <span className="text-xs text-muted-foreground">Acknowledged</span>}<Button size="sm" variant="ghost" disabled={busy} onClick={() => { const reason = window.prompt("Why is this alert resolved?")?.trim(); if (reason) void run(() => send(`/pos/v1/alerts/${id}`, "PATCH", { status: "RESOLVED", reason }, storeId), "Alert resolved"); }}>Resolve</Button></div></Can>;
 }
 
 /* ───────── Customers ───────── */
 export function NewCustomerSheet({ stores }: { stores: { id: string; name: string; code: string }[] }) {
   const { busy, run } = useRun();
   const [open, setOpen] = React.useState(false);
-  const [v, setV] = React.useState({ storeId: stores[0]?.id ?? "", name: "", phone: "", email: "" });
-  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((c) => ({ ...c, [k]: e.target.value }));
+  const [v, setV] = React.useState({ storeId: stores[0]?.id ?? "", name: "", phone: "", email: "", business: false, taxNumber: "", legalName: "", billingAddress: "", groupName: "" });
+  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((c) => ({ ...c, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value }));
   return (
     <FormSheet open={open} onOpenChange={setOpen} trigger={<Button disabled={stores.length === 0}><Plus /> New customer</Button>} title="New customer" description="Customers are shared across every store. The store below only decides whose permissions are used to add them.">
-      <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); if (v.name.trim().length < 2) { toast.error("Enter the customer's name."); return; } if (await run(() => send("/pos/v1/customers", "POST", { storeId: v.storeId, name: v.name.trim(), phone: v.phone.trim(), email: v.email.trim() }, v.storeId), "Customer added")) { setOpen(false); setV((c) => ({ ...c, name: "", phone: "", email: "" })); } }}>
+      <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); if (v.name.trim().length < 2) { toast.error("Enter the customer's name."); return; } if (v.business && v.taxNumber.trim().length === 0) { toast.error("A business customer needs a GSTIN."); return; } if (await run(() => send("/pos/v1/customers", "POST", { storeId: v.storeId, name: v.name.trim(), phone: v.phone.trim(), email: v.email.trim(), ...(v.groupName.trim() ? { groupName: v.groupName.trim() } : {}), ...(v.business ? { isBusiness: true, taxNumber: v.taxNumber.trim(), legalName: v.legalName.trim(), billingAddress: v.billingAddress.trim() } : {}) }, v.storeId), "Customer added")) { setOpen(false); setV((c) => ({ ...c, name: "", phone: "", email: "", business: false, taxNumber: "", legalName: "", billingAddress: "", groupName: "" })); } }}>
         <L label="Name"><Input value={v.name} onChange={set("name")} /></L>
         <L label="Phone"><Input value={v.phone} onChange={set("phone")} inputMode="tel" /></L>
         <L label="Email"><Input type="email" value={v.email} onChange={set("email")} /></L>
+        <L label="Customer group" hint="Optional, e.g. Wholesale. Price rules can target a group."><Input value={v.groupName} onChange={set("groupName")} /></L>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.business} onChange={set("business")} /> Business customer (B2B, GST invoice)</label>
+        {v.business && <>
+          <L label="GSTIN" hint="15 characters. The state is read from it and decides CGST/SGST or IGST on the invoice."><Input value={v.taxNumber} onChange={(e) => setV((c) => ({ ...c, taxNumber: e.target.value.toUpperCase() }))} maxLength={15} /></L>
+          <L label="Legal name" hint="Printed on the invoice as the buyer."><Input value={v.legalName} onChange={set("legalName")} /></L>
+          <L label="Billing address"><Input value={v.billingAddress} onChange={set("billingAddress")} /></L>
+        </>}
         <L label="Add as store"><NativeSelect value={v.storeId} onChange={set("storeId")}>{stores.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.code})</option>)}</NativeSelect></L>
         <SheetFooter busy={busy} label="Add customer" />
       </form>
@@ -79,7 +90,7 @@ export function CreditSheet({ customerId, stores }: { customerId: string; stores
     <FormSheet open={open} onOpenChange={setOpen} trigger={<Button variant="outline">Adjust store credit</Button>} title="Adjust store credit" description="Adds to or deducts from the customer's wallet. Recorded in the audit log.">
       <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); const cents = rupeesToPaise(v.amount); if (!Number.isInteger(cents) || cents <= 0) { toast.error("Enter an amount greater than zero."); return; } if (await run(() => send(`/pos/v1/customers/${customerId}/ledger`, "POST", { type: v.type, amountCents: cents, storeId: v.storeId || undefined }, v.storeId || undefined), "Store credit updated")) { setOpen(false); setV((c) => ({ ...c, amount: "" })); } }}>
         <L label="Action"><NativeSelect value={v.type} onChange={(e) => setV((c) => ({ ...c, type: e.target.value }))}><option value="CREDIT">Add credit</option><option value="DEBIT">Deduct credit</option></NativeSelect></L>
-        <L label="Amount (₹)"><Input value={v.amount} onChange={(e) => setV((c) => ({ ...c, amount: e.target.value }))} inputMode="decimal" /></L>
+        <L label={`Amount (${currencyCode()})`}><Input value={v.amount} onChange={(e) => setV((c) => ({ ...c, amount: e.target.value }))} inputMode="decimal" /></L>
         <L label="Store"><NativeSelect value={v.storeId} onChange={(e) => setV((c) => ({ ...c, storeId: e.target.value }))}>{stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</NativeSelect></L>
         <SheetFooter busy={busy} label="Save" />
       </form>
@@ -88,7 +99,7 @@ export function CreditSheet({ customerId, stores }: { customerId: string; stores
 }
 
 /* ───────── Organisation profile ───────── */
-export type OrgProfile = { name: string; legalName: string; tradeName: string; gstin: string; address: string; timezone: string; businessType: string };
+export type OrgProfile = { name: string; legalName: string; tradeName: string; gstin: string; address: string; timezone: string; businessType: string; countryCode: string; taxProfileStatus: string };
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 export function OrgProfileForm({ initial }: { initial: OrgProfile }) {
   const { busy, run } = useRun();
@@ -96,11 +107,22 @@ export function OrgProfileForm({ initial }: { initial: OrgProfile }) {
   const set = (k: keyof OrgProfile) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setV((c) => ({ ...c, [k]: e.target.value }));
   const dirty = JSON.stringify(v) !== JSON.stringify(initial);
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (v.name.trim().length < 2) { toast.error("Enter the organisation name."); return; } if (v.gstin.trim() && !GSTIN.test(v.gstin.trim().toUpperCase())) { toast.error("GSTIN must be 15 characters in the standard format, or left blank."); return; } void run(() => send("/admin/organization", "PATCH", v), "Organisation profile saved"); }}>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (v.name.trim().length < 2) { toast.error("Enter the organisation name."); return; } if (v.countryCode === "IN" && v.taxProfileStatus === "REGISTERED" && !GSTIN.test(v.gstin.trim().toUpperCase())) { toast.error("GSTIN must be 15 characters in the standard format when registered for GST."); return; } void run(() => send("/admin/organization", "PATCH", v), "Organisation profile saved"); }}>
       <L label="Organisation name"><Input value={v.name} onChange={set("name")} /></L>
+      <L label="Country or region"><NativeSelect value={v.countryCode} onChange={set("countryCode")}>{MARKETS.map((market) => <option key={market.code} value={market.code}>{market.name}</option>)}</NativeSelect></L>
       <L label="Legal name"><Input value={v.legalName} onChange={set("legalName")} /></L>
       <L label="Trade name"><Input value={v.tradeName} onChange={set("tradeName")} /></L>
-      <L label="GSTIN" hint="Printed on tax invoices."><Input value={v.gstin} onChange={set("gstin")} /></L>
+      <L label={v.countryCode === "IN" ? "GST registration" : "Tax registration"}>
+        <NativeSelect value={v.taxProfileStatus} onChange={set("taxProfileStatus")}>
+          <option value="NOT_REVIEWED">Not reviewed</option>
+          <option value="REGISTERED">Registered for tax</option>
+          <option value="NOT_REGISTERED">Not registered / not applicable</option>
+          <option value="UNSURE">Not sure yet</option>
+          {v.taxProfileStatus === "LEGACY" && <option value="LEGACY">Existing profile</option>}
+        </NativeSelect>
+      </L>
+      {v.countryCode === "IN" && v.taxProfileStatus === "REGISTERED" && <L label="GSTIN" hint="Printed on tax invoices."><Input value={v.gstin} onChange={set("gstin")} /></L>}
+      <p className="text-xs text-muted-foreground sm:col-span-2">When tax is registered, each product needs an assigned tax group before it can be sold. “Not sure yet” pauses sales until this profile is reviewed.</p>
       <L label="Registered address"><Input value={v.address} onChange={set("address")} /></L>
       <L label="Time zone"><Input value={v.timezone} onChange={set("timezone")} /></L>
       <L label="Business type"><NativeSelect value={v.businessType} onChange={set("businessType")}><option value="RETAIL">Retail</option><option value="GROCERY">Grocery</option><option value="PHARMACY">Pharmacy</option><option value="OTHER">Other</option></NativeSelect></L>
@@ -269,22 +291,27 @@ export function TransferActions({ id, status }: { id: string; status: string }) 
 }
 
 /* ───────── Catalogue: variants and units ───────── */
-export function AddVariantSheet({ productId, taxGroups, uoms }: { productId: string; taxGroups: { id: string; name: string }[]; uoms: { id: string; code: string; name: string }[] }) {
+export function AddVariantSheet({ productId, uoms, customFieldDefinitions = [], coreFields, forceBarcode = false }: { productId: string; uoms: { id: string; code: string; name: string }[]; customFieldDefinitions?: ConfiguredField[]; coreFields?: string[]; forceBarcode?: boolean }) {
   const { busy, run } = useRun();
   const [open, setOpen] = React.useState(false);
-  const [v, setV] = React.useState({ sku: "", name: "", price: "", cost: "", barcode: "", taxGroupId: "", uomId: "", includesTax: true });
+  const [v, setV] = React.useState({ sku: "", name: "", price: "", cost: "", barcode: "", uomId: "", includesTax: true, openPrice: false, floorPrice: "" });
+  const [customFields, setCustomFields] = React.useState<Record<string, string | number | boolean>>({});
+  const variantFields = customFieldDefinitions.filter((field) => field.level === "VARIANT");
+  const visibleCore = coreFields ?? ["name", "description", "productType", "attributes", "brand", "category", "sku", "barcode", "price", "cost", "uom", "status", "openPrice", "floorPrice", "includesTax"];
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((c) => ({ ...c, [k]: e.target.value }));
   return (
     <Can permission="catalog.manage">
       <FormSheet open={open} onOpenChange={setOpen} trigger={<Button variant="outline"><Plus /> Add variant</Button>} title="Add variant" description="A sellable version of this product, with its own SKU, barcode and price.">
-        <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); const price = rupeesToPaise(v.price); const cost = v.cost ? rupeesToPaise(v.cost) : 0; if (!v.sku.trim() || !v.name.trim()) { toast.error("Enter a SKU and a variant name."); return; } if (!Number.isInteger(price) || price < 0 || !Number.isInteger(cost) || cost < 0) { toast.error("Enter prices as rupee amounts, for example 499 or 499.50."); return; } if (await run(() => send(`/admin/catalog/products/${productId}/variants`, "POST", { sku: v.sku.trim(), name: v.name.trim(), amountCents: price, costCents: cost, includesTax: v.includesTax, barcode: v.barcode.trim() || undefined, taxGroupId: v.taxGroupId || undefined, uomId: v.uomId || undefined }), "Variant added")) { setOpen(false); setV({ sku: "", name: "", price: "", cost: "", barcode: "", taxGroupId: "", uomId: "", includesTax: true }); } }}>
+        <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); const price = rupeesToPaise(v.price); const cost = v.cost ? rupeesToPaise(v.cost) : 0; const floorPriceCents = v.floorPrice ? rupeesToPaise(v.floorPrice) : 0; if (!v.sku.trim() || !v.name.trim()) { toast.error("Enter a SKU and a variant name."); return; } const missing = variantFields.find((field) => field.required && (customFields[field.key] === undefined || customFields[field.key] === "")); if (missing) { toast.error(`${missing.label} is required.`); return; } if (!Number.isInteger(price) || price < 0 || !Number.isInteger(cost) || cost < 0 || !Number.isInteger(floorPriceCents) || floorPriceCents < 0) { toast.error("Enter prices as rupee amounts, for example 499 or 499.50."); return; } if (await run(() => send(`/admin/catalog/products/${productId}/variants`, "POST", { sku: v.sku.trim(), name: v.name.trim(), amountCents: price, costCents: cost, includesTax: v.includesTax, openPrice: v.openPrice, floorPriceCents, barcode: v.barcode.trim() || undefined, uomId: v.uomId || undefined, customFields }), "Variant added")) { setOpen(false); setV({ sku: "", name: "", price: "", cost: "", barcode: "", uomId: "", includesTax: true, openPrice: false, floorPrice: "" }); setCustomFields({}); } }}>
           <L label="SKU"><Input value={v.sku} onChange={set("sku")} /></L>
           <L label="Variant name" hint="For example Medium / Blue."><Input value={v.name} onChange={set("name")} /></L>
-          <div className="grid grid-cols-2 gap-3"><L label="Selling price (₹)"><Input value={v.price} onChange={set("price")} inputMode="decimal" /></L><L label="Cost (₹)"><Input value={v.cost} onChange={set("cost")} inputMode="decimal" /></L></div>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.includesTax} onChange={(e) => setV((c) => ({ ...c, includesTax: e.target.checked }))} /> Selling price includes tax</label>
-          <L label="Barcode (optional)"><Input value={v.barcode} onChange={set("barcode")} /></L>
-          <L label="Tax group"><NativeSelect value={v.taxGroupId} onChange={set("taxGroupId")}><option value="">No tax group</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</NativeSelect></L>
-          <L label="Unit of measure"><NativeSelect value={v.uomId} onChange={set("uomId")}><option value="">Not set</option>{uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.code})</option>)}</NativeSelect></L>
+          <div className="grid grid-cols-2 gap-3"><L label={`Selling price (${currencyCode()})`}><Input value={v.price} onChange={set("price")} inputMode="decimal" /></L>{visibleCore.includes("cost") && <L label={`Cost (${currencyCode()})`}><Input value={v.cost} onChange={set("cost")} inputMode="decimal" /></L>}</div>
+          {visibleCore.includes("includesTax") && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.includesTax} onChange={(e) => setV((c) => ({ ...c, includesTax: e.target.checked }))} /> Selling price includes tax</label>}
+          {visibleCore.includes("openPrice") && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.openPrice} onChange={(e) => setV((c) => ({ ...c, openPrice: e.target.checked }))} /> Cashier may enter the price at checkout</label>}
+          {visibleCore.includes("floorPrice") && <L label={`Lowest open price (${currencyCode()})`}><Input value={v.floorPrice} onChange={(e) => setV((c) => ({ ...c, floorPrice: e.target.value }))} inputMode="decimal" /></L>}
+          {(visibleCore.includes("barcode") || forceBarcode) && <L label="Barcode (optional)"><Input value={v.barcode} onChange={set("barcode")} /></L>}
+          {visibleCore.includes("uom") && <L label="Unit of measure"><NativeSelect value={v.uomId} onChange={set("uomId")}><option value="">Not set</option>{uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.code})</option>)}</NativeSelect></L>}
+          <ConfigurableFieldValues fields={variantFields} values={customFields} onChange={setCustomFields} idPrefix={`new-variant-field-${productId}`} />
           <SheetFooter busy={busy} label="Add variant" />
         </form>
       </FormSheet>
@@ -297,7 +324,7 @@ export function NewUomSheet() {
   const [v, setV] = React.useState({ code: "", name: "", allowsDecimal: false });
   return (
     <Can permission="catalog.manage">
-      <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add unit</Button>} title="Add unit of measure" description="For example PCS, KG or LTR.">
+      <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add unit</Button>} title="Add a unit" description="Used for product quantities in inventory and sales. For example Piece, Kilogram, or Litre.">
         <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); if (!/^[A-Za-z0-9]{1,10}$/.test(v.code.trim()) || v.name.trim().length < 2) { toast.error("Enter a short code (letters and numbers) and a name."); return; } if (await run(() => send("/admin/catalog/uoms", "POST", { code: v.code.trim(), name: v.name.trim(), allowsDecimal: v.allowsDecimal }), "Unit added")) { setOpen(false); setV({ code: "", name: "", allowsDecimal: false }); } }}>
           <L label="Code"><Input value={v.code} onChange={(e) => setV((c) => ({ ...c, code: e.target.value }))} /></L>
           <L label="Name"><Input value={v.name} onChange={(e) => setV((c) => ({ ...c, name: e.target.value }))} /></L>
@@ -320,7 +347,7 @@ export function AddStoreProductsSheet({ storeId, items }: { storeId: string; ite
   const single = picked.length === 1;
   const toggle = (id: string) => setPicked((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id]);
   return (
-    <Can permission="catalog.manage" storeId={storeId}>
+    <Can permission="catalog.manage.store" storeId={storeId}>
       <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add products</Button>} title="Add products to this store" description="Each store sells its own set of products. Pick from the organisation catalogue; create new products under Organisation → Catalogue.">
         <form className="grid gap-4 pb-6" onSubmit={async (e) => {
           e.preventDefault();
@@ -335,7 +362,7 @@ export function AddStoreProductsSheet({ storeId, items }: { storeId: string; ite
               <label key={item.variantId} className="flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-0 hover:bg-secondary">
                 <input type="checkbox" checked={picked.includes(item.variantId)} onChange={() => toggle(item.variantId)} />
                 <span className="min-w-0 flex-1 truncate"><span className="font-medium">{item.name}</span> <span className="text-muted-foreground">· {item.sku}</span></span>
-                <span className="text-xs text-muted-foreground">₹{(item.priceCents / 100).toFixed(2)}</span>
+                <span className="text-xs text-muted-foreground">{formatMoney(item.priceCents)}</span>
               </label>
             ))}
           </div>
@@ -347,72 +374,20 @@ export function AddStoreProductsSheet({ storeId, items }: { storeId: string; ite
     </Can>
   );
 }
-export function StoreProductActions({ storeId, variantId, status, storeTaxGroupId, taxGroups }: { storeId: string; variantId: string; status: string | null; storeTaxGroupId: string | null; taxGroups: { id: string; name: string; ratePercent: number }[] }) {
+export function StoreProductActions({ storeId, variantId, status }: { storeId: string; variantId: string; status: string | null }) {
   const { busy, run } = useRun();
-  const [open, setOpen] = React.useState(false);
-  const [taxGroupId, setTaxGroupId] = React.useState(storeTaxGroupId ?? "");
   const active = status === "ACTIVE";
-  return (
-    <Can permission="catalog.manage.store" storeId={storeId}>
-      <div className="flex justify-end gap-1.5">
-        <FormSheet open={open} onOpenChange={setOpen} trigger={<Button size="sm" variant="outline" disabled={busy}>Tax</Button>} title="Tax group for this store" description="The price is set by the organisation. You can choose a different tax group for this product in this store only.">
-          <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); if (await run(() => send("/pos/v1/store-products", "PATCH", { storeId, variantId, taxGroupId: taxGroupId || null }, storeId), "Tax group saved")) setOpen(false); }}>
-            <L label="Tax group"><NativeSelect value={taxGroupId} onChange={(e) => setTaxGroupId(e.target.value)}><option value="">Use the organisation’s tax group</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.ratePercent}%</option>)}</NativeSelect></L>
-            <SheetFooter busy={busy} label="Save" />
-          </form>
-        </FormSheet>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send("/pos/v1/store-products", "PATCH", { storeId, variantId, status: active ? "DISABLED" : "ACTIVE" }, storeId), active ? "Removed from sale" : "Back on sale")}>{active ? "Remove" : "Restore"}</Button>
-      </div>
-    </Can>
-  );
+  return <Can permission="catalog.manage.store" storeId={storeId}><div className="flex justify-end"><Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send("/pos/v1/store-products", "PATCH", { storeId, variantId, status: active ? "DISABLED" : "ACTIVE" }, storeId), active ? "Removed from sale" : "Back on sale")}>{active ? "Remove" : "Restore"}</Button></div></Can>;
 }
-
-/* ───────── Store-scoped product creation (store managers) ───────── */
-export function NewStoreProductSheet({ storeId, taxGroups, brands, categories }: { storeId: string; taxGroups: { id: string; name: string; ratePercent: number }[]; brands: { id: string; name: string }[]; categories: { id: string; name: string }[] }) {
-  const { busy, run } = useRun();
-  const [open, setOpen] = React.useState(false);
-  const [v, setV] = React.useState({ name: "", variantName: "Standard", sku: "", barcode: "", brandId: "", categoryId: "", taxGroupId: "", amount: "", openingQty: "" });
-  const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((c) => ({ ...c, [k]: e.target.value }));
-  return (
-    <Can permission="catalog.manage.store" storeId={storeId}>
-      <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> New product</Button>} title="New product in this store" description="A product you add here is sold at this store immediately and also appears in the organisation catalogue. The price you enter becomes the organisation base price.">
-        <form className="grid gap-4 pb-6" onSubmit={async (e) => {
-          e.preventDefault();
-          if (v.name.trim().length < 2 || !v.sku.trim()) { toast.error("Enter a product name and SKU."); return; }
-          const amount = rupeesToPaise(v.amount);
-          if (!Number.isInteger(amount) || amount <= 0) { toast.error("Enter a selling price."); return; }
-          const opening = v.openingQty.trim() ? Number(v.openingQty) : 0;
-          if (!Number.isFinite(opening) || opening < 0) { toast.error("Enter a valid opening quantity."); return; }
-          const body = { name: v.name.trim(), variantName: v.variantName.trim() || "Standard", sku: v.sku.trim().toUpperCase(), barcode: v.barcode.trim() || undefined, brandId: v.brandId || undefined, categoryId: v.categoryId || undefined, taxGroupId: v.taxGroupId || undefined, amountCents: amount, openingQuantity: opening };
-          if (await run(() => send(`/pos/v1/stores/${storeId}/products`, "POST", body, storeId), "Product added to this store")) { setOpen(false); setV({ name: "", variantName: "Standard", sku: "", barcode: "", brandId: "", categoryId: "", taxGroupId: "", amount: "", openingQty: "" }); }
-        }}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <L label="Product name"><Input value={v.name} onChange={set("name")} /></L>
-            <L label="Variant"><Input value={v.variantName} onChange={set("variantName")} /></L>
-            <L label="SKU"><Input value={v.sku} onChange={set("sku")} /></L>
-            <L label="Barcode"><Input value={v.barcode} onChange={set("barcode")} /></L>
-            <L label="Brand"><NativeSelect value={v.brandId} onChange={set("brandId")}><option value="">No brand</option>{brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</NativeSelect></L>
-            <L label="Category"><NativeSelect value={v.categoryId} onChange={set("categoryId")}><option value="">Uncategorised</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></L>
-            <L label="Tax group"><NativeSelect value={v.taxGroupId} onChange={set("taxGroupId")}><option value="">No tax</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.ratePercent}%</option>)}</NativeSelect></L>
-            <L label="Base price (₹)" hint="Becomes the organisation-wide price."><Input value={v.amount} onChange={set("amount")} inputMode="decimal" /></L>
-            <L label="Opening stock" hint="Posted to this store's first stock location."><Input value={v.openingQty} onChange={set("openingQty")} inputMode="decimal" /></L>
-          </div>
-          <SheetFooter busy={busy} label="Create product" />
-        </form>
-      </FormSheet>
-    </Can>
-  );
-}
-
 /* ───────── Pending verification (received from organisation) ───────── */
-export function PendingVerificationList({ storeId, items, taxGroups }: { storeId: string; items: { variantId: string; sku: string; name: string; brand: string; category?: string; suggestedPriceCents: number; taxGroup: { id: string; name: string; rateBps: number } | null; pendingQuantity: number }[]; taxGroups: { id: string; name: string; rate: number }[] }) {
+export function PendingVerificationList({ storeId, items, taxGroups, canReview }: { storeId: string; items: { variantId: string; sku: string; name: string; brand: string; category?: string; suggestedPriceCents: number; taxGroup: { id: string; name: string; rateBps: number } | null; pendingQuantity: number }[]; taxGroups: { id: string; name: string; rate: number }[]; canReview: boolean }) {
   return (
     <div className="divide-y rounded-md border bg-card">
-      {items.map((item) => <PendingVerificationRow key={item.variantId} storeId={storeId} item={item} taxGroups={taxGroups} />)}
+      {items.map((item) => <PendingVerificationRow key={item.variantId} storeId={storeId} item={item} taxGroups={taxGroups} canReview={canReview} />)}
     </div>
   );
 }
-function PendingVerificationRow({ storeId, item, taxGroups }: { storeId: string; item: { variantId: string; sku: string; name: string; category?: string; suggestedPriceCents: number; taxGroup: { id: string; name: string } | null; pendingQuantity: number }; taxGroups: { id: string; name: string; rate: number }[] }) {
+function PendingVerificationRow({ storeId, item, taxGroups, canReview }: { storeId: string; item: { variantId: string; sku: string; name: string; category?: string; suggestedPriceCents: number; taxGroup: { id: string; name: string } | null; pendingQuantity: number }; taxGroups: { id: string; name: string; rate: number }[]; canReview: boolean }) {
   const { busy, run } = useRun();
   const [editing, setEditing] = React.useState(false);
   const [taxGroupId, setTaxGroupId] = React.useState(item.taxGroup?.id ?? "");
@@ -428,22 +403,22 @@ function PendingVerificationRow({ storeId, item, taxGroups }: { storeId: string;
     <div className="flex flex-wrap items-start gap-3 p-3">
       <div className="min-w-0 flex-1">
         <p className="font-medium">{item.name}</p>
-        <p className="text-xs text-muted-foreground">SKU {item.sku}{item.category ? ` · ${item.category}` : ""} · {item.pendingQuantity} units pending · price ₹{(item.suggestedPriceCents / 100).toFixed(2)} (set by organisation){item.taxGroup ? ` · ${item.taxGroup.name}` : ""}</p>
+        <p className="text-xs text-muted-foreground">SKU {item.sku}{item.category ? ` · ${item.category}` : ""} · {item.pendingQuantity} units pending · price {formatMoney(item.suggestedPriceCents)} (set by organisation){item.taxGroup ? ` · ${item.taxGroup.name}` : ""}</p>
         {editing && <div className="mt-2 sm:max-w-xs">
-          <L label="Tax group for this store"><NativeSelect value={taxGroupId} onChange={(e) => setTaxGroupId(e.target.value)}><option value="">Use the organisation’s tax group</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.rate}%</option>)}</NativeSelect></L>
+          <L label="Tax group for this store"><NativeSelect value={taxGroupId} onChange={(e) => setTaxGroupId(e.target.value)}><option value="">Choose this store&apos;s tax group</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.rate}%</option>)}</NativeSelect></L>
         </div>}
       </div>
-      <div className="flex gap-2">
+      {!canReview ? <span className="rounded-full bg-warning-soft px-2 py-1 text-xs font-medium text-warning">Awaiting store review</span> : <div className="flex gap-2">
         {!editing && <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}>Choose tax</Button>}
         <Button size="sm" disabled={busy} onClick={() => void accept(editing)}>Add to store</Button>
         <ConfirmDialog trigger={<Button size="sm" variant="outline" disabled={busy}>Reject</Button>} title="Reject this item?" description="Stock returns to quarantine and this product is marked disabled in your store." confirmLabel="Reject" destructive onConfirm={() => void reject()} />
-      </div>
+      </div>}
     </div>
   );
 }
 
 /* ───────── Distributions (organisation pushes to a store) ───────── */
-export function NewDistributionSheet({ stores, variants }: { stores: { id: string; name: string; code: string }[]; variants: { id: string; label: string; defaultPriceCents: number; defaultTaxGroupId: string | null }[] }) {
+export function NewDistributionSheet({ stores, variants }: { stores: { id: string; name: string; code: string }[]; variants: { id: string; label: string; defaultPriceCents: number }[] }) {
   const { busy, run } = useRun();
   const [open, setOpen] = React.useState(false);
   const [toStoreId, setToStoreId] = React.useState(stores[0]?.id ?? "");

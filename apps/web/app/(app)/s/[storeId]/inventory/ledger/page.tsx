@@ -11,7 +11,7 @@ export default async function Page({ params }: PageProps<"/s/[storeId]/inventory
   const { data } = await api.ledger(storeId);
   return (
     <>
-      <PageHeader title="Stock ledger" description="Every stock movement, newest first." crumbs={[{ label: "Inventory", href: `/s/${storeId}/inventory` }, { label: "Ledger" }]} />
+      <PageHeader title="Stock ledger" description="Every stock movement, newest first." crumbs={[{ label: "Inventory", href: `/s/${storeId}/inventory` }, { label: "Ledger" }]} backHref={`/s/${storeId}/inventory`} backLabel="Back to inventory" />
       <LedgerTable data={data} />
     </>
   );

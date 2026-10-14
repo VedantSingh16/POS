@@ -12,7 +12,7 @@ export default async function Adjust({ params }: PageProps<"/s/[storeId]/invento
   const items = catalogue.filter((item) => item.assigned && item.status === "ACTIVE");
   return (
     <>
-      <PageHeader title="Adjust stock" description="Record a count correction, damage or receipt for products in this store’s catalogue." crumbs={[{ label: "Inventory", href: `/s/${storeId}/inventory` }, { label: "Adjust" }]} />
+      <PageHeader title="Adjust stock" description="Record a count correction, damage or receipt for products in this store’s catalogue." crumbs={[{ label: "Inventory", href: `/s/${storeId}/inventory` }, { label: "Adjust" }]} backHref={`/s/${storeId}/inventory`} backLabel="Back to inventory" />
       <AdjustStockForm items={items.map((item) => ({ id: item.variantId, sku: item.sku, name: item.name }))} locations={locations} storeId={storeId} />
     </>
   );

@@ -2,21 +2,23 @@
 import type * as React from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, minorPerUnit } from "@/lib/format";
+
+const axisTick = (minor: number) => { const major = minor / minorPerUnit(); return Math.abs(major) >= 1000 ? `${Math.round(major / 100) / 10}k` : String(Math.round(major)); };
 
 const COLORS = ["var(--primary)", "var(--success)", "var(--warning)", "var(--info)"];
 function EmptyChart({ children }: { children: React.ReactNode }) {
-  return <div className="grid h-56 place-items-center px-6 text-center text-sm text-muted-foreground">{children}</div>;
+  return <div className="grid h-48 place-items-center px-6 text-center text-sm text-muted-foreground">{children}</div>;
 }
 const axis = { stroke: "var(--muted-foreground)", fontSize: 12, tickLine: false, axisLine: false } as const;
 
 export function TrendChart({ data }: { data: { day: string; sales: number }[] }) {
   return (
     <Card><CardHeader><CardTitle>Sales, last 7 days</CardTitle></CardHeader>
-      <CardContent>{!data.length || data.every((d) => !d.sales) ? <EmptyChart>No sales recorded in the last 7 days.</EmptyChart> : <div className="h-56" role="img" aria-label="Line chart of daily sales for the last seven days">
+      <CardContent>{!data.length || data.every((d) => !d.sales) ? <EmptyChart>No sales recorded in the last 7 days.</EmptyChart> : <div className="h-48" role="img" aria-label="Line chart of daily sales for the last seven days">
         <ResponsiveContainer width="100%" height="100%"><LineChart data={data}>
-          <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="day" {...axis} /><YAxis {...axis} width={48} tickFormatter={(v) => `${v / 1000}k`} />
-          <Tooltip formatter={(v) => formatMoney(Number(v) * 100)} contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8 }} />
+          <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="day" {...axis} /><YAxis {...axis} width={48} tickFormatter={(v) => axisTick(Number(v))} />
+          <Tooltip formatter={(v) => formatMoney(Number(v))} contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8 }} />
           <Line type="monotone" dataKey="sales" stroke="var(--primary)" strokeWidth={2} dot={false} />
         </LineChart></ResponsiveContainer></div>}</CardContent></Card>
   );
@@ -25,9 +27,9 @@ export function TrendChart({ data }: { data: { day: string; sales: number }[] })
 export function HourChart({ data }: { data: { hour: string; sales: number }[] }) {
   return (
     <Card><CardHeader><CardTitle>Sales by hour, today</CardTitle></CardHeader>
-      <CardContent>{!data.length || data.every((d) => !d.sales) ? <EmptyChart>No sales recorded yet today.</EmptyChart> : <div className="h-56" role="img" aria-label="Bar chart of sales by hour today">
+      <CardContent>{!data.length || data.every((d) => !d.sales) ? <EmptyChart>No sales recorded yet today.</EmptyChart> : <div className="h-48" role="img" aria-label="Bar chart of sales by hour today">
         <ResponsiveContainer width="100%" height="100%"><BarChart data={data}>
-          <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="hour" {...axis} /><YAxis {...axis} width={48} tickFormatter={(v) => `${v / 1000}k`} />
+          <CartesianGrid vertical={false} stroke="var(--border)" /><XAxis dataKey="hour" {...axis} /><YAxis {...axis} width={48} tickFormatter={(v) => axisTick(Number(v))} />
           <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8 }} />
           <Bar dataKey="sales" fill="var(--primary)" radius={[4, 4, 0, 0]} />
         </BarChart></ResponsiveContainer></div>}</CardContent></Card>

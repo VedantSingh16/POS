@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  GoneException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -25,10 +26,20 @@ import {
 } from '../generated/prisma/client.js';
 import { PHASES } from './pos-features.js';
 import { buildInvoicePdf } from './invoice-pdf.js';
+import { buildReportPdf } from './report-pdf.js';
 import { splitInclusive, taxOnExclusive } from '@pos/shared/gst';
+import { evaluatePromotions, resolveUnitPrice, type PriceRule, type PromotionDef } from '@pos/shared/pricing';
+import { financialYearLabel } from '@pos/shared/fiscal';
+import { formatMinor, minorFactor } from '@pos/shared/currency';
+import { currencyFromSettings } from '../common/org-currency.js';
+import { DEFAULT_BILLING_SETTINGS } from '../common/billing-settings.js';
+import { cleanFieldSet, cleanFieldValues, objectField } from '../common/field-config.js';
+import { GST_STATES, gstinStateCode, isIntraState, validateGstin } from '@pos/shared/tax-id';
+import { createHash } from 'node:crypto';
+import { PaymentsService } from './payments/payments.service.js';
 import { verifyPassword } from '../security/password.js';
 
-type LineInput = { variantId?: unknown; quantity?: unknown; note?: unknown; discountCents?: unknown; discountPercent?: unknown; discountReason?: unknown };
+type LineInput = { variantId?: unknown; quantity?: unknown; note?: unknown; discountCents?: unknown; discountPercent?: unknown; discountReason?: unknown; unitPriceCents?: unknown; priceIncludesTax?: unknown };
 
 const SELLABLE_STATUSES = ['ACTIVE', 'SEASONAL'] as const;
 const TENDERS = Object.values(TenderType) as TenderType[];
@@ -70,11 +81,19 @@ type PricedLine = {
   discountCents: number;
   discountReason: string;
   note: string;
+  /** The list (base) price before any price rule; null when the item has none (open-price items). */
+  listPriceCents: number | null;
+  priceSource: 'RULE' | 'BASE' | 'OPEN_PRICE';
+  priceRuleName: string | null;
+  openPrice: boolean;
+  categoryId: string | null;
+  brandId: string | null;
 };
+
+type CustomerForPricing = { id: string; name: string; phone: string; groupName: string; isBusiness: boolean; taxNumber: string; legalName: string; billingAddress: string; stateCode: string; walletBalanceCents: number; pointsBalance: number };
 
 type SaleWithDetails = Prisma.SaleGetPayload<{ include: { lines: true; payments: true } }>;
 
-const formatRupees = (cents: number) => `₹${(cents / 100).toFixed(2)}`;
 
 @Injectable()
 export class PosService {
@@ -82,6 +101,7 @@ export class PosService {
     private readonly prisma: PrismaService,
     private readonly authorization: AuthorizationService,
     private readonly audit: AuditService,
+    private readonly payments: PaymentsService,
   ) {}
 
   featureStatus() {
@@ -110,7 +130,7 @@ export class PosService {
       this.prisma.saleReturn.count({ where: { organizationId: context.organizationId, ...(storeId ? { storeId } : storeFilter) } }),
       context.isOrganisationAdministrator ? this.prisma.customer.count({ where: { organizationId: context.organizationId } }) : Promise.resolve(0),
       this.prisma.inventoryMovement.count({ where: { organizationId: context.organizationId, ...locationFilter } }),
-      this.prisma.alert.count({ where: { organizationId: context.organizationId, ...(storeId ? { storeId } : scopedStoreIds ? { storeId: { in: scopedStoreIds } } : {}) } }),
+      this.prisma.alert.count({ where: { organizationId: context.organizationId, status: { in: ['OPEN', 'ACKNOWLEDGED'] }, ...(storeId ? { storeId } : scopedStoreIds ? { storeId: { in: scopedStoreIds } } : {}) } }),
     ]);
     return {
       phases: PHASES,
@@ -121,7 +141,7 @@ export class PosService {
 
   // ───────────── Catalogue search ─────────────
 
-  async searchProducts(context: UserContext, query = '', requestedStoreId?: string) {
+  async searchProducts(context: UserContext, query = '', requestedStoreId?: string, options: { variantIds?: string[]; limit?: number } = {}) {
     const term = query.trim();
     const storeId = requestedStoreId ? uuid(requestedStoreId, 'storeId') : context.defaultStoreId;
     if (storeId) {
@@ -132,6 +152,7 @@ export class PosService {
       where: {
         organizationId: context.organizationId,
         status: { in: [...SELLABLE_STATUSES] },
+        ...(options.variantIds ? { id: { in: options.variantIds } } : {}),
         ...(storeId ? { storeVariants: { some: { storeId, status: 'ACTIVE' as const } } } : {}),
         ...(term
           ? {
@@ -146,14 +167,13 @@ export class PosService {
           : {}),
       },
       include: {
-        product: { select: { name: true, brand: true, category: { select: { id: true, name: true } } } },
-        taxGroup: { select: { rateBps: true } },
-        storeVariants: { where: { storeId: storeId ?? '00000000-0000-0000-0000-000000000000' }, select: { taxGroup: { select: { rateBps: true } } } },
+        product: { select: { name: true, brand: true, customFields: true, productTypeId: true, productType: { select: { name: true } }, category: { select: { id: true, name: true } } } },
+        storeVariants: { where: { storeId: storeId ?? '00000000-0000-0000-0000-000000000000' }, select: { taxGroup: { select: { rateBps: true, status: true } } } },
         barcodes: { select: { code: true }, orderBy: { code: 'asc' } },
         prices: this.currentPriceFilter(storeId),
       },
       orderBy: [{ product: { name: 'asc' } }, { name: 'asc' }],
-      take: 100,
+      take: Math.max(1, Math.min(options.limit ?? 100, 500)),
     });
     const balances = storeId
       ? await this.prisma.inventoryBalance.findMany({
@@ -168,14 +188,19 @@ export class PosService {
       sku: variant.sku,
       variantName: variant.name,
       productName: variant.product.name,
+      customFields: { ...objectField(variant.product.customFields), ...objectField(variant.customFields) },
+      productTypeId: variant.product.productTypeId,
+      productTypeName: variant.product.productType?.name ?? '',
       brand: variant.product.brand,
       categoryId: variant.product.category?.id ?? null,
       categoryName: variant.product.category?.name ?? '',
       priceCents: this.pickPrice(variant.prices, storeId)?.amountCents ?? 0,
       includesTax: this.pickPrice(variant.prices, storeId)?.includesTax ?? false,
+      openPrice: variant.openPrice,
+      floorPriceCents: variant.floorPriceCents,
       barcode: variant.barcodes[0]?.code ?? '',
       barcodes: variant.barcodes.map((barcode) => barcode.code),
-      taxBps: (variant.storeVariants[0]?.taxGroup ?? variant.taxGroup)?.rateBps ?? 0,
+      taxBps: variant.storeVariants[0]?.taxGroup?.status === 'ACTIVE' ? variant.storeVariants[0].taxGroup.rateBps : 0,
       stock: stockByVariant.get(variant.id) ?? 0,
     }));
   }
@@ -223,14 +248,14 @@ export class PosService {
     const [variants, assignments, balances] = await Promise.all([
       this.prisma.productVariant.findMany({
         where: { organizationId: context.organizationId },
-        include: { product: { select: { name: true, brand: true, category: { select: { name: true } } } }, taxGroup: { select: { name: true, rateBps: true } }, prices: this.currentPriceFilter(storeId) },
+        include: { product: { select: { name: true, brand: true, customFields: true, productTypeId: true, productType: { select: { name: true } }, category: { select: { name: true } } } }, barcodes: { select: { code: true }, orderBy: { code: 'asc' } }, prices: this.currentPriceFilter(storeId) },
         orderBy: [{ product: { name: 'asc' } }, { name: 'asc' }],
       }),
-      this.prisma.storeVariant.findMany({ where: { storeId }, include: { taxGroup: { select: { id: true, name: true, rateBps: true } } } }),
+      this.prisma.storeVariant.findMany({ where: { storeId }, include: { taxGroup: { select: { id: true, name: true, rateBps: true, status: true } } } }),
       this.prisma.inventoryBalance.findMany({ where: { organizationId: context.organizationId, status: 'SELLABLE', location: { storeId } }, select: { variantId: true, quantity: true } }),
     ]);
-    const assigned = new Map(assignments.map((row) => [row.variantId, row.status]));
-    const storeTax = new Map(assignments.map((row) => [row.variantId, row.taxGroup]));
+    const assigned = new Map(assignments.map((row) => [row.variantId, row]));
+    const storeTax = new Map(assignments.map((row) => [row.variantId, row.taxGroup?.status === 'ACTIVE' ? row.taxGroup : null]));
     const stock = new Map<string, number>();
     for (const balance of balances) stock.set(balance.variantId, (stock.get(balance.variantId) ?? 0) + Number(balance.quantity));
     return variants.map((variant) => {
@@ -238,16 +263,20 @@ export class PosService {
       return {
         variantId: variant.id,
         sku: variant.sku,
+        barcodes: variant.barcodes.map((barcode) => barcode.code),
         name: `${variant.product.name} ${variant.name}`.trim(),
         brand: variant.product.brand,
         category: variant.product.category?.name ?? '',
         assigned: assigned.has(variant.id),
-        status: assigned.get(variant.id) ?? null,
+        status: assigned.get(variant.id)?.status ?? null,
+        productTypeId: variant.product.productTypeId,
+        productTypeName: variant.product.productType?.name ?? '',
+        customFields: { ...objectField(variant.product.customFields), ...objectField(variant.customFields) },
         priceCents: this.pickPrice(variant.prices, storeId)?.amountCents ?? 0,
         storePriceCents: storePrice?.amountCents ?? null,
         storeTaxGroupId: storeTax.get(variant.id)?.id ?? null,
-        taxGroupName: (storeTax.get(variant.id) ?? variant.taxGroup)?.name ?? null,
-        taxRatePercent: ((storeTax.get(variant.id) ?? variant.taxGroup)?.rateBps ?? 0) / 100,
+        taxGroupName: storeTax.get(variant.id)?.name ?? null,
+        taxRatePercent: (storeTax.get(variant.id)?.rateBps ?? 0) / 100,
         stock: stock.get(variant.id) ?? 0,
       };
     });
@@ -256,7 +285,7 @@ export class PosService {
   async assignStoreProducts(context: UserContext, input: JsonObject) {
     const storeId = uuid(input.storeId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
-    this.authorization.assertPermissions(context, ['catalog.manage'], storeId);
+    this.authorization.assertPermissions(context, ['catalog.manage.store'], storeId);
     const variantIds = [...new Set((Array.isArray(input.variantIds) ? input.variantIds : []).map((id) => uuid(id, 'variantId')))];
     if (!variantIds.length) throw new BadRequestException('Select at least one product');
     if (variantIds.length > 500) throw new BadRequestException('Add at most 500 products at once');
@@ -283,81 +312,63 @@ export class PosService {
     const storeId = uuid(input.storeId, 'storeId');
     const variantId = uuid(input.variantId, 'variantId');
     this.authorization.assertStoreAccess(context, storeId);
-    this.authorization.assertPermissions(context, ['catalog.manage'], storeId);
+    this.authorization.assertPermissions(context, ['catalog.manage.store'], storeId);
+    if (input.customFields !== undefined) throw new BadRequestException('Product fields are owned by the organisation and cannot be changed by a store.');
     const current = await this.prisma.storeVariant.findUnique({ where: { storeId_variantId: { storeId, variantId } } });
     if (!current) throw new NotFoundException('This product is not in the store catalogue');
     const status = input.status === undefined ? undefined : oneOf(input.status, ['ACTIVE', 'DISABLED'] as const, 'status');
     if (input.priceCents !== undefined && input.priceCents !== null) throw new BadRequestException('The base price is set by the organisation and cannot be changed for one store');
     const taxGroupId = input.taxGroupId === undefined ? undefined : input.taxGroupId === null ? null : uuid(input.taxGroupId, 'taxGroupId');
     if (taxGroupId) await this.assertTaxGroupUsable(context.organizationId, storeId, taxGroupId);
+    const pinned = input.pinned === undefined ? undefined : input.pinned === true;
+    const pinnedRank = input.pinnedRank === undefined ? undefined : Math.trunc(finiteNumber(input.pinnedRank, 'pinnedRank'));
     await this.prisma.$transaction(async (tx) => {
-      if (status || taxGroupId !== undefined) await tx.storeVariant.update({ where: { id: current.id }, data: { ...(status ? { status } : {}), ...(taxGroupId !== undefined ? { taxGroupId } : {}) } });
-      await this.audit.record(context, 'store-catalogue.updated', 'Store', storeId, { variantId, status, taxGroupId }, tx);
+      if (status || taxGroupId !== undefined || pinned !== undefined || pinnedRank !== undefined) {
+        await tx.storeVariant.update({ where: { id: current.id }, data: { ...(status ? { status } : {}), ...(taxGroupId !== undefined ? { taxGroupId } : {}), ...(pinned !== undefined ? { pinned } : {}), ...(pinnedRank !== undefined ? { pinnedRank } : {}) } });
+      }
+      await this.audit.record(context, 'store-catalogue.updated', 'Store', storeId, { variantId, status, taxGroupId, pinned, pinnedRank }, tx);
     });
     return { storeId, variantId, status: status ?? current.status };
   }
 
-  // ───────────── Store-scoped product creation ─────────────
-
-  /** A store manager creates a product that belongs to this store (and goes into the organisation catalogue). */
-  async createStoreProduct(context: UserContext, requestedStoreId: string, input: JsonObject) {
-    const storeId = uuid(requestedStoreId, 'storeId');
+  /**
+   * The quick-key tiles: manager-pinned items first, then what this store really sells most (last N days),
+   * then any other products so a new store is never empty.
+   */
+  async topSellers(context: UserContext, requestedStoreId: string | undefined, daysInput?: string, limitInput?: string) {
+    const storeId = uuid(requestedStoreId ?? context.defaultStoreId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
-    this.authorization.assertPermissions(context, ['catalog.manage.store'], storeId);
-    const productName = requiredString(input.name, 'name');
-    const sku = requiredString(input.sku, 'sku').toUpperCase();
-    const amountCents = money(input.amountCents, 'amountCents');
-    const costCents = input.costCents === undefined ? 0 : money(input.costCents, 'costCents');
-    const includesTax = input.includesTax === true;
-    const openingQuantity = input.openingQuantity === undefined || input.openingQuantity === null ? 0 : finiteNumber(input.openingQuantity, 'openingQuantity');
-    if (openingQuantity < 0) throw new BadRequestException('Opening quantity cannot be negative');
-    const taxGroupId = typeof input.taxGroupId === 'string' ? uuid(input.taxGroupId, 'taxGroupId') : null;
-    if (taxGroupId) await this.assertTaxGroupUsable(context.organizationId, storeId, taxGroupId);
-    const categoryId = typeof input.categoryId === 'string' ? uuid(input.categoryId, 'categoryId') : null;
-    if (categoryId && !(await this.prisma.category.findFirst({ where: { id: categoryId, organizationId: context.organizationId }, select: { id: true } }))) {
-      throw new BadRequestException('Category not found');
+    this.authorization.assertPermissions(context, ['catalog.view'], storeId);
+    const days = Math.max(1, Math.min(365, Number(daysInput) || 30));
+    const limit = Math.max(1, Math.min(60, Number(limitInput) || 24));
+    const since = new Date(Date.now() - days * 86_400_000);
+    const [pinnedRows, soldRows] = await Promise.all([
+      this.prisma.storeVariant.findMany({ where: { storeId, status: 'ACTIVE', pinned: true }, orderBy: [{ pinnedRank: 'asc' }, { createdAt: 'asc' }], select: { variantId: true } }),
+      this.prisma.saleLine.groupBy({
+        by: ['variantId'],
+        where: { sale: { storeId, status: 'COMPLETED', createdAt: { gte: since } } },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take: limit * 3,
+      }),
+    ]);
+    const pinnedIds = pinnedRows.map((row) => row.variantId);
+    const sold = new Map(soldRows.map((row) => [row.variantId, num(row._sum.quantity)]));
+    const ids = [...new Set([...pinnedIds, ...soldRows.map((row) => row.variantId)])];
+    const cards = ids.length ? await this.searchProducts(context, '', storeId, { variantIds: ids, limit: ids.length }) : [];
+    const byId = new Map(cards.map((card) => [card.variantId, card]));
+    const ordered = ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])).slice(0, limit);
+    if (ordered.length < limit) {
+      const taken = new Set(ordered.map((card) => card.variantId));
+      const filler = await this.searchProducts(context, '', storeId, { limit: limit + taken.size });
+      for (const card of filler) if (ordered.length < limit && !taken.has(card.variantId)) { ordered.push(card); taken.add(card.variantId); }
     }
-    const brandId = typeof input.brandId === 'string' ? uuid(input.brandId, 'brandId') : null;
-    let brandName = optionalString(input.brand) ?? '';
-    if (brandId) {
-      const brand = await this.prisma.brand.findFirst({ where: { id: brandId, organizationId: context.organizationId }, select: { name: true } });
-      if (!brand) throw new BadRequestException('Brand not found');
-      brandName = brand.name;
-    }
-    const variantName = optionalString(input.variantName) || 'Standard';
-    const barcode = optionalString(input.barcode);
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const product = await tx.product.create({
-          data: {
-            organizationId: context.organizationId,
-            categoryId,
-            brandId,
-            name: productName,
-            brand: brandName,
-            status: 'ACTIVE',
-          },
-        });
-        const variant = await tx.productVariant.create({
-          data: { organizationId: context.organizationId, productId: product.id, sku, name: variantName, costCents, taxGroupId },
-        });
-        if (barcode) await tx.barcode.create({ data: { organizationId: context.organizationId, variantId: variant.id, code: barcode } });
-        // A price entered by a store for a new product is the organisation base price (not a store-only price).
-        await tx.variantPrice.create({ data: { organizationId: context.organizationId, variantId: variant.id, storeId: null, amountCents, includesTax } });
-        await tx.storeVariant.create({ data: { organizationId: context.organizationId, storeId, variantId: variant.id, status: 'ACTIVE', sourceType: 'STORE_CREATED', verifiedAt: new Date(), verifiedByUserId: context.userId } });
-        if (openingQuantity > 0) {
-          const location = await this.storeLocation(tx, context.organizationId, storeId);
-          if (!location) throw new BadRequestException('This store has no stock location. Create one on Inventory first.');
-          await this.postInventory(tx, context, location.id, variant.id, openingQuantity, 'RECEIPT', null, 'Opening stock', costCents, 'SELLABLE');
-        }
-        await this.audit.record(context, 'store-product.created', 'ProductVariant', variant.id, { storeId, sku }, tx);
-        return { productId: product.id, variantId: variant.id };
-      });
-      return result;
-    } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException('SKU or barcode already exists in the organisation');
-      throw error;
-    }
+    return { days, products: ordered.map((card) => ({ ...card, pinned: pinnedIds.includes(card.variantId), soldQuantity: sold.get(card.variantId) ?? 0 })) };
+  }
+
+  // Products and variants are created in the organization catalog, then assigned to stores.
+  async createStoreProduct(_context: UserContext, _requestedStoreId: string, _input: JsonObject) {
+    throw new ForbiddenException('Products are created in the organisation catalog, then assigned to stores.');
   }
 
   // ───────────── Distribution: organisation pushes products to a store with suggested price/tax ─────────────
@@ -375,10 +386,10 @@ export class PosService {
   async listPendingForStore(context: UserContext, requestedStoreId: string) {
     const storeId = uuid(requestedStoreId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
-    this.authorization.assertPermissions(context, ['store-catalog.verify'], storeId);
+    this.authorization.assertPermissions(context, ['catalog.view'], storeId);
     const pending = await this.prisma.storeVariant.findMany({
       where: { storeId, status: 'PENDING_VERIFICATION' },
-      include: { taxGroup: { select: { id: true, name: true, rateBps: true } }, variant: { include: { product: { select: { name: true, brand: true, category: { select: { name: true } } } }, prices: this.currentPriceFilter(storeId), taxGroup: { select: { id: true, name: true, rateBps: true } } } } },
+      include: { taxGroup: { select: { id: true, name: true, rateBps: true } }, variant: { include: { product: { select: { name: true, brand: true, category: { select: { name: true } } } }, prices: this.currentPriceFilter(storeId) } } },
       orderBy: { createdAt: 'desc' },
     });
     const location = await this.storeLocation(this.prisma, context.organizationId, storeId);
@@ -391,7 +402,7 @@ export class PosService {
       brand: p.variant.product.brand,
       category: p.variant.product.category?.name ?? '',
       suggestedPriceCents: this.pickPrice(p.variant.prices, storeId)?.amountCents ?? 0,
-      taxGroup: p.taxGroup ?? p.variant.taxGroup,
+      taxGroup: p.taxGroup,
       pendingQuantity: byVariant.get(p.variantId) ?? 0,
     }));
   }
@@ -408,8 +419,8 @@ export class PosService {
       const quantity = finiteNumber(line.quantity, 'quantity');
       if (quantity < 0) throw new BadRequestException('Line quantity cannot be negative');
       const suggestedPriceCents = line.suggestedPriceCents === undefined || line.suggestedPriceCents === null ? null : money(line.suggestedPriceCents, 'suggestedPriceCents');
-      const suggestedTaxGroupId = typeof line.suggestedTaxGroupId === 'string' ? uuid(line.suggestedTaxGroupId, 'suggestedTaxGroupId') : null;
-      return { variantId: uuid(line.variantId, 'variantId'), quantity, suggestedPriceCents, suggestedTaxGroupId };
+      if (line.suggestedTaxGroupId !== undefined && line.suggestedTaxGroupId !== null) throw new BadRequestException('Tax groups are selected by the destination store, not by organization distributions');
+      return { variantId: uuid(line.variantId, 'variantId'), quantity, suggestedPriceCents, suggestedTaxGroupId: null };
     });
     await this.assertVariantsInOrganization(context.organizationId, parsed.map((l) => l.variantId));
     const distribution = await this.prisma.$transaction(async (tx) => {
@@ -447,13 +458,19 @@ export class PosService {
           create: { organizationId: context.organizationId, storeId: d.toStoreId, variantId: line.variantId, status: 'PENDING_VERIFICATION', sourceType: 'ORG_DISTRIBUTION' },
           update: { status: 'PENDING_VERIFICATION' },
         });
-        // The base price is organisation-wide; a distribution never creates a store-only price.
-        if (line.suggestedTaxGroupId) {
-          await tx.storeVariant.update({ where: { storeId_variantId: { storeId: d.toStoreId, variantId: line.variantId } }, data: { taxGroupId: line.suggestedTaxGroupId } });
-        }
+        // Product distribution never assigns a store tax group; the store configures it locally.
         if (Number(line.quantity) > 0) await this.postInventory(tx, context, location.id, line.variantId, Number(line.quantity), 'TRANSFER_IN', d.id, 'Distribution dispatched', 0, 'QUARANTINE');
       }
       await tx.distribution.update({ where: { id: d.id }, data: { status: 'DISPATCHED' } });
+      await this.raiseAlert(
+        tx,
+        context,
+        'DISTRIBUTION_PENDING',
+        'INFO',
+        `${d.lines.length} organisation product${d.lines.length === 1 ? '' : 's'} are waiting for store review`,
+        d.id,
+        d.toStoreId,
+      );
       await this.audit.record(context, 'distribution.dispatched', 'Distribution', d.id, {}, tx);
     });
     return { id: d.id, status: 'DISPATCHED' };
@@ -493,6 +510,13 @@ export class PosService {
         await this.audit.record(context, 'store-variant.rejected', 'StoreVariant', sv.id, {}, tx);
       }
     });
+    const pendingCount = await this.prisma.storeVariant.count({ where: { storeId, status: 'PENDING_VERIFICATION' } });
+    if (pendingCount === 0) {
+      await this.prisma.alert.updateMany({
+        where: { organizationId: context.organizationId, storeId, type: 'DISTRIBUTION_PENDING', status: { in: ['OPEN', 'ACKNOWLEDGED'] } },
+        data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedById: context.userId, resolutionNote: 'All organisation products awaiting review have been handled', activeDedupeKey: null },
+      });
+    }
     return { storeId, variantId, action };
   }
 
@@ -544,7 +568,8 @@ export class PosService {
       where: { id: registerId, organizationId: context.organizationId, status: 'ACTIVE' },
     });
     if (!register || register.storeId !== storeId) throw new NotFoundException('Active register not found in store');
-    const openingFloatCents = money(input.openingFloatCents ?? 0, 'openingFloatCents');
+    if (input.openingFloatCents === undefined || input.openingFloatCents === null) throw new BadRequestException('Count and enter the opening float before opening this register');
+    const openingFloatCents = money(input.openingFloatCents, 'openingFloatCents');
 
     try {
       const session = await this.prisma.$transaction(async (tx) => {
@@ -571,18 +596,71 @@ export class PosService {
   }
 
   async cashMovement(context: UserContext, sessionId: string, input: JsonObject) {
-    const session = await this.openSessionRow(context, sessionId);
-    this.authorization.assertPermissions(context, ['cash.manage'], session.storeId);
+    const sessionKey = uuid(sessionId, 'sessionId');
     const type = oneOf(input.type, CASH_MOVEMENTS, 'type');
     const amountCents = money(input.amountCents);
+    if (amountCents <= 0) throw new BadRequestException('Cash movement amount must be greater than zero');
+    const reason = requiredString(input.reason, 'reason');
+    const clientMovementId = optionalString(input.clientMovementId);
+    if (clientMovementId && clientMovementId.length > 120) throw new BadRequestException('clientMovementId must be at most 120 characters');
+    if (clientMovementId) {
+      const prior = await this.prisma.cashMovement.findFirst({ where: { organizationId: context.organizationId, clientMovementId } });
+      if (prior) {
+        if (prior.sessionId !== sessionKey || prior.type !== type || Math.abs(prior.amountCents) !== amountCents || prior.reason !== reason) {
+          throw new ConflictException('This cash movement key was already used for different details');
+        }
+        const priorSession = await this.findSession(context, prior.sessionId);
+        this.authorization.assertPermissions(context, ['cash.manage'], priorSession.storeId);
+        return this.sessionById(context, prior.sessionId);
+      }
+    }
+    const session = await this.openSessionRow(context, sessionKey);
+    this.authorization.assertPermissions(context, ['cash.manage'], session.storeId);
+    const settings = await this.orgSettings(context.organizationId, session.storeId);
+    const approvalThreshold = Number(settings.cashMovementApprovalCents ?? 0);
+    const requiresApproval = Number.isFinite(approvalThreshold) && approvalThreshold > 0 && amountCents > approvalThreshold;
+    const approvalPayload = { type, amountCents, reason };
+    const approvalToken = requiresApproval && input.approvalId !== undefined
+      ? await this.findApprovalToken(context, input.approvalId, 'CASH_MOVEMENT', session.storeId, sessionId, approvalPayload)
+      : null;
+    const approvedById = requiresApproval
+      ? approvalToken?.approvedById ?? await this.verifyManagerPin(context, session.storeId, input.managerPin, 'CASH_MOVEMENT', 'This cash movement is over the configured approval limit')
+      : null;
     const signed = OUTFLOW_MOVEMENTS.includes(type) ? -amountCents : amountCents;
-    await this.prisma.$transaction(async (tx) => {
-      await tx.cashMovement.create({
-        data: { organizationId: context.organizationId, sessionId, type, amountCents: signed, reason: optionalString(input.reason) ?? '', actorUserId: context.userId },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (approvalToken) await this.consumeApprovalToken(tx, context, approvalToken.tokenId, 'CASH_MOVEMENT', session.storeId, sessionId, approvalPayload);
+        const changed = await tx.registerSession.updateMany({
+          where: { id: sessionId, status: 'OPEN', ...(signed < 0 ? { expectedCashCents: { gte: amountCents } } : {}) },
+          data: { expectedCashCents: { increment: signed } },
+        });
+        if (!changed.count) throw new ConflictException(signed < 0 ? 'Cash out cannot exceed the expected cash in the drawer' : 'Register session is already closed');
+        await tx.cashMovement.create({
+          data: { organizationId: context.organizationId, sessionId, type, amountCents: signed, reason, actorUserId: context.userId, approvedById, clientMovementId },
+        });
+        if (approvedById && !approvalToken) await tx.approval.create({ data: {
+          organizationId: context.organizationId,
+          storeId: session.storeId,
+          action: 'CASH_MOVEMENT',
+          referenceId: sessionId,
+          requestedById: context.userId,
+          approvedById,
+          reason,
+          status: 'APPROVED',
+          decidedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+          consumedAt: new Date(),
+          payloadHash: this.approvalPayloadHash('CASH_MOVEMENT', session.storeId, sessionId, approvalPayload),
+        } });
+        await this.audit.record(context, 'cash-movement.recorded', 'RegisterSession', sessionId, { type, amountCents: signed, reason, approvedById, clientMovementId }, tx);
       });
-      await tx.registerSession.update({ where: { id: sessionId }, data: { expectedCashCents: { increment: signed } } });
-      await this.audit.record(context, 'cash-movement.recorded', 'RegisterSession', sessionId, { type, amountCents: signed }, tx);
-    });
+    } catch (error) {
+      if (clientMovementId && isUniqueViolation(error)) {
+        const prior = await this.prisma.cashMovement.findFirst({ where: { organizationId: context.organizationId, clientMovementId } });
+        if (prior?.sessionId === sessionId && prior.type === type && Math.abs(prior.amountCents) === amountCents && prior.reason === reason) return this.sessionById(context, session.id);
+      }
+      throw error;
+    }
     return this.sessionById(context, session.id);
   }
 
@@ -591,20 +669,52 @@ export class PosService {
     const counted = denominationCount
       ? denominationCount.totalCents
       : money(input.countedCashCents, 'countedCashCents');
+    const initial = await this.findSession(context, sessionId);
+    this.authorization.assertPermissions(context, ['register.close'], initial.storeId);
+    const settings = await this.orgSettings(context.organizationId, initial.storeId);
+    const tolerance = Math.max(0, Number(settings.cashVarianceToleranceCents ?? 0) || 0);
+    const expectedVariance = counted - initial.expectedCashCents;
+    const requiresReview = Math.abs(expectedVariance) > tolerance;
+    const closeReason = optionalString(input.reason) ?? '';
+    if (requiresReview && !closeReason.trim()) throw new BadRequestException('A reason is required for a register variance outside the configured tolerance');
+    const closePayload = { countedCashCents: counted, expectedCashCents: initial.expectedCashCents, varianceCents: expectedVariance, reason: closeReason };
+    const closeApprovalToken = requiresReview && input.approvalId !== undefined
+      ? await this.findApprovalToken(context, input.approvalId, 'REGISTER_VARIANCE', initial.storeId, sessionId, closePayload)
+      : null;
+    const closeApprovedById = requiresReview
+      ? closeApprovalToken?.approvedById ?? await this.verifyManagerPin(context, initial.storeId, input.managerPin, 'REGISTER_VARIANCE', 'This register variance needs manager approval')
+      : null;
     const closed = await this.prisma.$transaction(async (tx) => {
+      if (closeApprovalToken) await this.consumeApprovalToken(tx, context, closeApprovalToken.tokenId, 'REGISTER_VARIANCE', initial.storeId, sessionId, closePayload);
       const session = await this.openSessionRow(context, sessionId, tx);
       this.authorization.assertPermissions(context, ['register.close'], session.storeId);
       const variance = counted - session.expectedCashCents;
+      if (variance !== expectedVariance) throw new ConflictException('Register cash changed during close; recount and try again');
       // `status: OPEN` in the filter makes a concurrent double-close a no-op instead of a second close.
       const result = await tx.registerSession.updateMany({
         where: { id: sessionId, status: 'OPEN' },
-        data: { status: 'CLOSED', countedCashCents: counted, varianceCents: variance, closedAt: new Date() },
+        data: { status: 'CLOSED', countedCashCents: counted, varianceCents: variance, closedAt: new Date(), closedById: context.userId, closeApprovedById, closeReason, forcedClosed: false },
       });
       if (result.count === 0) throw new ConflictException('Register session is already closed');
+      await tx.alert.updateMany({ where: { organizationId: context.organizationId, type: 'REGISTER_NOT_CLOSED', referenceId: sessionId, status: { in: ['OPEN', 'ACKNOWLEDGED'] } }, data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedById: context.userId, resolutionNote: 'Register session closed', activeDedupeKey: null } });
       if (variance !== 0) {
-        await this.raiseAlert(tx, context, 'CASH_VARIANCE', variance < 0 ? 'HIGH' : 'MEDIUM', `Register variance is ${formatRupees(variance)}`, sessionId, session.storeId);
+        await this.raiseAlert(tx, context, 'CASH_VARIANCE', variance < 0 ? 'HIGH' : 'MEDIUM', `Register variance is ${formatMinor(variance, currencyFromSettings(await this.orgSettings(context.organizationId)))}`, sessionId, session.storeId);
       }
-      await this.audit.record(context, 'register-session.closed', 'RegisterSession', sessionId, { counted, expected: session.expectedCashCents, variance, denominations: denominationCount?.items ?? null }, tx);
+      if (closeApprovedById && !closeApprovalToken) await tx.approval.create({ data: {
+        organizationId: context.organizationId,
+        storeId: session.storeId,
+        action: 'REGISTER_VARIANCE',
+        referenceId: sessionId,
+        requestedById: context.userId,
+        approvedById: closeApprovedById,
+        reason: closeReason,
+        status: 'APPROVED',
+        decidedAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+        consumedAt: new Date(),
+        payloadHash: this.approvalPayloadHash('REGISTER_VARIANCE', session.storeId, sessionId, closePayload),
+      } });
+      await this.audit.record(context, 'register-session.closed', 'RegisterSession', sessionId, { counted, expected: session.expectedCashCents, variance, denominations: denominationCount?.items ?? null, reason: closeReason, approvedById: closeApprovedById }, tx);
       return session.id;
     });
     return { ...(await this.sessionById(context, closed)), countedByDenomination: denominationCount?.items ?? null };
@@ -639,6 +749,91 @@ export class PosService {
     };
   }
 
+  async attendance(context: UserContext, storeIdInput: string) {
+    const storeId = uuid(storeIdInput, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    const canViewAll = this.authorization.hasPermission(context, 'attendance.view', storeId)
+      || this.authorization.hasPermission(context, 'attendance.manage', storeId);
+    if (!canViewAll && !this.authorization.hasPermission(context, 'attendance.clock', storeId)) {
+      throw new ForbiddenException('Missing attendance permission');
+    }
+    const records = await this.prisma.staffAttendance.findMany({
+      where: { organizationId: context.organizationId, storeId, ...(canViewAll ? {} : { userId: context.userId }) },
+      include: { user: { select: { firstName: true, lastName: true } }, clockedInBy: { select: { firstName: true, lastName: true } }, clockedOutBy: { select: { firstName: true, lastName: true } } },
+      orderBy: { clockedInAt: 'desc' },
+      take: 200,
+    });
+    return records.map((record) => ({
+      id: record.id,
+      userId: record.userId,
+      name: `${record.user.firstName} ${record.user.lastName}`.trim(),
+      status: record.status,
+      clockedInAt: record.clockedInAt,
+      clockedOutAt: record.clockedOutAt,
+      clockedInBy: `${record.clockedInBy.firstName} ${record.clockedInBy.lastName}`.trim(),
+      clockedOutBy: record.clockedOutBy ? `${record.clockedOutBy.firstName} ${record.clockedOutBy.lastName}`.trim() : null,
+      clockOutReason: record.clockOutReason,
+    }));
+  }
+
+  async clockIn(context: UserContext, input: JsonObject) {
+    const storeId = uuid(input.storeId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['attendance.clock'], storeId);
+    const targetUserId = input.userId === undefined ? context.userId : uuid(input.userId, 'userId');
+    if (targetUserId !== context.userId) this.authorization.assertPermissions(context, ['attendance.manage'], storeId);
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: targetUserId,
+        organizationId: context.organizationId,
+        status: 'ACTIVE',
+        OR: [{ stores: { some: { storeId } } }, { roles: { some: { scopeType: 'STORE', storeId } } }],
+      },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('Active staff member is not assigned to this store');
+    try {
+      const record = await this.prisma.staffAttendance.create({ data: {
+        organizationId: context.organizationId,
+        storeId,
+        userId: targetUserId,
+        clockedInById: context.userId,
+      } });
+      await this.audit.record(context, 'attendance.clocked-in', 'StaffAttendance', record.id, { storeId, userId: targetUserId });
+      return { id: record.id, userId: targetUserId, storeId, status: record.status, clockedInAt: record.clockedInAt };
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('This staff member is already clocked in at this store');
+      throw error;
+    }
+  }
+
+  async clockOut(context: UserContext, input: JsonObject) {
+    const storeId = uuid(input.storeId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    const targetUserId = input.userId === undefined ? context.userId : uuid(input.userId, 'userId');
+    const correcting = targetUserId !== context.userId;
+    this.authorization.assertPermissions(context, [correcting ? 'attendance.manage' : 'attendance.clock'], storeId);
+    const reason = optionalString(input.reason) ?? '';
+    if (correcting && !reason.trim()) throw new BadRequestException('A reason is required when correcting another staff member’s clock-out');
+    const record = await this.prisma.staffAttendance.findFirst({ where: {
+      organizationId: context.organizationId,
+      storeId,
+      userId: targetUserId,
+      status: 'OPEN',
+    } });
+    if (!record) throw new NotFoundException('No open attendance record was found');
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.staffAttendance.updateMany({
+        where: { id: record.id, status: 'OPEN' },
+        data: { status: 'CLOSED', clockedOutAt: new Date(), clockedOutById: context.userId, clockOutReason: reason },
+      });
+      if (!result.count) throw new ConflictException('This attendance record was already closed');
+      await this.audit.record(context, correcting ? 'attendance.corrected-clock-out' : 'attendance.clocked-out', 'StaffAttendance', record.id, { storeId, userId: targetUserId, reason }, tx);
+      return tx.staffAttendance.findUniqueOrThrow({ where: { id: record.id } });
+    });
+    return { id: updated.id, userId: updated.userId, storeId, status: updated.status, clockedOutAt: updated.clockedOutAt, reason: updated.clockOutReason };
+  }
+
   // ───────────── Hold / resume ─────────────
 
   async holdSale(context: UserContext, input: JsonObject) {
@@ -649,6 +844,8 @@ export class PosService {
     const register = await this.prisma.register.findFirst({ where: { id: registerId, storeId, organizationId: context.organizationId }, select: { id: true } });
     if (!register) throw new NotFoundException('Register not found in store');
     const clientHoldId = optionalString(input.clientHoldId) || undefined;
+    const settings = await this.orgSettings(context.organizationId, storeId);
+    const ttlHours = Number.isFinite(Number(settings.holdTtlHours)) && Number(settings.holdTtlHours) > 0 ? Math.min(720, Number(settings.holdTtlHours)) : 24;
     try {
       const held = await this.prisma.heldSale.create({
         data: {
@@ -658,15 +855,17 @@ export class PosService {
           clientHoldId: clientHoldId ?? randomUUID(),
           payload: (input.payload ?? {}) as Prisma.InputJsonValue,
           createdById: context.userId,
+          expiresAt: new Date(Date.now() + ttlHours * 3_600_000),
         },
       });
-      return { id: held.id, clientHoldId: held.clientHoldId, payload: held.payload, createdAt: held.createdAt };
+      return { id: held.id, clientHoldId: held.clientHoldId, payload: held.payload, createdAt: held.createdAt, expiresAt: held.expiresAt };
     } catch (error) {
       if (isUniqueViolation(error)) throw new ConflictException('A held sale with this clientHoldId already exists');
       throw error;
     }
   }
 
+  /** Active holds only: a hold past its expiry time is not offered for resume. */
   async listHeldSales(context: UserContext, storeId?: string) {
     const store = storeId ? uuid(storeId, 'storeId') : undefined;
     if (store) {
@@ -675,10 +874,10 @@ export class PosService {
     }
     const permitted = store ? [store] : await this.authorization.permittedStoreIds(context, 'sale.hold');
     const holds = await this.prisma.heldSale.findMany({
-      where: { organizationId: context.organizationId, ...(permitted ? { storeId: { in: permitted } } : {}) },
+      where: { organizationId: context.organizationId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }], ...(permitted ? { storeId: { in: permitted } } : {}) },
       orderBy: { createdAt: 'desc' },
     });
-    return holds.map((held) => ({ id: held.id, clientHoldId: held.clientHoldId, registerId: held.registerId, payload: held.payload, createdAt: held.createdAt }));
+    return holds.map((held) => ({ id: held.id, clientHoldId: held.clientHoldId, registerId: held.registerId, payload: held.payload, createdAt: held.createdAt, expiresAt: held.expiresAt }));
   }
 
   async resumeHold(context: UserContext, holdId: string) {
@@ -686,6 +885,7 @@ export class PosService {
     if (!held) throw new NotFoundException('Held sale not found');
     this.authorization.assertStoreAccess(context, held.storeId);
     this.authorization.assertPermissions(context, ['sale.hold'], held.storeId);
+    if (held.expiresAt && held.expiresAt.getTime() <= Date.now()) throw new GoneException('This held sale has expired. Start a new sale.');
     // Deleting by id is the claim: only one concurrent resume can succeed.
     const deleted = await this.prisma.heldSale.deleteMany({ where: { id: held.id } });
     if (deleted.count === 0) throw new ConflictException('Held sale was already resumed');
@@ -693,6 +893,59 @@ export class PosService {
   }
 
   // ───────────── Checkout ─────────────
+
+  async checkoutConfig(context: UserContext, requestedStoreId: string) {
+    const storeId = uuid(requestedStoreId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['sale.create'], storeId);
+    const [settings, handlers, discountReasons] = await Promise.all([
+      this.orgSettings(context.organizationId, storeId),
+      this.eligibleSaleHandlers(context, storeId),
+      this.prisma.discountReason.findMany({
+        where: { organizationId: context.organizationId, storeId, status: 'ACTIVE' },
+        select: { code: true, name: true },
+        orderBy: { name: 'asc' },
+        take: 100,
+      }),
+    ]);
+    const fields = cleanFieldSet(settings.checkoutFields, 'CHECKOUT');
+    const productFields = cleanFieldSet(settings.productFields);
+    return {
+      fields: fields.fields,
+      coreFields: fields.coreFields,
+      requireBillHandler: settings.requireBillHandler === true,
+      requireDiscountReasonCode: settings.requireDiscountReasonCode === true,
+      discountReasons,
+      discounts: {
+        lineEnabled: settings.lineDiscountEnabled === true,
+        lineMaxPercent: Number(settings.lineDiscountMaxPercent ?? 100),
+        billEnabled: settings.billDiscountEnabled === true,
+        billMaxPercent: Number(settings.billDiscountMaxPercent ?? 100),
+        allowStacking: settings.allowDiscountStacking === true,
+      },
+      handlers: handlers.map(({ id, firstName, lastName }) => ({ id, name: `${firstName} ${lastName}`.trim() })),
+      productFields: productFields.fields.filter((field) => field.showInList),
+      productCoreFields: productFields.coreFields,
+    };
+  }
+
+  private async eligibleSaleHandlers(context: UserContext, storeId: string) {
+    const users = await this.prisma.user.findMany({
+      where: { organizationId: context.organizationId, status: 'ACTIVE', stores: { some: { storeId } } },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      take: 500,
+    });
+    const eligible = await Promise.all(users.map(async (user) => {
+      const target = await this.authorization.getUserContext(user.id);
+      return this.authorization.hasPermission(target, 'sale.create', storeId) ? user : null;
+    }));
+    const result = eligible.filter((user): user is NonNullable<typeof user> => user !== null);
+    if (!result.some((user) => user.id === context.userId) && this.authorization.hasPermission(context, 'sale.create', storeId)) {
+      result.unshift({ id: context.userId, firstName: context.displayName, lastName: '' });
+    }
+    return result;
+  }
 
   async completeSale(context: UserContext, input: JsonObject) {
     const storeId = uuid(input.storeId ?? context.defaultStoreId, 'storeId');
@@ -702,9 +955,23 @@ export class PosService {
     this.authorization.assertStoreAccess(context, storeId);
     this.authorization.assertPermissions(context, ['sale.create'], storeId);
 
-    // A retried checkout returns the original sale.
+    // Return an already completed bill before validating today's fields or staff assignment. A retry
+    // must remain idempotent even if the store has since changed its checkout configuration.
     const existing = await this.findSaleByClientId(context.organizationId, clientSaleId);
-    if (existing) return this.saleResult(existing);
+    if (existing) {
+      if (existing.storeId !== storeId) throw new NotFoundException('Sale not found');
+      return this.saleResult(existing);
+    }
+
+    const settingsForCheckout = await this.orgSettings(context.organizationId, storeId);
+    const fieldConfig = cleanFieldSet(settingsForCheckout.checkoutFields, 'CHECKOUT');
+    const customFields = cleanFieldValues(fieldConfig.fields, input.customFields);
+    const handledById = input.handledById ? uuid(input.handledById, 'handledById') : context.userId;
+    if (settingsForCheckout.requireBillHandler === true && !input.handledById) throw new BadRequestException('Select who handled this bill');
+    const eligibleHandlers = await this.eligibleSaleHandlers(context, storeId);
+    if (!eligibleHandlers.some((user) => user.id === handledById)) throw new BadRequestException('The selected bill handler is not an active cashier for this store');
+    const handledBy = eligibleHandlers.find((user) => user.id === handledById)!;
+    const checkoutFieldSnapshot = fieldConfig.fields.flatMap((field) => customFields[field.key] === undefined ? [] : [{ key: field.key, label: field.label, type: field.type, showOnReceipt: field.showOnReceipt, value: customFields[field.key] }]);
 
     const session = await this.openSessionRow(context, sessionId);
     if (session.storeId !== storeId || session.registerId !== registerId) {
@@ -712,33 +979,36 @@ export class PosService {
     }
     const rawLines = Array.isArray(input.lines) ? input.lines as LineInput[] : [];
     if (!rawLines.length) throw new BadRequestException('At least one sale line is required');
-    const lines = await Promise.all(rawLines.map((line) => this.priceLine(context, line, storeId)));
+    const priced = await this.priceCart(context, storeId, input);
+    const { lines, subtotal, lineDiscount, discount, tax, chargePlan, total, customer, promotions } = priced;
 
-    const orderDiscount = money(input.discountCents ?? 0, 'discountCents');
-    const subtotal = lines.reduce((sum, line) => sum + line.netCents, 0);
-    const lineDiscount = lines.reduce((sum, line) => sum + line.discountCents, 0);
-    const requestedDiscount = lineDiscount + orderDiscount;
-    const discountReason = optionalString(input.discountReason) ?? lines.find((line) => line.discountReason)?.discountReason ?? '';
-    const managerApprovalUserId = await this.assertDiscountAllowed(context, storeId, requestedDiscount, subtotal + lineDiscount, input.approvalId, input.managerPin);
-    if (requestedDiscount > 0 && !discountReason) throw new BadRequestException('discountReason is required when a discount is applied');
-
-    const discount = Math.min(orderDiscount, subtotal);
-    const lineTax = lines.reduce((sum, line) => sum + line.taxCents, 0);
-    const itemTax = Math.max(0, lineTax - Math.round((discount * lineTax) / Math.max(1, subtotal)));
-    const chargePlan = await this.computeCharges(context.organizationId, storeId, lines, subtotal - discount);
-    const tax = itemTax + chargePlan.taxCents;
-    const total = subtotal - discount + tax + chargePlan.netCents;
-
-    const paymentPlan = await this.paymentPlan(context.organizationId, input.payments, total);
-    if (paymentPlan.appliedTotalCents !== paymentPlan.roundedTotalCents) throw new BadRequestException(`Payment total must equal ${formatRupees(paymentPlan.roundedTotalCents)}`);
-
-    const customerId = typeof input.customerId === 'string' ? uuid(input.customerId, 'customerId') : null;
-    if (customerId && !(await this.prisma.customer.findFirst({ where: { id: customerId, organizationId: context.organizationId }, select: { id: true } }))) {
-      throw new BadRequestException('Customer not found');
+    // "Total frozen": if the screen was priced differently, show the cashier the new figure instead of charging a surprise.
+    if (typeof input.quoteHash === 'string' && input.quoteHash && input.quoteHash !== priced.quoteHash) {
+      throw new ConflictException({ code: 'PRICE_CHANGED', message: 'The price changed while this bill was open. Check the new total.', quote: priced.quote });
     }
+
+    const { settings, currency } = priced;
+    const requestedDiscount = lineDiscount + priced.manualOrderDiscount;
+    const discountReason = await this.discountReasonText(context, storeId, input, lines, settings, requestedDiscount);
+    const discountAuthorization = await this.assertDiscountAllowed(context, storeId, requestedDiscount, subtotal + lineDiscount, clientSaleId, input.approvalId, input.managerPin);
+    const managerApprovalUserId = discountAuthorization?.approvedById ?? null;
+    const openPriceLines = lines.filter((line) => line.openPrice);
+    const openPriceManagerId = openPriceLines.length
+      ? await this.verifyManagerPin(context, storeId, input.managerPin, 'OPEN_PRICE', 'Open-price items need manager approval')
+      : null;
+
+    const paymentPlan = await this.paymentPlan(context, storeId, input.payments, total, customer, settings);
+    if (paymentPlan.appliedTotalCents !== paymentPlan.roundedTotalCents) throw new BadRequestException(`Payment total must equal ${formatMinor(paymentPlan.roundedTotalCents, currency)}`);
+
+    const snapshot: JsonObject = await this.documentSnapshot(context, storeId, customer, settings);
+    snapshot.checkoutFields = checkoutFieldSnapshot;
+    snapshot.checkoutFieldsVersion = fieldConfig.version;
+    snapshot.billHandler = `${handledBy.firstName} ${handledBy.lastName}`.trim();
+    const attemptIds = paymentPlan.payments.flatMap((payment) => (payment.attemptId ? [payment.attemptId] : []));
 
     try {
       const saleId = await this.prisma.$transaction(async (tx) => {
+        if (discountAuthorization?.tokenId) await this.consumeApprovalToken(tx, context, discountAuthorization.tokenId, 'SALE_DISCOUNT', storeId, clientSaleId, { discountCents: requestedDiscount, subtotalCents: subtotal + lineDiscount });
         const location = await this.storeLocation(tx, context.organizationId, storeId);
         if (location) {
           const policy = await this.negativeStockPolicy(tx, context.organizationId, storeId);
@@ -747,7 +1017,7 @@ export class PosService {
             const available = balance ? num(balance.quantity) : 0;
             if (available - line.quantity < 0) {
               if (policy === 'BLOCK') throw new BadRequestException(`Insufficient stock for ${line.sku}`);
-              if (policy === 'WARN') await this.raiseAlert(tx, context, 'NEGATIVE_STOCK', 'HIGH', `Sale would make ${line.sku} negative (${formatRupees(Math.round((available - line.quantity) * 100))})`, clientSaleId, storeId);
+              if (policy === 'WARN') await this.raiseAlert(tx, context, 'NEGATIVE_STOCK', 'HIGH', `Sale would make ${line.sku} negative (${Math.round((available - line.quantity) * 1000) / 1000} units)`, clientSaleId, storeId);
             }
           }
         }
@@ -765,10 +1035,14 @@ export class PosService {
             taxCents: tax,
             chargeCents: chargePlan.netCents,
             charges: chargePlan.items as unknown as Prisma.InputJsonValue,
+            promotions: promotions.applied as unknown as Prisma.InputJsonValue,
+            documentSnapshot: snapshot as unknown as Prisma.InputJsonValue,
+            customFields: customFields as Prisma.InputJsonObject,
+            handledById,
             roundingCents: paymentPlan.roundingCents,
             totalCents: total,
             notes: [optionalString(input.notes), discountReason ? `Discount reason: ${discountReason}` : undefined].filter(Boolean).join(' | '),
-            customerId,
+            customerId: customer?.id ?? null,
             createdById: context.userId,
             lines: {
               create: lines.map((line) => ({
@@ -790,6 +1064,25 @@ export class PosService {
           },
         });
 
+        // A promotion with a usage limit is claimed atomically: if another till used the last one, this sale is refused.
+        for (const applied of promotions.applied) {
+          const claimed = await tx.$executeRaw`UPDATE promotions SET usage_count = usage_count + 1 WHERE id = ${applied.promotionId}::uuid AND (usage_limit IS NULL OR usage_count < usage_limit)`;
+          if (claimed === 0) throw new ConflictException({ code: 'PROMOTION_LIMIT_REACHED', message: `Promotion ${applied.code} has just been used up. Check the new total.` });
+          await tx.promotionRedemption.create({ data: { promotionId: applied.promotionId, saleId: sale.id, customerId: customer?.id ?? null, discountCents: applied.discountCents } });
+        }
+
+        // Wallet and points are real money: debit only if the balance still covers it.
+        if (customer && paymentPlan.walletCents > 0) {
+          const debited = await tx.customer.updateMany({ where: { id: customer.id, walletBalanceCents: { gte: paymentPlan.walletCents } }, data: { walletBalanceCents: { decrement: paymentPlan.walletCents } } });
+          if (debited.count === 0) throw new BadRequestException('Insufficient wallet balance');
+          await tx.customerLedger.create({ data: { customerId: customer.id, type: 'DEBIT', amountCents: -paymentPlan.walletCents, points: 0, referenceId: sale.id } });
+        }
+        if (customer && paymentPlan.pointsUsed > 0) {
+          const debited = await tx.customer.updateMany({ where: { id: customer.id, pointsBalance: { gte: paymentPlan.pointsUsed } }, data: { pointsBalance: { decrement: paymentPlan.pointsUsed } } });
+          if (debited.count === 0) throw new BadRequestException('Insufficient points balance');
+          await tx.customerLedger.create({ data: { customerId: customer.id, type: 'POINTS_REDEEM', amountCents: 0, points: -paymentPlan.pointsUsed, referenceId: sale.id } });
+        }
+
         const cashReceived = paymentPlan.payments.filter((payment) => payment.tenderType === 'CASH').reduce((sum, payment) => sum + payment.amountCents, 0);
         if (cashReceived > 0) {
           await tx.registerSession.update({ where: { id: sessionId }, data: { expectedCashCents: { increment: cashReceived } } });
@@ -807,10 +1100,14 @@ export class PosService {
             await this.postInventory(tx, context, location.id, line.variantId, -line.quantity, 'SALE', sale.id, 'Sale completed', 0, 'SELLABLE');
           }
         }
-        if (customerId) await this.earnPoints(tx, customerId, total, sale.id);
-        if (managerApprovalUserId) {
+        if (customer) await this.earnPoints(tx, customer.id, total, sale.id);
+        if (total <= 0 && subtotal + lineDiscount > 0) {
+          await this.raiseAlert(tx, context, 'ZERO_TOTAL', 'MEDIUM', `Sale ${receiptNumber} totals zero after discounts`, sale.id, storeId);
+        }
+        if (managerApprovalUserId && !discountAuthorization?.tokenId) {
           await tx.approval.create({ data: {
             organizationId: context.organizationId,
+            storeId,
             action: 'SALE_DISCOUNT',
             referenceId: sale.id,
             requestedById: context.userId,
@@ -818,18 +1115,39 @@ export class PosService {
             reason: discountReason || 'Manager PIN approval',
             status: 'APPROVED',
             decidedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60_000),
+            consumedAt: new Date(),
+            payloadHash: this.approvalPayloadHash('SALE_DISCOUNT', storeId, sale.id, { discountCents: requestedDiscount, subtotalCents: subtotal + lineDiscount }),
           } });
         }
-        await this.audit.record(context, 'sale.completed', 'Sale', sale.id, { receiptNumber, total, clientSaleId, managerApprovalUserId }, tx);
+        if (openPriceManagerId) {
+          await tx.approval.create({ data: {
+            organizationId: context.organizationId,
+            storeId,
+            action: 'OPEN_PRICE',
+            referenceId: sale.id,
+            requestedById: context.userId,
+            approvedById: openPriceManagerId,
+            reason: `Open price: ${openPriceLines.map((line) => `${line.sku} @ ${formatMinor(line.unitPriceCents, currency)}`).join(', ')}`,
+            status: 'APPROVED',
+            decidedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60_000),
+            consumedAt: new Date(),
+            payloadHash: this.approvalPayloadHash('OPEN_PRICE', storeId, sale.id, { lines: openPriceLines.map((line) => ({ sku: line.sku, priceCents: line.unitPriceCents })) }),
+          } });
+        }
+        await this.flagClosedDayForRestatement(tx, context, storeId, sale.createdAt);
+        await this.audit.record(context, 'sale.completed', 'Sale', sale.id, { receiptNumber, total, clientSaleId, managerApprovalUserId, openPriceManagerId, promotions: promotions.applied.map((entry) => entry.code) }, tx);
         return sale.id;
       });
       return this.saleResult(await this.findSaleOrThrow(context.organizationId, saleId));
     } catch (error) {
-      if (isUniqueViolation(error)) {
-        // A concurrent request with the same clientSaleId won the race.
-        const winner = await this.findSaleByClientId(context.organizationId, clientSaleId);
-        if (winner) return this.saleResult(winner);
-      }
+      // A concurrent request with the same clientSaleId (or a commit we could not confirm) may have saved the sale.
+      const winner = await this.findSaleByClientId(context.organizationId, clientSaleId);
+      if (winner?.storeId === storeId) return this.saleResult(winner);
+      // Money was captured but the sale was not saved: put it back, and alert someone if that fails too.
+      await this.payments.reverseAfterFailedSale(context, attemptIds, 'Sale could not be saved');
+      if (isUniqueViolation(error)) throw new ConflictException('This payment or receipt number was already used. Check the bill and try again.');
       throw error;
     }
   }
@@ -838,9 +1156,9 @@ export class PosService {
     const store = storeId ? uuid(storeId, 'storeId') : undefined;
     if (store) {
       this.authorization.assertStoreAccess(context, store);
-      this.authorization.assertPermissions(context, ['sale.create'], store);
+      this.authorization.assertPermissions(context, ['sale.view'], store);
     }
-    const reachable = store ? [store] : await this.authorization.permittedStoreIds(context, 'sale.create');
+    const reachable = store ? [store] : await this.authorization.permittedStoreIds(context, 'sale.view');
     const where = {
       organizationId: context.organizationId,
       ...(reachable ? { storeId: { in: reachable } } : {}),
@@ -855,6 +1173,7 @@ export class PosService {
       include: {
         register: { select: { code: true, name: true } },
         createdBy: { select: { firstName: true, lastName: true } },
+        handledBy: { select: { firstName: true, lastName: true } },
         payments: { select: { tenderType: true, amountCents: true } },
         _count: { select: { lines: true, returns: true } },
       },
@@ -876,7 +1195,9 @@ export class PosService {
       charges: Array.isArray(sale.charges) ? sale.charges : [],
       totalCents: sale.totalCents,
       createdAt: sale.createdAt,
-      cashier: `${sale.createdBy.firstName} ${sale.createdBy.lastName}`.trim(),
+      cashier: `${sale.handledBy?.firstName ?? sale.createdBy.firstName} ${sale.handledBy?.lastName ?? sale.createdBy.lastName}`.trim(),
+      createdBy: `${sale.createdBy.firstName} ${sale.createdBy.lastName}`.trim(),
+      customFields: objectField(sale.customFields),
       register: sale.register.name || sale.register.code,
       itemCount: sale._count.lines,
       tender: [...new Set(sale.payments.map((payment) => payment.tenderType))].join(' + '),
@@ -893,13 +1214,13 @@ export class PosService {
         returns: { include: { lines: true } },
         register: { select: { code: true, name: true } },
         createdBy: { select: { firstName: true, lastName: true } },
+        handledBy: { select: { firstName: true, lastName: true } },
       },
     });
     if (!sale) throw new NotFoundException('Sale not found');
     this.authorization.assertStoreAccess(context, sale.storeId);
-    this.authorization.assertPermissions(context, ['sale.create'], sale.storeId);
-    const settingsRow = await this.prisma.organizationSettings.findUnique({ where: { organizationId: context.organizationId }, select: { settings: true } });
-    const receiptFooter = (settingsRow?.settings as JsonObject | null)?.receiptFooter;
+    this.authorization.assertPermissions(context, ['sale.view'], sale.storeId);
+    const receiptFooter = (await this.orgSettings(context.organizationId, sale.storeId)).receiptFooter;
     return {
       receiptFooter: typeof receiptFooter === 'string' ? receiptFooter : '',
       id: sale.id,
@@ -912,9 +1233,17 @@ export class PosService {
       discountCents: sale.discountCents,
       roundingCents: sale.roundingCents,
       taxCents: sale.taxCents,
+      chargeCents: sale.chargeCents,
+      charges: Array.isArray(sale.charges) ? sale.charges : [],
+      promotions: Array.isArray(sale.promotions) ? sale.promotions : [],
+      buyer: (sale.documentSnapshot as { buyer?: unknown } | null)?.buyer ?? null,
+      placeOfSupply: (sale.documentSnapshot as { placeOfSupply?: unknown } | null)?.placeOfSupply ?? null,
       totalCents: sale.totalCents,
       createdAt: sale.createdAt,
-      cashier: `${sale.createdBy.firstName} ${sale.createdBy.lastName}`.trim(),
+      cashier: `${sale.handledBy?.firstName ?? sale.createdBy.firstName} ${sale.handledBy?.lastName ?? sale.createdBy.lastName}`.trim(),
+      createdBy: `${sale.createdBy.firstName} ${sale.createdBy.lastName}`.trim(),
+      customFields: objectField(sale.customFields),
+      checkoutFields: Array.isArray((sale.documentSnapshot as { checkoutFields?: unknown } | null)?.checkoutFields) ? (sale.documentSnapshot as { checkoutFields: unknown[] }).checkoutFields : [],
       register: sale.register.name || sale.register.code,
       lines: sale.lines.map((line) => ({ ...line, quantity: num(line.quantity) })),
       payments: sale.payments,
@@ -922,38 +1251,57 @@ export class PosService {
     };
   }
 
-  /** GST tax invoice for a sale as a PDF. */
+  /** GST tax invoice for a sale as a PDF. Uses the details frozen at sale time, so a reprint is identical to the original. */
   async invoicePdf(context: UserContext, saleId: string) {
     const sale = await this.prisma.sale.findFirst({
       where: { id: uuid(saleId, 'saleId'), organizationId: context.organizationId },
       include: {
         lines: true,
         payments: true,
-        customer: { select: { name: true, phone: true } },
+        customer: { select: { name: true, phone: true, isBusiness: true, legalName: true, taxNumber: true, billingAddress: true, stateCode: true } },
         register: { select: { code: true, name: true } },
         createdBy: { select: { firstName: true, lastName: true } },
-        store: { select: { name: true, code: true, address: true, timezone: true } },
+        handledBy: { select: { firstName: true, lastName: true } },
+        store: { select: { name: true, code: true, address: true, timezone: true, taxNumber: true } },
       },
     });
     if (!sale) throw new NotFoundException('Sale not found');
     this.authorization.assertStoreAccess(context, sale.storeId);
-    this.authorization.assertPermissions(context, ['sale.create'], sale.storeId);
-    const [organization, settingsRow] = await Promise.all([
-      this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true } }),
-      this.prisma.organizationSettings.findUnique({ where: { organizationId: context.organizationId }, select: { settings: true } }),
-    ]);
-    const footer = (settingsRow?.settings as JsonObject | null)?.receiptFooter;
+    this.authorization.assertPermissions(context, ['sale.view'], sale.storeId);
+    type Snapshot = { seller: { name: string; address: string; taxNumber: string; stateCode: string; storeName: string; storeCode: string; storeAddress: string; timezone: string }; buyer: { name: string; phone: string; isBusiness: boolean; legalName: string; taxNumber: string; address: string; stateCode: string } | null; placeOfSupply: { stateCode: string; stateName: string; intraState: boolean }; footer: string; billHandler?: string; checkoutFields?: { key: string; label: string; type: string; value: string | number | boolean; showOnReceipt?: boolean }[] };
+    let snapshot = sale.documentSnapshot as Snapshot | null;
+    if (!snapshot) {
+      // Sales made before invoices were frozen: build the same shape from today's details.
+      const [organization, settings] = await Promise.all([
+        this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true } }),
+        this.orgSettings(context.organizationId, sale.storeId),
+      ]);
+      const taxNumber = sale.store.taxNumber || organization?.gstin || '';
+      const sellerState = gstinStateCode(taxNumber);
+      const buyerState = sale.customer ? sale.customer.stateCode || gstinStateCode(sale.customer.taxNumber) : '';
+      snapshot = {
+        seller: { name: organization?.legalName || organization?.tradeName || organization?.name || 'Invoice', address: organization?.address ?? '', taxNumber, stateCode: sellerState, storeName: sale.store.name, storeCode: sale.store.code, storeAddress: sale.store.address, timezone: sale.store.timezone },
+        buyer: sale.customer ? { name: sale.customer.name, phone: sale.customer.phone, isBusiness: sale.customer.isBusiness, legalName: sale.customer.legalName, taxNumber: sale.customer.taxNumber, address: sale.customer.billingAddress, stateCode: buyerState } : null,
+        placeOfSupply: { stateCode: buyerState || sellerState, stateName: GST_STATES[buyerState || sellerState] ?? '', intraState: isIntraState(sellerState, buyerState) },
+        footer: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
+      };
+    }
     const charges = (Array.isArray(sale.charges) ? sale.charges : []) as { name: string; amountCents: number; taxCents: number; taxRateBps: number }[];
     const buffer = buildInvoicePdf({
+      currency: (sale.documentSnapshot as { currency?: string } | null)?.currency ?? currencyFromSettings(await this.orgSettings(context.organizationId)),
       invoiceNumber: sale.receiptNumber,
       issuedAt: sale.createdAt,
-      timezone: sale.store.timezone,
+      timezone: snapshot.seller.timezone || sale.store.timezone,
       status: sale.status,
-      seller: { name: organization?.legalName || organization?.tradeName || organization?.name || 'Invoice', address: organization?.address ?? '', gstin: organization?.gstin ?? '', storeName: sale.store.name, storeCode: sale.store.code, storeAddress: sale.store.address },
-      customer: sale.customer ? { name: sale.customer.name, phone: sale.customer.phone ?? '' } : null,
+      seller: { name: snapshot.seller.name, address: snapshot.seller.address, gstin: snapshot.seller.taxNumber, storeName: snapshot.seller.storeName, storeCode: snapshot.seller.storeCode, storeAddress: snapshot.seller.storeAddress },
+      customer: snapshot.buyer ? { name: snapshot.buyer.name, phone: snapshot.buyer.phone ?? '' } : null,
+      buyer: snapshot.buyer ? { legalName: snapshot.buyer.legalName, taxNumber: snapshot.buyer.taxNumber, address: snapshot.buyer.address, isBusiness: snapshot.buyer.isBusiness } : null,
+      placeOfSupply: snapshot.placeOfSupply,
       cashier: `${sale.createdBy.firstName} ${sale.createdBy.lastName}`.trim(),
+      billHandler: snapshot.billHandler ?? `${sale.handledBy?.firstName ?? sale.createdBy.firstName} ${sale.handledBy?.lastName ?? sale.createdBy.lastName}`.trim(),
+      customFields: (snapshot.checkoutFields ?? []).filter((field) => field.showOnReceipt === true).map((field) => ({ label: field.label, value: String(field.value) })),
       register: sale.register.name || sale.register.code,
-      lines: sale.lines.map((line) => ({ name: line.name, sku: line.sku, hsnCode: line.hsnCode, quantity: num(line.quantity), unitPriceCents: line.unitPriceCents, discountCents: line.discountCents, taxRateBps: line.taxRateBps, taxCents: line.taxCents - 0, lineTotalCents: line.lineTotalCents })),
+      lines: sale.lines.map((line) => ({ name: line.name, sku: line.sku, hsnCode: line.hsnCode, quantity: num(line.quantity), unitPriceCents: line.unitPriceCents, discountCents: line.discountCents, taxRateBps: line.taxRateBps, taxCents: line.taxCents, lineTotalCents: line.lineTotalCents })),
       subtotalCents: sale.subtotalCents,
       discountCents: sale.discountCents,
       charges,
@@ -961,7 +1309,7 @@ export class PosService {
       roundingCents: sale.roundingCents,
       totalCents: sale.totalCents,
       payments: sale.payments.map((payment) => ({ tenderType: payment.tenderType, amountCents: payment.amountCents, reference: payment.reference })),
-      footer: typeof footer === 'string' ? footer : '',
+      footer: snapshot.footer ?? '',
     });
     return { filename: `${sale.receiptNumber.replace(/[^A-Za-z0-9._-]/g, '_')}.pdf`, buffer };
   }
@@ -970,21 +1318,32 @@ export class PosService {
 
   async requestApproval(context: UserContext, input: JsonObject) {
     const referenceId = requiredString(input.referenceId, 'referenceId');
-    if (!context.isOrganisationAdministrator) {
-      const storeId = uuid(input.storeId, 'storeId');
-      this.authorization.assertStoreAccess(context, storeId);
-      this.authorization.assertPermissions(context, ['approval.manage'], storeId);
-      const inStore = await this.prisma.sale.findFirst({ where: { id: referenceId, organizationId: context.organizationId, storeId }, select: { id: true } })
-        ?? await this.prisma.saleReturn.findFirst({ where: { id: referenceId, organizationId: context.organizationId, storeId }, select: { id: true } });
-      if (!inStore) throw new NotFoundException('Approval reference not found for this store');
+    const storeId = uuid(input.storeId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['approval.request'], storeId);
+    await this.ensureStore(context.organizationId, storeId);
+    const action = oneOf(String(input.action ?? '').toUpperCase(), ['SALE_DISCOUNT', 'RETURN_REFUND', 'CASH_MOVEMENT', 'REGISTER_VARIANCE'] as const, 'action');
+    if (action === 'RETURN_REFUND') {
+      const exists = await this.prisma.sale.findFirst({ where: { id: referenceId, organizationId: context.organizationId, storeId }, select: { id: true } });
+      if (!exists) throw new NotFoundException('Refund approval reference was not found in this store');
+    } else if (action === 'CASH_MOVEMENT' || action === 'REGISTER_VARIANCE') {
+      const exists = await this.prisma.registerSession.findFirst({ where: { id: referenceId, organizationId: context.organizationId, storeId }, select: { id: true } });
+      if (!exists) throw new NotFoundException('Register approval reference was not found in this store');
     }
+    const payload = objectField(input.payload);
+    if (!Object.keys(payload).length) throw new BadRequestException('A payload is required so approval is bound to the requested operation');
+    const reason = requiredString(input.reason ?? 'Manager approval requested', 'reason');
     const approval = await this.prisma.approval.create({
       data: {
         organizationId: context.organizationId,
-        action: requiredString(input.action, 'action').toUpperCase(),
+        storeId,
+        action,
         referenceId,
         requestedById: context.userId,
-        reason: requiredString(input.reason ?? 'Manager approval requested', 'reason'),
+        reason,
+        payloadHash: this.approvalPayloadHash(action, storeId, referenceId, payload),
+        payload: payload as Prisma.InputJsonObject,
+        expiresAt: new Date(Date.now() + 10 * 60_000),
       },
     });
     return { id: approval.id, action: approval.action, referenceId: approval.referenceId, status: approval.status, reason: approval.reason, createdAt: approval.createdAt };
@@ -994,9 +1353,17 @@ export class PosService {
     const status = oneOf(input.status, ['APPROVED', 'DENIED'] as const, 'status');
     const approval = await this.prisma.approval.findFirst({ where: { id: uuid(approvalId, 'approvalId'), organizationId: context.organizationId } });
     if (!approval) throw new NotFoundException('Approval not found');
-    if (!context.isOrganisationAdministrator) await this.assertApprovalStoreAccess(context, approval.referenceId);
+    if (status === 'APPROVED' && approval.requestedById === context.userId) {
+      await this.audit.record(context, 'approval.self-approval-rejected', 'Approval', approval.id, { action: approval.action, referenceId: approval.referenceId });
+      throw new ForbiddenException('A requester cannot approve their own request');
+    }
+    if (approval.expiresAt ? approval.expiresAt.getTime() <= Date.now() : approval.createdAt.getTime() + 10 * 60_000 <= Date.now()) throw new ConflictException('This approval request has expired');
+    if (approval.storeId) {
+      this.authorization.assertStoreAccess(context, approval.storeId);
+      this.authorization.assertPermissions(context, ['approval.manage'], approval.storeId);
+    } else if (!context.isOrganisationAdministrator) await this.assertApprovalStoreAccess(context, approval.referenceId);
     const decided = await this.prisma.approval.updateMany({
-      where: { id: approval.id, status: 'PENDING' },
+      where: { id: approval.id, status: 'PENDING', OR: [{ expiresAt: { gt: new Date() } }, { expiresAt: null, createdAt: { gt: new Date(Date.now() - 10 * 60_000) } }] },
       data: { status, approvedById: context.userId, decidedAt: new Date() },
     });
     if (decided.count === 0) throw new ConflictException('Approval has already been decided');
@@ -1021,13 +1388,13 @@ export class PosService {
     }
     const scopedStores = store ? [store] : await this.authorization.permittedStoreIds(context, 'approval.manage');
     const candidates = await this.prisma.approval.findMany({
-      where: { organizationId: context.organizationId },
+      where: { organizationId: context.organizationId, ...(store ? { storeId: store } : scopedStores ? { storeId: { in: scopedStores } } : {}) },
       include: { requestedBy: { select: { firstName: true, lastName: true } }, approvedBy: { select: { firstName: true, lastName: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
     let approvals = candidates;
-    if (scopedStores) {
+    if (scopedStores && !store) {
       const references = [...new Set(candidates.map((approval) => approval.referenceId))];
       if (references.length) {
         const [sales, returns] = await Promise.all([
@@ -1046,6 +1413,7 @@ export class PosService {
       reason: approval.reason,
       requestedBy: `${approval.requestedBy.firstName} ${approval.requestedBy.lastName}`.trim(),
       approvedBy: approval.approvedBy ? `${approval.approvedBy.firstName} ${approval.approvedBy.lastName}`.trim() : null,
+      payload: approval.payload,
       createdAt: approval.createdAt,
       decidedAt: approval.decidedAt,
     }));
@@ -1063,7 +1431,7 @@ export class PosService {
     const [balances, movements] = await Promise.all([
       this.prisma.inventoryBalance.findMany({
         where: { organizationId: context.organizationId, ...locationFilter },
-        include: { location: { select: { name: true } }, variant: { select: { sku: true, name: true } } },
+        include: { location: { select: { name: true } }, variant: { select: { sku: true, name: true, barcodes: { select: { code: true }, orderBy: { code: 'asc' } } } } },
         orderBy: { variant: { name: 'asc' } },
       }),
       this.prisma.inventoryMovement.findMany({
@@ -1080,6 +1448,7 @@ export class PosService {
         variantId: balance.variantId,
         sku: balance.variant.sku,
         name: balance.variant.name,
+        barcode: balance.variant.barcodes.map((barcode) => barcode.code).join(', '),
         status: balance.status,
         quantity: num(balance.quantity),
         reorderPoint: num(balance.reorderPoint),
@@ -1310,9 +1679,11 @@ export class PosService {
     });
     const total = returnLines.reduce((sum, line) => sum + line.amount, 0);
     const tax = returnLines.reduce((sum, line) => sum + line.tax, 0);
-    const managerApprovalUserId = await this.assertRefundAllowed(context, sale.storeId, total, input.approvalId, input.managerPin);
+    const refundAuthorization = await this.assertRefundAllowed(context, sale.storeId, total, saleId, input.approvalId, input.managerPin);
+    const managerApprovalUserId = refundAuthorization?.approvedById ?? null;
 
     const result = await this.prisma.$transaction(async (tx) => {
+      if (refundAuthorization?.tokenId) await this.consumeApprovalToken(tx, context, refundAuthorization.tokenId, 'RETURN_REFUND', sale.storeId, saleId, { totalCents: total });
       const creditNoteNumber = await this.nextDocumentNumber(tx, context.organizationId, sale.storeId, 'CN');
       const created = await tx.saleReturn.create({
         data: {
@@ -1347,9 +1718,10 @@ export class PosService {
       if (refundTender === 'CASH') {
         await tx.registerSession.update({ where: { id: session.id }, data: { expectedCashCents: { decrement: total } } });
       }
-      if (managerApprovalUserId) {
+      if (managerApprovalUserId && !refundAuthorization?.tokenId) {
         await tx.approval.create({ data: {
           organizationId: context.organizationId,
+          storeId: sale.storeId,
           action: 'RETURN_REFUND',
           referenceId: created.id,
           requestedById: context.userId,
@@ -1357,8 +1729,12 @@ export class PosService {
           reason,
           status: 'APPROVED',
           decidedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+          consumedAt: new Date(),
+          payloadHash: this.approvalPayloadHash('RETURN_REFUND', sale.storeId, saleId, { totalCents: total }),
         } });
       }
+      await this.flagClosedDayForRestatement(tx, context, sale.storeId, created.createdAt);
       await this.audit.record(context, 'return.completed', 'Return', created.id, { saleId, total, creditNoteNumber }, tx);
       return created;
     });
@@ -1376,9 +1752,9 @@ export class PosService {
     const store = storeId ? uuid(storeId, 'storeId') : undefined;
     if (store) {
       this.authorization.assertStoreAccess(context, store);
-      this.authorization.assertPermissions(context, ['refund.create'], store);
+      this.authorization.assertPermissions(context, ['refund.view'], store);
     }
-    const accessible = store ? [store] : await this.authorization.permittedStoreIds(context, 'refund.create');
+    const accessible = store ? [store] : await this.authorization.permittedStoreIds(context, 'refund.view');
     const returns = await this.prisma.saleReturn.findMany({
       where: { organizationId: context.organizationId, ...(accessible ? { storeId: { in: accessible } } : {}) },
       include: { originalSale: { select: { receiptNumber: true } }, createdBy: { select: { firstName: true, lastName: true } } },
@@ -1407,20 +1783,211 @@ export class PosService {
     });
     if (!value) throw new NotFoundException('Return not found');
     this.authorization.assertStoreAccess(context, value.storeId);
-    this.authorization.assertPermissions(context, ['refund.create'], value.storeId);
+    this.authorization.assertPermissions(context, ['refund.view'], value.storeId);
     return { ...value, originalSale: { ...value.originalSale, lines: value.originalSale.lines.map((line) => ({ ...line, quantity: num(line.quantity) })) }, lines: value.lines.map((line) => ({ ...line, quantity: num(line.quantity) })) };
   }
 
   // ───────────── Reporting & alerts ─────────────
 
+  async listDayCloses(context: UserContext, storeIdInput: string) {
+    const storeId = uuid(storeIdInput, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['report.view'], storeId);
+    const rows = await this.prisma.storeDayClose.findMany({
+      where: { organizationId: context.organizationId, storeId },
+      include: { closedBy: { select: { firstName: true, lastName: true } }, revisions: { orderBy: { version: 'desc' }, take: 10 } },
+      orderBy: { businessDate: 'desc' },
+      take: 90,
+    });
+    return rows.map((row) => ({
+      id: row.id, storeId: row.storeId, businessDate: row.businessDate.toISOString().slice(0, 10),
+      version: row.version, status: row.status, snapshot: row.snapshot, closeReason: row.closeReason,
+      closedAt: row.closedAt, closedBy: `${row.closedBy.firstName} ${row.closedBy.lastName}`.trim(),
+      revisions: row.revisions.map((revision) => ({ version: revision.version, reason: revision.reason, createdAt: revision.createdAt })),
+    }));
+  }
+
+  async closeStoreDay(context: UserContext, input: JsonObject) {
+    const storeId = uuid(input.storeId, 'storeId');
+    const dateText = requiredString(input.businessDate, 'businessDate');
+    const businessDate = this.dayBoundary(dateText, 'businessDate', false);
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['dayclose.manage'], storeId);
+    const store = await this.prisma.store.findFirst({ where: { id: storeId, organizationId: context.organizationId }, select: { id: true, timezone: true } });
+    if (!store) throw new NotFoundException('Store not found');
+    const reason = optionalString(input.reason)?.trim() ?? '';
+    const forceClose = input.forceClose === true;
+    const existing = await this.prisma.storeDayClose.findUnique({ where: { storeId_businessDate: { storeId, businessDate } } });
+    const restate = input.restate === true || existing?.status === 'RESTATEMENT_REQUIRED';
+    if (existing && !restate) return { id: existing.id, businessDate: dateText, version: existing.version, status: existing.status, snapshot: existing.snapshot, idempotent: true };
+    if (restate && !reason) throw new BadRequestException('A reason is required when restating a closed business day');
+    if (forceClose && !reason) throw new BadRequestException('A reason is required when force-closing open registers');
+    const range = this.localDayBounds(dateText, store.timezone);
+
+    return this.prisma.$transaction(async (tx) => {
+      const openSessions = await tx.registerSession.findMany({
+        where: { organizationId: context.organizationId, storeId, status: 'OPEN' },
+        select: { id: true, expectedCashCents: true },
+      });
+      if (openSessions.length && !forceClose) throw new ConflictException({ message: 'Close all open registers before closing the business day', openSessionIds: openSessions.map((session) => session.id) });
+      if (openSessions.length) {
+        this.authorization.assertPermissions(context, ['register.close'], storeId);
+        for (const session of openSessions) {
+          const result = await tx.registerSession.updateMany({
+            where: { id: session.id, status: 'OPEN', expectedCashCents: session.expectedCashCents },
+            data: { status: 'CLOSED', countedCashCents: session.expectedCashCents, varianceCents: 0, closedAt: new Date(), closedById: context.userId, closeReason: reason, forcedClosed: true },
+          });
+          if (!result.count) throw new ConflictException('A register changed while the business day was closing; retry the close');
+          await tx.alert.updateMany({ where: { organizationId: context.organizationId, type: 'REGISTER_NOT_CLOSED', referenceId: session.id, status: { in: ['OPEN', 'ACKNOWLEDGED'] } }, data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedById: context.userId, resolutionNote: `Force-closed during day close: ${reason}`, activeDedupeKey: null } });
+          await this.audit.record(context, 'register-session.force-closed', 'RegisterSession', session.id, { reason, countedCashCents: session.expectedCashCents, source: 'day-close' }, tx);
+        }
+      }
+
+      const sales = await tx.sale.findMany({
+        where: { organizationId: context.organizationId, storeId, status: 'COMPLETED', createdAt: { gte: range.from, lt: range.to } },
+        select: { id: true, totalCents: true, taxCents: true, discountCents: true },
+        orderBy: { id: 'asc' },
+      });
+      const returns = await tx.saleReturn.findMany({
+        where: { organizationId: context.organizationId, storeId, createdAt: { gte: range.from, lt: range.to } },
+        select: { id: true, totalCents: true }, orderBy: { id: 'asc' },
+      });
+      const [payments, closedSessions] = await Promise.all([
+        tx.salePayment.groupBy({ by: ['tenderType'], where: { saleId: { in: sales.map((sale) => sale.id) } }, _sum: { amountCents: true } }),
+        tx.registerSession.findMany({ where: { organizationId: context.organizationId, storeId, closedAt: { gte: range.from, lt: range.to } }, select: { id: true, expectedCashCents: true, countedCashCents: true, varianceCents: true, forcedClosed: true } }),
+      ]);
+      const snapshot: Prisma.InputJsonObject = {
+        businessDate: dateText, timezone: store.timezone, periodStart: range.from.toISOString(), periodEnd: range.to.toISOString(), asOf: new Date().toISOString(),
+        salesCount: sales.length, salesTotalCents: sales.reduce((sum, sale) => sum + sale.totalCents, 0), taxCents: sales.reduce((sum, sale) => sum + sale.taxCents, 0), discountCents: sales.reduce((sum, sale) => sum + sale.discountCents, 0),
+        returnsCount: returns.length, returnsTotalCents: returns.reduce((sum, value) => sum + value.totalCents, 0),
+        tenders: payments.map((payment) => ({ tenderType: payment.tenderType, amountCents: payment._sum.amountCents ?? 0 })),
+        registerCount: closedSessions.length, cashVarianceCents: closedSessions.reduce((sum, session) => sum + (session.varianceCents ?? 0), 0), forcedCloseCount: closedSessions.filter((session) => session.forcedClosed).length,
+        saleIds: sales.map((sale) => sale.id), returnIds: returns.map((value) => value.id),
+        registerSessions: closedSessions.map((session) => ({ id: session.id, expectedCashCents: session.expectedCashCents, countedCashCents: session.countedCashCents, varianceCents: session.varianceCents, forcedClosed: session.forcedClosed })),
+      };
+      let record;
+      if (existing) {
+        await tx.dayCloseRevision.create({ data: { organizationId: context.organizationId, dayCloseId: existing.id, version: existing.version, snapshot: existing.snapshot as Prisma.InputJsonValue, reason, createdById: context.userId } });
+        record = await tx.storeDayClose.update({ where: { id: existing.id }, data: { version: { increment: 1 }, status: 'CLOSED', snapshot, closeReason: reason, closedById: context.userId, closedAt: new Date() } });
+      } else {
+        record = await tx.storeDayClose.create({ data: { organizationId: context.organizationId, storeId, businessDate, snapshot, closeReason: reason, closedById: context.userId } });
+      }
+      await this.audit.record(context, existing ? 'day-close.restated' : 'day-close.completed', 'StoreDayClose', record.id, { storeId, businessDate: dateText, version: record.version, reason, forceClosedSessions: openSessions.length }, tx);
+      return { id: record.id, businessDate: dateText, version: record.version, status: record.status, snapshot: record.snapshot, closedAt: record.closedAt };
+    });
+  }
+
+  async createReportExport(context: UserContext, input: JsonObject) {
+    const format = oneOf(input.format ?? 'CSV', ['CSV', 'PDF'] as const, 'format');
+    const storeId = input.storeId ? uuid(input.storeId, 'storeId') : null;
+    if (storeId) {
+      this.authorization.assertStoreAccess(context, storeId);
+      this.authorization.assertPermissions(context, ['report.export'], storeId);
+    } else if (!context.isOrganisationAdministrator) {
+      const stores = await this.authorization.permittedStoreIds(context, 'report.export');
+      if (!this.authorization.hasPermission(context, 'report.export') && !stores?.length) throw new ForbiddenException('No store scope is available for report export');
+    }
+    const filters: Prisma.InputJsonObject = {
+      ...(storeId ? { storeId } : {}),
+      ...(typeof input.from === 'string' ? { from: input.from } : {}),
+      ...(typeof input.to === 'string' ? { to: input.to } : {}),
+      ...(typeof input.registerId === 'string' ? { registerId: input.registerId } : {}),
+      ...(typeof input.cashierId === 'string' ? { cashierId: input.cashierId } : {}),
+    };
+    const job = await this.prisma.reportExportJob.create({ data: { organizationId: context.organizationId, storeId, requestedById: context.userId, format, filters, expiresAt: new Date(Date.now() + 7 * 86_400_000) } });
+    await this.audit.record(context, 'report-export.queued', 'ReportExportJob', job.id, { format, storeId, filters });
+    return { id: job.id, status: job.status, format: job.format, createdAt: job.createdAt, expiresAt: job.expiresAt };
+  }
+
+  async getReportExport(context: UserContext, jobIdInput: string) {
+    const job = await this.findReportExport(context, jobIdInput);
+    return { id: job.id, status: job.status, format: job.format, errorMessage: job.errorMessage, attempts: job.attempts, createdAt: job.createdAt, completedAt: job.completedAt, expiresAt: job.expiresAt };
+  }
+
+  async retryReportExport(context: UserContext, jobIdInput: string) {
+    const job = await this.findReportExport(context, jobIdInput);
+    if (job.status !== 'FAILED') throw new ConflictException('Only failed report exports can be retried');
+    await this.prisma.reportExportJob.update({ where: { id: job.id }, data: { status: 'QUEUED', errorMessage: '', resultData: null, startedAt: null, completedAt: null, expiresAt: new Date(Date.now() + 7 * 86_400_000) } });
+    await this.audit.record(context, 'report-export.retried', 'ReportExportJob', job.id, { format: job.format });
+    return { id: job.id, status: 'QUEUED', format: job.format, expiresAt: new Date(Date.now() + 7 * 86_400_000) };
+  }
+
+  async downloadReportExport(context: UserContext, jobIdInput: string) {
+    const job = await this.findReportExport(context, jobIdInput);
+    if (job.expiresAt.getTime() <= Date.now()) throw new GoneException('This report export has expired');
+    if (job.status !== 'READY' || !job.resultData) throw new ConflictException('The report export is not ready to download');
+    await this.audit.record(context, 'report-export.downloaded', 'ReportExportJob', job.id, { format: job.format });
+    return { contentType: job.format === 'PDF' ? 'application/pdf' : 'text/csv; charset=utf-8', filename: `pos-report-${job.id}.${job.format.toLowerCase()}`, buffer: Buffer.from(job.resultData) };
+  }
+
+  /** Invoked by the scheduled worker; permissions are reloaded for each job before generation. */
+  async processReportExportJobs() {
+    const expired = await this.prisma.reportExportJob.updateMany({ where: { status: 'READY', expiresAt: { lte: new Date() }, resultData: { not: null } }, data: { resultData: null } });
+    const queued = await this.prisma.reportExportJob.findMany({ where: { status: 'QUEUED', expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'asc' }, take: 5 });
+    let processed = 0;
+    for (const job of queued) {
+      const claimed = await this.prisma.reportExportJob.updateMany({ where: { id: job.id, status: 'QUEUED' }, data: { status: 'PROCESSING', startedAt: new Date(), attempts: { increment: 1 } } });
+      if (!claimed.count) continue;
+      try {
+        const context = await this.authorization.getUserContext(job.requestedById);
+        const filters = job.filters as JsonObject;
+        const report = await this.reports(context, optionalString(filters.from), optionalString(filters.to), job.storeId ?? undefined, optionalString(filters.registerId), optionalString(filters.cashierId));
+        // CSV remains the single report serialization contract; PDF wraps the same rows in a readable document.
+        const csv = await this.reportCsv(context, optionalString(filters.from), optionalString(filters.to), job.storeId ?? undefined, optionalString(filters.registerId), optionalString(filters.cashierId));
+        const bytes = job.format === 'CSV'
+          ? Buffer.from(csv, 'utf8')
+          : buildReportPdf(`POS report · ${job.storeId ?? 'all permitted stores'}`, [
+            `Period: ${report.period.from} to ${report.period.to} | As of: ${new Date().toISOString()}`,
+            '', ...csv.trimEnd().split('\n').map((line) => line.replaceAll(',', ' | ').replaceAll('"', '')),
+          ]);
+        await this.prisma.$transaction(async (tx) => {
+          await tx.reportExportJob.update({ where: { id: job.id }, data: { status: 'READY', resultData: new Uint8Array(bytes), errorMessage: '', completedAt: new Date() } });
+          await this.audit.record(context, 'report-export.completed', 'ReportExportJob', job.id, { format: job.format, bytes: bytes.length }, tx);
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 500) : 'Report export failed';
+        await this.prisma.reportExportJob.update({ where: { id: job.id }, data: { status: 'FAILED', errorMessage: message, completedAt: new Date() } });
+      }
+      processed += 1;
+    }
+    return { processed, expiredArtifactsCleared: expired.count };
+  }
+
+  private async findReportExport(context: UserContext, idInput: string) {
+    const job = await this.prisma.reportExportJob.findFirst({ where: { id: uuid(idInput, 'jobId'), organizationId: context.organizationId } });
+    if (!job) throw new NotFoundException('Report export not found');
+    if (job.storeId) {
+      this.authorization.assertStoreAccess(context, job.storeId);
+      this.authorization.assertPermissions(context, ['report.export'], job.storeId);
+    } else if (!context.isOrganisationAdministrator) {
+      if (job.requestedById !== context.userId) throw new ForbiddenException('You cannot access this report export');
+      const stores = await this.authorization.permittedStoreIds(context, 'report.export');
+      if (!this.authorization.hasPermission(context, 'report.export') && !stores?.length) throw new ForbiddenException('Report export permission was removed');
+    }
+    return job;
+  }
+
+  private async flagClosedDayForRestatement(tx: Tx, context: UserContext, storeId: string, occurredAt: Date) {
+    const store = await tx.store.findUnique({ where: { id: storeId }, select: { timezone: true } });
+    if (!store) return;
+    const day = this.localDate(occurredAt, store.timezone);
+    const businessDate = this.dayBoundary(day, 'businessDate', false);
+    const closed = await tx.storeDayClose.findUnique({ where: { storeId_businessDate: { storeId, businessDate } }, select: { id: true, status: true } });
+    if (!closed || closed.status === 'RESTATEMENT_REQUIRED') return;
+    await tx.storeDayClose.update({ where: { id: closed.id }, data: { status: 'RESTATEMENT_REQUIRED' } });
+    await this.audit.record(context, 'day-close.restatement-required', 'StoreDayClose', closed.id, { eventAt: occurredAt.toISOString(), source: 'late-operational-event' }, tx);
+  }
+
   async reports(context: UserContext, from?: string, to?: string, storeId?: string, registerId?: string, cashierId?: string) {
-    const end = to ? this.dayBoundary(to, 'to', true) : new Date();
-    const start = from ? this.dayBoundary(from, 'from', false) : new Date(Date.now() - 30 * 86_400_000);
-    const period = { gte: start, lte: end };
     const orgId = context.organizationId;
     const store = storeId ? uuid(storeId, 'storeId') : undefined;
+    const storeRecord = store ? await this.prisma.store.findFirst({ where: { id: store, organizationId: orgId }, select: { id: true, timezone: true } }) : null;
+    const zone = storeRecord?.timezone ?? 'UTC';
+    const start = from ? (storeRecord ? this.localDayBounds(from, zone).from : this.dayBoundary(from, 'from', false)) : new Date(Date.now() - 30 * 86_400_000);
+    const end = to ? (storeRecord ? new Date(this.localDayBounds(to, zone).to.getTime() - 1) : this.dayBoundary(to, 'to', true)) : new Date();
+    const period = { gte: start, lte: end };
     if (store) {
-      if (!(await this.prisma.store.findFirst({ where: { id: store, organizationId: orgId }, select: { id: true } }))) throw new NotFoundException('Store not found');
+      if (!storeRecord) throw new NotFoundException('Store not found');
       this.authorization.assertStoreAccess(context, store);
       this.authorization.assertPermissions(context, ['report.view'], store);
     }
@@ -1441,7 +2008,7 @@ export class PosService {
       createdAt: period,
       ...(scopedStore ? { storeId: scopedStore } : {}),
       ...(register ? { registerId: register } : {}),
-      ...(cashier ? { createdById: cashier } : {}),
+      ...(cashier ? { OR: [{ handledById: cashier }, { handledById: null, createdById: cashier }] } : {}),
     };
     const returnWhere: Prisma.SaleReturnWhereInput = {
       organizationId: orgId,
@@ -1492,7 +2059,7 @@ export class PosService {
           ...(register ? { registerId: register } : {}),
           ...(cashier ? { openedById: cashier } : {}),
         },
-        include: { register: { select: { name: true, code: true } }, openedBy: { select: { firstName: true, lastName: true } } },
+          include: { register: { select: { name: true, code: true } }, openedBy: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { openedAt: 'desc' },
       }),
     ]);
@@ -1503,15 +2070,16 @@ export class PosService {
     let itemCount = 0;
     let costCents = 0;
     const now = new Date();
-    const todayKey = now.toISOString().slice(0, 10);
+    const todayKey = this.localDate(now, zone);
     for (const sale of saleRows) {
-      const day = sale.createdAt.toISOString().slice(0, 10);
+      const day = this.localDate(sale.createdAt, zone);
       const dayValue = trend.get(day) ?? { sales: 0, transactions: 0 };
       dayValue.sales += sale.totalCents;
       dayValue.transactions += 1;
       trend.set(day, dayValue);
       if (day === todayKey) {
-        const hour = sale.createdAt.getUTCHours();
+        const hourParts = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).formatToParts(sale.createdAt);
+        const hour = Number(hourParts.find((part) => part.type === 'hour')?.value ?? 0);
         const hourValue = byHour.get(hour) ?? { sales: 0, transactions: 0 };
         hourValue.sales += sale.totalCents;
         hourValue.transactions += 1;
@@ -1529,14 +2097,16 @@ export class PosService {
         gst.set(key, value);
       }
     }
-    const previousWeekStart = new Date(now.getTime() - 7 * 86_400_000);
-    const previousWeekKey = previousWeekStart.toISOString().slice(0, 10);
+    const [todayYear, todayMonth, todayDay] = todayKey.split('-').map(Number);
+    const previousWeekKey = new Date(Date.UTC(todayYear!, todayMonth! - 1, todayDay! - 7)).toISOString().slice(0, 10);
     const today = trend.get(todayKey) ?? { sales: 0, transactions: 0 };
     const previousWeek = trend.get(previousWeekKey) ?? { sales: 0, transactions: 0 };
     const tenderTotal = tenders.reduce((sum, tender) => sum + (tender._sum.amountCents ?? 0), 0);
 
     return {
       period: { from: start.toISOString(), to: end.toISOString() },
+      asOf: now.toISOString(),
+      timezone: zone,
       sales: {
         count: sales._count._all,
         subtotalCents: sales._sum.subtotalCents ?? 0,
@@ -1561,6 +2131,7 @@ export class PosService {
         sessionId: session.id,
         storeId: session.storeId,
         registerId: session.registerId,
+        cashierId: session.openedBy.id,
         register: session.register.name || session.register.code,
         cashier: `${session.openedBy.firstName} ${session.openedBy.lastName}`.trim(),
         status: session.status,
@@ -1603,12 +2174,18 @@ export class PosService {
       throw new NotFoundException('Store not found');
     }
     if (store) this.authorization.assertStoreAccess(context, store);
-    if (store) this.authorization.assertPermissions(context, ['report.view'], store);
+    const canReport = store ? this.authorization.hasPermission(context, 'report.view', store) : false;
+    const canReviewProducts = store ? this.authorization.hasPermission(context, 'store-catalog.verify', store) : false;
+    if (store) {
+      this.authorization.assertStoreAccess(context, store);
+      if (!canReport && !canReviewProducts) throw new ForbiddenException('Missing permission: report.view or store-catalog.verify');
+    }
     const accessibleStores = store ? [store] : await this.authorization.permittedStoreIds(context, 'report.view');
     const alerts = await this.prisma.alert.findMany({
       where: {
         organizationId: context.organizationId,
         ...(store ? { storeId: store } : accessibleStores ? { storeId: { in: accessibleStores } } : {}),
+        ...(store && canReviewProducts && !canReport ? { type: 'DISTRIBUTION_PENDING' } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -1622,21 +2199,39 @@ export class PosService {
       referenceId: alert.referenceId,
       status: alert.status,
       createdAt: alert.createdAt,
+      acknowledgedAt: alert.acknowledgedAt,
+      lastSeenAt: alert.lastSeenAt,
+      occurrenceCount: alert.occurrenceCount,
+      resolutionNote: alert.resolutionNote,
+      resolvedAt: alert.resolvedAt,
     }));
   }
 
-  async acknowledgeAlert(context: UserContext, alertId: string) {
+  async acknowledgeAlert(context: UserContext, alertId: string, input: JsonObject = {}) {
     const id = uuid(alertId, 'alertId');
     const alert = await this.prisma.alert.findFirst({ where: { id, organizationId: context.organizationId } });
     if (!alert) throw new NotFoundException('Alert not found');
     if (alert.storeId) this.authorization.assertStoreAccess(context, alert.storeId);
     else if (!context.isOrganisationAdministrator) throw new ForbiddenException('Organisation alerts require organisation access');
-    if (alert.storeId) this.authorization.assertPermissions(context, ['report.view'], alert.storeId);
-    await this.prisma.$transaction(async (tx) => {
-      await tx.alert.update({ where: { id }, data: { status: 'ACKNOWLEDGED' } });
-      await this.audit.record(context, 'alert.acknowledged', 'Alert', id, {}, tx);
+    if (alert.storeId) this.authorization.assertPermissions(context, ['alert.manage'], alert.storeId);
+    else if (!this.authorization.hasPermission(context, 'alert.manage')) throw new ForbiddenException('Missing organisation-wide permission: alert.manage');
+    const resolve = input.status === 'RESOLVED';
+    const note = optionalString(input.reason)?.trim() ?? '';
+    if (resolve && !note) throw new BadRequestException('A resolution reason is required');
+    if (input.status !== undefined && input.status !== 'ACKNOWLEDGED' && input.status !== 'RESOLVED') throw new BadRequestException('status must be ACKNOWLEDGED or RESOLVED');
+    const nextStatus = resolve ? 'RESOLVED' : 'ACKNOWLEDGED';
+    const changed = await this.prisma.$transaction(async (tx) => {
+      const update = await tx.alert.updateMany({
+        where: { id, status: { in: ['OPEN', 'ACKNOWLEDGED'] } },
+        data: resolve
+          ? { status: 'RESOLVED', resolvedAt: new Date(), resolvedById: context.userId, resolutionNote: note, activeDedupeKey: null }
+          : { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedById: context.userId },
+      });
+      if (!update.count) throw new ConflictException('This alert is already resolved');
+      await this.audit.record(context, resolve ? 'alert.resolved' : 'alert.acknowledged', 'Alert', id, resolve ? { reason: note } : {}, tx);
+      return tx.alert.findUniqueOrThrow({ where: { id }, select: { id: true, status: true } });
     });
-    return { id, status: 'ACKNOWLEDGED' };
+    return { ...changed, requestedStatus: nextStatus };
   }
 
   // ───────────── Customers ─────────────
@@ -1647,7 +2242,6 @@ export class PosService {
       this.authorization.assertStoreAccess(context, storeId);
       this.authorization.assertPermissions(context, ['customer.view'], storeId);
     }
-    const reachable = storeId ? [storeId] : await this.authorization.permittedStoreIds(context, 'customer.view');
     const customers = await this.prisma.customer.findMany({
       where: { organizationId: context.organizationId },
       orderBy: { name: 'asc' },
@@ -1662,6 +2256,11 @@ export class PosService {
       consentMarketing: customer.consentMarketing,
       walletBalanceCents: customer.walletBalanceCents,
       pointsBalance: customer.pointsBalance,
+      isBusiness: customer.isBusiness,
+      taxNumber: customer.taxNumber,
+      legalName: customer.legalName,
+      billingAddress: customer.billingAddress,
+      stateCode: customer.stateCode,
       createdAt: customer.createdAt,
     }));
   }
@@ -1709,6 +2308,11 @@ export class PosService {
       consentMarketing: customer.consentMarketing,
       walletBalanceCents: customer.walletBalanceCents,
       pointsBalance: customer.pointsBalance,
+      isBusiness: customer.isBusiness,
+      taxNumber: customer.taxNumber,
+      legalName: customer.legalName,
+      billingAddress: customer.billingAddress,
+      stateCode: customer.stateCode,
       createdAt: customer.createdAt,
       lifetimeSpendCents: sales.reduce((sum, sale) => sum + sale.totalCents, 0),
       sales,
@@ -1716,7 +2320,46 @@ export class PosService {
     };
   }
 
+  /** Business-customer identity: a valid GSTIN gives the state; without one the state may be given directly. */
+  private customerIdentity(input: JsonObject, current: { isBusiness: boolean; taxNumber: string; stateCode: string } | null) {
+    const taxInput = input.taxNumber === undefined ? undefined : optionalString(input.taxNumber) ?? '';
+    let taxNumber = current?.taxNumber ?? '';
+    let stateCode = current?.stateCode ?? '';
+    if (taxInput !== undefined) {
+      if (taxInput === '') { taxNumber = ''; if (input.stateCode === undefined) stateCode = ''; } else {
+        const check = validateGstin(taxInput);
+        if (!check.valid) throw new BadRequestException(check.error ?? 'Invalid tax number');
+        taxNumber = check.normalized;
+        stateCode = check.stateCode;
+      }
+    }
+    if (input.stateCode !== undefined && !taxNumber) {
+      const code = optionalString(input.stateCode) ?? '';
+      if (code && !GST_STATES[code]) throw new BadRequestException(`Unknown GST state code ${code}`);
+      stateCode = code;
+    }
+    const isBusiness = input.isBusiness === undefined ? (current?.isBusiness ?? false) || Boolean(taxNumber) : input.isBusiness === true;
+    if (isBusiness && !taxNumber) throw new BadRequestException('A business customer needs a GSTIN / tax number');
+    return {
+      isBusiness,
+      taxNumber,
+      stateCode,
+      ...(input.legalName !== undefined ? { legalName: optionalString(input.legalName) ?? '' } : {}),
+      ...(input.billingAddress !== undefined ? { billingAddress: optionalString(input.billingAddress) ?? '' } : {}),
+    };
+  }
+
+  private customerDto(customer: { id: string; name: string; phone: string; email: string; groupName: string; walletBalanceCents: number; pointsBalance: number; isBusiness: boolean; taxNumber: string; legalName: string; billingAddress: string; stateCode: string }) {
+    return {
+      id: customer.id, name: customer.name, phone: customer.phone, email: customer.email, groupName: customer.groupName,
+      walletBalanceCents: customer.walletBalanceCents, pointsBalance: customer.pointsBalance,
+      isBusiness: customer.isBusiness, taxNumber: customer.taxNumber, legalName: customer.legalName, billingAddress: customer.billingAddress,
+      stateCode: customer.stateCode, stateName: GST_STATES[customer.stateCode] ?? '',
+    };
+  }
+
   async createCustomer(context: UserContext, input: JsonObject) {
+    const identity = this.customerIdentity(input, null);
     const customer = await this.prisma.customer.create({
       data: {
         organizationId: context.organizationId,
@@ -1726,9 +2369,29 @@ export class PosService {
         groupName: optionalString(input.groupName) || 'General',
         notes: optionalString(input.notes) ?? '',
         consentMarketing: input.consentMarketing === true,
+        ...identity,
       },
     });
-    return { id: customer.id, name: customer.name, phone: customer.phone, email: customer.email, groupName: customer.groupName, walletBalanceCents: customer.walletBalanceCents, pointsBalance: customer.pointsBalance };
+    return this.customerDto(customer);
+  }
+
+  async updateCustomer(context: UserContext, customerId: string, input: JsonObject) {
+    const current = await this.prisma.customer.findFirst({ where: { id: uuid(customerId, 'customerId'), organizationId: context.organizationId } });
+    if (!current) throw new NotFoundException('Customer not found');
+    const identity = this.customerIdentity(input, current);
+    const customer = await this.prisma.customer.update({
+      where: { id: current.id },
+      data: {
+        ...(input.name !== undefined ? { name: requiredString(input.name, 'name') } : {}),
+        ...(input.phone !== undefined ? { phone: optionalString(input.phone) ?? '' } : {}),
+        ...(input.email !== undefined ? { email: optionalString(input.email)?.toLowerCase() ?? '' } : {}),
+        ...(input.groupName !== undefined ? { groupName: optionalString(input.groupName) || 'General' } : {}),
+        ...(input.notes !== undefined ? { notes: optionalString(input.notes) ?? '' } : {}),
+        ...identity,
+      },
+    });
+    await this.audit.record(context, 'customer.updated', 'Customer', customer.id, { changed: Object.keys(input) });
+    return this.customerDto(customer);
   }
 
   async customerLedger(context: UserContext, customerId: string, input: JsonObject) {
@@ -1737,7 +2400,6 @@ export class PosService {
       this.authorization.assertStoreAccess(context, storeId);
       this.authorization.assertPermissions(context, ['customer.manage'], storeId);
     }
-    const reachable = storeId ? [storeId] : await this.authorization.permittedStoreIds(context, 'customer.manage');
     const customer = await this.prisma.customer.findFirst({
       where: { id: uuid(customerId, 'customerId'), organizationId: context.organizationId },
       select: { id: true },
@@ -1771,28 +2433,50 @@ export class PosService {
 
   // ───────────── Promotions & bundles ─────────────
 
-  async listPromotions(context: UserContext) {
-    this.requireOrganizationPermission(context, 'promotion.manage');
-    const promotions = await this.prisma.promotion.findMany({ where: { organizationId: context.organizationId }, orderBy: { code: 'asc' } });
+  async listPromotions(context: UserContext, requestedStoreId?: string) {
+    if (!requestedStoreId) throw new BadRequestException('storeId is required for store-owned offers');
+    const storeId = uuid(requestedStoreId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['pricing.view'], storeId);
+    const promotions = await this.prisma.promotion.findMany({ where: { organizationId: context.organizationId, storeId }, orderBy: { code: 'asc' } });
     return promotions.map((promotion) => this.promotionDto(promotion));
   }
 
   async createPromotion(context: UserContext, input: JsonObject) {
-    this.requireOrganizationPermission(context, 'promotion.manage');
+    const storeId = this.authoriseScopedWrite(context, input.storeId, 'pricing.manage');
+    if (!storeId) throw new BadRequestException('storeId is required for an offer');
     const type = input.type === undefined ? 'PERCENT' : oneOf(input.type, Object.values(PromotionType) as PromotionType[], 'type');
     const value = finiteNumber(input.value, 'value');
     if (value <= 0 || (type === 'PERCENT' && value > 100)) throw new BadRequestException('Promotion value is out of range');
     const startsAt = this.optionalDate(input.startsAt, 'startsAt');
     const endsAt = this.optionalDate(input.endsAt, 'endsAt');
+    const scope = input.scope === undefined ? 'ALL' : oneOf(input.scope, ['ALL', 'CATEGORY', 'BRAND', 'VARIANT'] as const, 'scope');
+    const scopeId = input.scopeId === undefined || input.scopeId === null ? null : uuid(input.scopeId, 'scopeId');
+    if (scope !== 'ALL' && !scopeId) throw new BadRequestException('scopeId is required for a scoped offer');
+    if (scopeId) {
+      const found = scope === 'VARIANT'
+        ? await this.prisma.productVariant.findFirst({ where: { id: scopeId, organizationId: context.organizationId }, select: { id: true } })
+        : scope === 'CATEGORY'
+          ? await this.prisma.category.findFirst({ where: { id: scopeId, organizationId: context.organizationId }, select: { id: true } })
+          : await this.prisma.brand.findFirst({ where: { id: scopeId, organizationId: context.organizationId }, select: { id: true } });
+      if (!found) throw new BadRequestException(`The ${scope.toLowerCase()} for this offer was not found`);
+    }
     try {
       const promotion = await this.prisma.promotion.create({
         data: {
           organizationId: context.organizationId,
+          storeId,
           code: requiredString(input.code, 'code').toUpperCase(),
           type,
           value,
           minSubtotalCents: money(input.minSubtotalCents ?? 0, 'minSubtotalCents'),
           usageLimit: input.usageLimit === undefined ? null : Math.trunc(finiteNumber(input.usageLimit, 'usageLimit')),
+          perCustomerLimit: input.perCustomerLimit === undefined || input.perCustomerLimit === null ? null : Math.trunc(finiteNumber(input.perCustomerLimit, 'perCustomerLimit')),
+          scope,
+          scopeId: scope === 'ALL' ? null : scopeId,
+          autoApply: input.autoApply === true,
+          stackable: input.stackable === true,
+          priority: input.priority === undefined ? 0 : Math.trunc(finiteNumber(input.priority, 'priority')),
           startsAt,
           endsAt,
         },
@@ -1943,7 +2627,7 @@ export class PosService {
         const entitlement = await tx.organizationEntitlement.findUnique({ where: { organizationId } });
         const current = await tx.store.count({ where: { organizationId, status: 'ACTIVE' } });
         if (!entitlement || current >= entitlement.maxStores) throw new ConflictException(`Store limit reached (${entitlement?.maxStores ?? 0})`);
-        store = await tx.store.create({ data: { organizationId, code: 'MAIN', name: 'Main Store' } });
+        store = await tx.store.create({ data: { organizationId, code: 'MAIN', name: 'Main Store', billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
       }
       await tx.stockLocation.upsert({
         where: { organizationId_code: { organizationId, code: 'MAIN-STOCKROOM' } },
@@ -1965,24 +2649,25 @@ export class PosService {
           create: { organizationId, code: 'EA', name: 'Each' },
           update: {},
         });
-        const tax = await tx.taxGroup.upsert({
-          where: { organizationId_code: { organizationId, code: 'GST5' } },
-          create: { organizationId, code: 'GST5', name: 'GST 5%', rateBps: 500 },
-          update: {},
-        });
         const product = await tx.product.findFirst({ where: { organizationId, name: 'Demo Coffee Mug' } })
           ?? await tx.product.create({ data: { organizationId, categoryId: category.id, name: 'Demo Coffee Mug', brand: 'Demo' } });
         variant = await tx.productVariant.create({
-          data: { organizationId, productId: product.id, sku: 'MUG-BLUE', name: 'Blue', uomId: uom.id, taxGroupId: tax.id },
+          data: { organizationId, productId: product.id, sku: 'MUG-BLUE', name: 'Blue', uomId: uom.id },
         });
         await tx.barcode.upsert({
           where: { organizationId_code: { organizationId, code: '890000000001' } },
           create: { organizationId, variantId: variant.id, code: '890000000001' },
           update: {},
         });
-        await tx.variantPrice.create({ data: { organizationId, variantId: variant.id, amountCents: 49900, currency: 'INR', includesTax: true } });
+        await tx.variantPrice.create({ data: { organizationId, variantId: variant.id, amountCents: 49900, currency: currencyFromSettings(await this.orgSettings(organizationId)), includesTax: true } });
       }
       await this.ensureStoreProduct(tx, organizationId, store.id, variant.id);
+      const storeTax = await tx.taxGroup.upsert({
+        where: { organizationId_storeId_code: { organizationId, storeId: store.id, code: 'GST5' } },
+        create: { organizationId, storeId: store.id, code: 'GST5', name: 'GST 5%', rateBps: 500 },
+        update: { status: 'ACTIVE' },
+      });
+      await tx.storeVariant.update({ where: { storeId_variantId: { storeId: store.id, variantId: variant.id } }, data: { taxGroupId: storeTax.id } });
       await tx.approvalPolicy.upsert({
         where: { organizationId_action: { organizationId, action: 'SALE_DISCOUNT' } },
         create: { organizationId, action: 'SALE_DISCOUNT', thresholdPercent: 10 },
@@ -2035,12 +2720,13 @@ export class PosService {
     return { categories: out(categories), brands: out(brands) };
   }
 
-  // ───────────── Tax groups and additional charges (organisation-wide or per store) ─────────────
+  // ───────────── Store-owned tax groups and charges ─────────────
 
-  /** A tax group is usable in a store when it is organisation-wide or belongs to that store. */
+  /** A tax group can only be used by the store that owns it. */
   private async assertTaxGroupUsable(organizationId: string, storeId: string | null, taxGroupId: string) {
+    if (!storeId) throw new BadRequestException('Tax groups must be configured for a store');
     const group = await this.prisma.taxGroup.findFirst({
-      where: { id: taxGroupId, organizationId, OR: [{ storeId: null }, ...(storeId ? [{ storeId }] : [])] },
+      where: { id: taxGroupId, organizationId, storeId, status: 'ACTIVE' },
       select: { id: true },
     });
     if (!group) throw new BadRequestException('Tax group not found for this store');
@@ -2059,23 +2745,22 @@ export class PosService {
   }
 
   async listTaxGroups(context: UserContext, requestedStoreId?: string) {
-    const storeId = requestedStoreId ? uuid(requestedStoreId, 'storeId') : null;
-    if (storeId) {
-      this.authorization.assertStoreAccess(context, storeId);
-      this.authorization.assertPermissions(context, ['catalog.view'], storeId);
-    } else this.requireOrganizationPermission(context, 'catalog.view');
+    if (!requestedStoreId) throw new BadRequestException('storeId is required for store-owned tax groups');
+    const storeId = uuid(requestedStoreId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['catalog.view'], storeId);
     const groups = await this.prisma.taxGroup.findMany({
-      where: { organizationId: context.organizationId, OR: [{ storeId: null }, ...(storeId ? [{ storeId }] : [])] },
-      orderBy: [{ storeId: 'asc' }, { name: 'asc' }],
+      where: { organizationId: context.organizationId, storeId },
+      orderBy: { name: 'asc' },
     });
-    return groups.map((group) => ({ id: group.id, code: group.code, name: group.name, hsnCode: group.hsnCode, ratePercent: group.rateBps / 100, includesTax: group.includesTax, storeId: group.storeId, scope: group.storeId ? 'STORE' : 'ORGANISATION' }));
+    return groups.map((group) => ({ id: group.id, code: group.code, name: group.name, hsnCode: group.hsnCode, ratePercent: group.rateBps / 100, includesTax: group.includesTax, storeId: group.storeId, status: group.status, scope: 'STORE' }));
   }
 
-  /** A store creates a tax group that only it can see and use. Organisation-wide groups are created in the admin catalogue. */
+  /** A store creates a tax group that only it can see and use. */
   async createStoreTaxGroup(context: UserContext, input: JsonObject) {
     const storeId = uuid(input.storeId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
-    this.authorization.assertPermissions(context, ['pricing.manage'], storeId);
+    this.authorization.assertPermissions(context, ['tax.manage'], storeId);
     const store = await this.prisma.store.findFirst({ where: { id: storeId, organizationId: context.organizationId }, select: { code: true } });
     if (!store) throw new NotFoundException('Store not found');
     const name = requiredString(input.name, 'name');
@@ -2088,11 +2773,31 @@ export class PosService {
         data: { organizationId: context.organizationId, storeId, code, name, hsnCode: optionalString(input.hsnCode) ?? '', rateBps: Math.round(ratePercent * 100), includesTax: input.includesTax === true },
       });
       await this.audit.record(context, 'tax-group.created', 'TaxGroup', group.id, { storeId, code, ratePercent }, this.prisma);
-      return { id: group.id, code: group.code, name: group.name, ratePercent, storeId };
+      return { id: group.id, code: group.code, name: group.name, hsnCode: group.hsnCode, ratePercent, includesTax: group.includesTax, storeId, status: group.status };
     } catch (error) {
       if (isUniqueViolation(error)) throw new ConflictException('This store already has a tax group with that name');
       throw error;
     }
+  }
+
+  async updateStoreTaxGroup(context: UserContext, taxGroupId: string, input: JsonObject) {
+    const storeId = uuid(input.storeId, 'storeId');
+    const id = uuid(taxGroupId, 'taxGroupId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['tax.manage'], storeId);
+    const current = await this.prisma.taxGroup.findFirst({ where: { id, organizationId: context.organizationId, storeId } });
+    if (!current) throw new NotFoundException('Tax group not found in this store');
+    const name = input.name === undefined ? undefined : requiredString(input.name, 'name');
+    const ratePercent = input.ratePercent === undefined ? undefined : finiteNumber(input.ratePercent, 'ratePercent');
+    if (ratePercent !== undefined && (ratePercent < 0 || ratePercent > 100)) throw new BadRequestException('GST rate must be between 0 and 100');
+    const updated = await this.prisma.taxGroup.update({ where: { id }, data: {
+      ...(name ? { name } : {}), ...(input.hsnCode !== undefined ? { hsnCode: optionalString(input.hsnCode) ?? '' } : {}),
+      ...(ratePercent !== undefined ? { rateBps: Math.round(ratePercent * 100) } : {}),
+      ...(input.includesTax !== undefined ? { includesTax: input.includesTax === true } : {}),
+      ...(input.status !== undefined ? { status: oneOf(input.status, ['ACTIVE', 'DISABLED'] as const, 'status') } : {}),
+    } });
+    await this.audit.record(context, 'tax-group.updated', 'TaxGroup', id, { storeId, fields: Object.keys(input) }, this.prisma);
+    return { id: updated.id, code: updated.code, name: updated.name, hsnCode: updated.hsnCode, ratePercent: updated.rateBps / 100, includesTax: updated.includesTax, storeId, status: updated.status };
   }
 
   private chargeDto(charge: { id: string; storeId: string | null; name: string; kind: 'FLAT' | 'PERCENT'; scope: 'PER_BILL' | 'PER_ITEM'; value: number; taxGroupId: string | null; status: string; taxGroup?: { name: string; rateBps: number } | null }) {
@@ -2104,15 +2809,14 @@ export class PosService {
   }
 
   async listCharges(context: UserContext, requestedStoreId?: string) {
-    const storeId = requestedStoreId ? uuid(requestedStoreId, 'storeId') : null;
-    if (storeId) {
-      this.authorization.assertStoreAccess(context, storeId);
-      this.authorization.assertPermissions(context, ['pricing.view'], storeId);
-    } else this.requireOrganizationPermission(context, 'pricing.view');
+    if (!requestedStoreId) throw new BadRequestException('storeId is required for store-owned charges');
+    const storeId = uuid(requestedStoreId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['pricing.view'], storeId);
     const charges = await this.prisma.charge.findMany({
-      where: { organizationId: context.organizationId, OR: [{ storeId: null }, ...(storeId ? [{ storeId }] : [])] },
+      where: { organizationId: context.organizationId, storeId },
       include: { taxGroup: { select: { name: true, rateBps: true } } },
-      orderBy: [{ storeId: 'asc' }, { name: 'asc' }],
+      orderBy: { name: 'asc' },
     });
     return charges.map((charge) => this.chargeDto(charge));
   }
@@ -2126,6 +2830,7 @@ export class PosService {
 
   async createCharge(context: UserContext, input: JsonObject) {
     const storeId = this.authoriseScopedWrite(context, input.storeId, 'pricing.manage');
+    if (!storeId) throw new BadRequestException('Charges must be configured for a store');
     const name = requiredString(input.name, 'name');
     const kind = oneOf(input.kind, ['FLAT', 'PERCENT'] as const, 'kind');
     const scope = input.applies === undefined ? 'PER_BILL' : oneOf(input.applies, ['PER_BILL', 'PER_ITEM'] as const, 'applies');
@@ -2141,6 +2846,7 @@ export class PosService {
     const id = uuid(chargeId, 'chargeId');
     const current = await this.prisma.charge.findFirst({ where: { id, organizationId: context.organizationId } });
     if (!current) throw new NotFoundException('Charge not found');
+    if (!current.storeId) throw new ForbiddenException('Organisation-wide charges are no longer configurable; create a charge in a store.');
     this.authoriseScopedWrite(context, current.storeId, 'pricing.manage');
     const kind = input.kind === undefined ? current.kind : oneOf(input.kind, ['FLAT', 'PERCENT'] as const, 'kind');
     const hasValue = input.amountCents !== undefined || input.ratePercent !== undefined;
@@ -2162,10 +2868,10 @@ export class PosService {
     return this.chargeDto(updated);
   }
 
-  /** Active charges that apply in a store: organisation-wide ones plus that store's own. */
+  /** Active charges configured for this store. */
   private async computeCharges(organizationId: string, storeId: string, lines: PricedLine[], baseNetCents: number) {
     const charges = await this.prisma.charge.findMany({
-      where: { organizationId, status: 'ACTIVE', OR: [{ storeId: null }, { storeId }] },
+      where: { organizationId, storeId, status: 'ACTIVE' },
       include: { taxGroup: { select: { rateBps: true } } },
       orderBy: { name: 'asc' },
     });
@@ -2184,25 +2890,101 @@ export class PosService {
     const storeId = uuid(input.storeId ?? context.defaultStoreId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
     this.authorization.assertPermissions(context, ['sale.create'], storeId);
+    const priced = await this.priceCart(context, storeId, input);
+    // The tenders this store offers (store setting over the organisation's), so the till shows only those.
+    return { ...priced.quote, enabledTenders: this.enabledTenders(priced.settings) };
+  }
+
+  /** One calculation for the quote and the sale: price rules, line discounts, promotions, manual discount, tax, charges. */
+  private async priceCart(context: UserContext, storeId: string, input: JsonObject) {
     const rawLines = Array.isArray(input.lines) ? input.lines as LineInput[] : [];
-    const lines = await Promise.all(rawLines.map((line) => this.priceLine(context, line, storeId)));
-    const orderDiscount = money(input.discountCents ?? 0, 'discountCents');
+    const customerId = typeof input.customerId === 'string' && input.customerId ? uuid(input.customerId, 'customerId') : null;
+    const customer: CustomerForPricing | null = customerId
+      ? await this.prisma.customer.findFirst({ where: { id: customerId, organizationId: context.organizationId }, select: { id: true, name: true, phone: true, groupName: true, isBusiness: true, taxNumber: true, legalName: true, billingAddress: true, stateCode: true, walletBalanceCents: true, pointsBalance: true } })
+      : null;
+    if (customerId && !customer) throw new BadRequestException('Customer not found');
+
+    const settings = await this.orgSettings(context.organizationId, storeId);
+    const currency = currencyFromSettings(settings);
+    if (settings.taxProfileStatus === 'NOT_REVIEWED' || settings.taxProfileStatus === 'UNSURE') {
+      throw new BadRequestException({ code: 'TAX_PROFILE_REQUIRED', message: 'Review the organisation tax profile before creating sales. Open Organisation → Settings → General.' });
+    }
+    const now = new Date();
+    const ruleRows = await this.prisma.priceRule.findMany({
+      where: { organizationId: context.organizationId, storeId, status: 'ACTIVE' },
+    });
+    const rules: PriceRule[] = ruleRows.map((rule) => ({
+      id: rule.id, name: rule.name, priority: rule.priority, scope: rule.scope, scopeId: rule.scopeId, storeId: rule.storeId,
+      customerGroup: rule.customerGroup, minQuantity: num(rule.minQuantity), startsAt: rule.startsAt, endsAt: rule.endsAt, mode: rule.mode, value: rule.value,
+    }));
+    const lines = await Promise.all(rawLines.map((line) => this.priceLine(context, line, storeId, { rules, customerGroup: customer?.groupName ?? null, now, currency, taxProfileStatus: String(settings.taxProfileStatus ?? 'LEGACY'), settings })));
+
     const subtotal = lines.reduce((sum, line) => sum + line.netCents, 0);
     const lineDiscount = lines.reduce((sum, line) => sum + line.discountCents, 0);
-    const discount = Math.min(orderDiscount, subtotal);
+    if (input.discountCents !== undefined && input.discountPercent !== undefined) throw new BadRequestException('Use either discountCents or discountPercent, not both');
+    let manualOrderDiscount = 0;
+    if (input.discountPercent !== undefined) {
+      const percent = finiteNumber(input.discountPercent, 'discountPercent');
+      if (percent < 0 || percent > Number(settings.billDiscountMaxPercent ?? 100)) throw new BadRequestException(`Bill discount cannot exceed ${settings.billDiscountMaxPercent ?? 100}%`);
+      manualOrderDiscount = Math.round((subtotal * percent) / 100);
+    } else manualOrderDiscount = money(input.discountCents ?? 0, 'discountCents');
+    if (manualOrderDiscount > 0 && settings.billDiscountEnabled !== true) throw new BadRequestException('Whole-bill discounts are turned off for this store');
+    if (manualOrderDiscount > subtotal * Number(settings.billDiscountMaxPercent ?? 100) / 100) throw new BadRequestException(`Bill discount cannot exceed ${settings.billDiscountMaxPercent ?? 100}%`);
+
+    // Promotions: automatic ones plus at most one coupon, with stacking limits.
+    const promotionRows = await this.prisma.promotion.findMany({ where: { organizationId: context.organizationId, storeId, status: 'ACTIVE' } });
+    const redemptions = customer
+      ? await this.prisma.promotionRedemption.groupBy({ by: ['promotionId'], where: { customerId: customer.id }, _count: { _all: true } })
+      : [];
+    const promotionDefs: PromotionDef[] = promotionRows.map((promotion) => ({
+      id: promotion.id, code: promotion.code, type: promotion.type, value: promotion.type === 'AMOUNT' ? Math.round(num(promotion.value) * minorFactor(currency)) : num(promotion.value),
+      minSubtotalCents: promotion.minSubtotalCents, usageLimit: promotion.usageLimit, usageCount: promotion.usageCount, perCustomerLimit: promotion.perCustomerLimit,
+      startsAt: promotion.startsAt, endsAt: promotion.endsAt, active: promotion.status === 'ACTIVE', scope: promotion.scope, scopeId: promotion.scopeId,
+      autoApply: promotion.autoApply, priority: promotion.priority, stackable: promotion.stackable,
+    }));
+    const promotions = evaluatePromotions({
+      promotions: settings.billDiscountEnabled === true ? promotionDefs : [],
+      couponCode: optionalString(input.couponCode) ?? null,
+      lines: lines.map((line) => ({ variantId: line.variantId, categoryId: line.categoryId, brandId: line.brandId, netCents: line.netCents })),
+      customerRedemptions: new Map(redemptions.map((row) => [row.promotionId, row._count._all])),
+      hasCustomer: Boolean(customer),
+      now,
+    });
+
+    if (optionalString(input.couponCode) && settings.billDiscountEnabled !== true) throw new BadRequestException('Whole-bill discounts are turned off for this store');
+    if (manualOrderDiscount > 0 && promotions.totalDiscountCents > 0 && settings.allowDiscountStacking !== true) throw new BadRequestException('This store does not allow stacking a manual discount with an offer');
+    const billDiscount = manualOrderDiscount + promotions.totalDiscountCents;
+    if (billDiscount > Math.floor(subtotal * Number(settings.billDiscountMaxPercent ?? 100) / 100)) throw new BadRequestException(`Combined bill discounts cannot exceed ${settings.billDiscountMaxPercent ?? 100}%`);
+
+    const discount = Math.min(billDiscount, subtotal);
     const lineTax = lines.reduce((sum, line) => sum + line.taxCents, 0);
     const itemTax = Math.max(0, lineTax - Math.round((discount * lineTax) / Math.max(1, subtotal)));
     const chargePlan = await this.computeCharges(context.organizationId, storeId, lines, subtotal - discount);
     const tax = itemTax + chargePlan.taxCents;
-    return {
-      lines: lines.map((line) => ({ variantId: line.variantId, sku: line.sku, name: line.name, quantity: line.quantity, unitPriceCents: line.unitPriceCents, taxRateBps: line.taxRateBps, taxCents: line.taxCents, netCents: line.netCents, lineTotalCents: line.lineTotalCents, discountCents: line.discountCents })),
+    const total = subtotal - discount + tax + chargePlan.netCents;
+    const quoteHash = createHash('sha256').update(JSON.stringify({
+      lines: lines.map((line) => [line.variantId, line.quantity, line.unitPriceCents, line.discountCents, line.taxCents, line.lineTotalCents]),
+      discount, tax, charges: chargePlan.netCents, total, promotions: promotions.applied.map((entry) => [entry.promotionId, entry.discountCents]),
+    })).digest('hex').slice(0, 16);
+    const quote = {
+      lines: lines.map((line) => ({
+        variantId: line.variantId, sku: line.sku, name: line.name, quantity: line.quantity, unitPriceCents: line.unitPriceCents, taxRateBps: line.taxRateBps,
+        taxCents: line.taxCents, netCents: line.netCents, lineTotalCents: line.lineTotalCents, discountCents: line.discountCents,
+        listPriceCents: line.listPriceCents, priceSource: line.priceSource, priceRuleName: line.priceRuleName, openPrice: line.openPrice,
+      })),
       subtotalCents: subtotal,
       discountCents: lineDiscount + discount,
+      promotionDiscountCents: promotions.totalDiscountCents,
+      promotions: promotions.applied,
+      rejectedPromotions: promotions.rejected,
       chargeCents: chargePlan.netCents,
       charges: chargePlan.items,
       taxCents: tax,
-      totalCents: subtotal - discount + tax + chargePlan.netCents,
+      totalCents: total,
+      requiresManagerApproval: lines.some((line) => line.openPrice),
+      quoteHash,
     };
+    return { lines, subtotal, lineDiscount, manualOrderDiscount, discount, tax, chargePlan, total, customer, promotions, quote, quoteHash, settings, currency };
   }
 
   // ───────────── Internals ─────────────
@@ -2221,20 +3003,45 @@ export class PosService {
     return latest(prices.filter((price) => storeId !== null && price.storeId === storeId)) ?? latest(prices.filter((price) => price.storeId === null));
   }
 
-  private async priceLine(context: UserContext, input: LineInput, storeId: string): Promise<PricedLine> {
+  private async priceLine(context: UserContext, input: LineInput, storeId: string, env: { rules: PriceRule[]; customerGroup: string | null; now: Date; currency: string; taxProfileStatus: string; settings: JsonObject }): Promise<PricedLine> {
     const variantId = uuid(input.variantId, 'variantId');
     const quantity = finiteNumber(input.quantity ?? 1, 'quantity');
     if (quantity <= 0) throw new BadRequestException('quantity must be positive');
     const variant = await this.prisma.productVariant.findFirst({
       where: { id: variantId, organizationId: context.organizationId, status: { in: [...SELLABLE_STATUSES] }, storeVariants: { some: { storeId, status: 'ACTIVE' } } },
-      include: { product: { select: { name: true } }, taxGroup: { select: { rateBps: true, hsnCode: true } }, storeVariants: { where: { storeId }, select: { taxGroup: { select: { rateBps: true, hsnCode: true } } } }, prices: this.currentPriceFilter(storeId) },
+      include: { product: { select: { name: true, categoryId: true, brandId: true } }, storeVariants: { where: { storeId }, select: { taxGroup: { select: { rateBps: true, hsnCode: true, status: true } } } }, prices: this.currentPriceFilter(storeId) },
     });
     if (!variant) throw new NotFoundException(`Sellable variant not found: ${variantId}`);
-    // Tax resolution: the store's own tax group for this product, else the organisation's, else 0 %.
-    const taxGroup = variant.storeVariants[0]?.taxGroup ?? variant.taxGroup;
+    // Tax comes only from this store's assignment; organization product data has no tax group.
+    const assignedTaxGroup = variant.storeVariants[0]?.taxGroup ?? null;
+    const taxGroup = assignedTaxGroup?.status === 'ACTIVE' ? assignedTaxGroup : null;
+    if (env.taxProfileStatus === 'REGISTERED' && !taxGroup) {
+      throw new BadRequestException({ code: 'TAX_CONFIGURATION_REQUIRED', message: `Assign an active tax group to ${variant.sku || variant.product.name} before selling it. Configure this store at /s/${storeId}/settings/tax.` });
+    }
 
-    const price = this.pickPrice(variant.prices, storeId);
-    const unitPriceCents = price?.amountCents ?? 0;
+    // Price: the first matching price rule wins, the base price is the last fallback, and no price at all is an error
+    // unless this is an open-price item whose price the cashier enters (a manager approves it when the sale is saved).
+    const base = this.pickPrice(variant.prices, storeId);
+    const resolved = resolveUnitPrice(base?.amountCents ?? null, env.rules, {
+      storeId, variantId, categoryId: variant.product.categoryId, brandId: variant.product.brandId, customerGroup: env.customerGroup, quantity, now: env.now,
+    });
+    let unitPriceCents: number;
+    let includesTax = base?.includesTax ?? false;
+    let openPrice = false;
+    let priceSource: PricedLine['priceSource'] = resolved.source === 'RULE' ? 'RULE' : 'BASE';
+    const entered = input.unitPriceCents === undefined || input.unitPriceCents === null || input.unitPriceCents === '' ? null : money(input.unitPriceCents, 'unitPriceCents');
+    if (variant.openPrice && entered !== null) {
+      if (entered <= 0) throw new BadRequestException(`Enter a price above zero for ${variant.sku}`);
+      if (entered < variant.floorPriceCents) throw new BadRequestException(`The price for ${variant.sku} cannot be below its floor price of ${formatMinor(variant.floorPriceCents, env.currency)}`);
+      unitPriceCents = entered;
+      openPrice = true;
+      priceSource = 'OPEN_PRICE';
+      includesTax = input.priceIncludesTax !== false;
+    } else if (resolved.unitPriceCents === null) {
+      if (variant.openPrice) throw new BadRequestException({ code: 'OPEN_PRICE_REQUIRED', message: `Enter a price for ${variant.sku}`, variantId });
+      throw new BadRequestException({ code: 'NO_PRICE', message: `No price is set for ${variant.sku}. Ask a manager to set a price before selling it.`, variantId });
+    } else unitPriceCents = resolved.unitPriceCents;
+
     const taxBps = taxGroup?.rateBps ?? 0;
     const gross = Math.round(unitPriceCents * quantity);
     const hasDiscountCents = input.discountCents !== undefined;
@@ -2245,11 +3052,13 @@ export class PosService {
       : hasDiscountPercent
         ? Math.round((gross * finiteNumber(input.discountPercent, 'line discountPercent')) / 100)
         : 0;
+    if (discountCents > 0 && env.settings.lineDiscountEnabled !== true) throw new BadRequestException('Line-item discounts are turned off for this store');
+    if (discountCents > Math.floor(gross * Number(env.settings.lineDiscountMaxPercent ?? 100) / 100)) throw new BadRequestException(`Line-item discount cannot exceed ${env.settings.lineDiscountMaxPercent ?? 100}%`);
     if (discountCents < 0) throw new BadRequestException('Line discount cannot be negative');
     if (discountCents > gross) throw new BadRequestException('Line discount cannot exceed the line value');
     const discountedGross = gross - discountCents;
-    const tax = price?.includesTax ? splitInclusive(discountedGross, taxBps).tax : taxOnExclusive(discountedGross, taxBps);
-    const netCents = price?.includesTax ? splitInclusive(discountedGross, taxBps).net : discountedGross;
+    const tax = includesTax ? splitInclusive(discountedGross, taxBps).tax : taxOnExclusive(discountedGross, taxBps);
+    const netCents = includesTax ? splitInclusive(discountedGross, taxBps).net : discountedGross;
     return {
       variantId,
       sku: variant.sku,
@@ -2265,42 +3074,198 @@ export class PosService {
       discountCents,
       discountReason: optionalString(input.discountReason) ?? '',
       note: optionalString(input.note) ?? '',
+      listPriceCents: base?.amountCents ?? null,
+      priceSource,
+      priceRuleName: resolved.source === 'RULE' && !openPrice ? resolved.ruleName : null,
+      openPrice,
+      categoryId: variant.product.categoryId,
+      brandId: variant.product.brandId,
     };
   }
 
-  private async paymentPlan(organizationId: string, value: unknown, expectedTotalCents: number) {
+  /**
+   * Organization product schema and financial identity, plus the selected store's independent billing configuration.
+   */
+  private async orgSettings(organizationId: string, storeId?: string): Promise<JsonObject> {
+    const [row, organization] = await Promise.all([
+      this.prisma.organizationSettings.findUnique({ where: { organizationId }, select: { settings: true } }),
+      this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { currency: true, countryCode: true, taxProfileStatus: true } }),
+    ]);
+    const organizationSettings = (row?.settings && typeof row.settings === 'object' && !Array.isArray(row.settings) ? row.settings : {}) as JsonObject;
+    const base: JsonObject = { productFields: cleanFieldSet(organizationSettings.productFields) as unknown as JsonObject };
+    base.currency = organization.currency;
+    base.countryCode = organization.countryCode;
+    base.taxProfileStatus = organization.taxProfileStatus;
+    if (!storeId) return base;
+    const store = await this.prisma.store.findFirst({ where: { id: storeId, organizationId }, select: { billingSettings: true, fieldSettings: true } });
+    const own = objectField(store?.billingSettings);
+    Object.assign(base, DEFAULT_BILLING_SETTINGS, own);
+    const fieldSettings = objectField(store?.fieldSettings);
+    base.checkoutFields = cleanFieldSet(fieldSettings.checkoutFields, 'CHECKOUT') as unknown as JsonObject;
+    return base;
+  }
+
+  private enabledTenders(settings: JsonObject): TenderType[] {
+    const configured = Array.isArray(settings.enabledTenders) ? settings.enabledTenders.filter((value): value is TenderType => typeof value === 'string' && (TENDERS as string[]).includes(value)) : [];
+    return configured.length ? configured : TENDERS;
+  }
+
+  private async discountReasonText(context: UserContext, storeId: string, input: JsonObject, lines: PricedLine[], settings: JsonObject, requestedDiscount: number): Promise<string> {
+    const code = optionalString(input.discountReasonCode);
+    if (code) {
+      const reason = await this.prisma.discountReason.findFirst({ where: { organizationId: context.organizationId, storeId, code: code.toUpperCase(), status: 'ACTIVE' } });
+      if (!reason) throw new BadRequestException('Unknown discount reason');
+      return reason.name;
+    }
+    if (requestedDiscount > 0 && settings.requireDiscountReasonCode === true) throw new BadRequestException('Choose a discount reason from the list');
+    return optionalString(input.discountReason) ?? lines.find((line) => line.discountReason)?.discountReason ?? '';
+  }
+
+  private async paymentPlan(context: UserContext, storeId: string, value: unknown, expectedTotalCents: number, customer: CustomerForPricing | null, settings: JsonObject) {
     const values = Array.isArray(value) ? value as JsonObject[] : [];
     if (!values.length) throw new BadRequestException('At least one payment is required');
-    const tenderTypes = values.map((payment) => oneOf(payment.tenderType, TENDERS, 'tenderType'));
+    const attemptIds = values.flatMap((payment) => (isUuid(payment.attemptId) ? [payment.attemptId] : []));
+    if (new Set(attemptIds).size !== attemptIds.length) throw new BadRequestException('The same payment cannot be used twice');
+    const attempts = await this.payments.usableAttempts(context, storeId, attemptIds);
+    const tenderTypes = values.map((payment) => (isUuid(payment.attemptId) ? attempts.get(payment.attemptId)!.tenderType : oneOf(payment.tenderType, TENDERS, 'tenderType')));
+    const enabled = this.enabledTenders(settings);
+    for (const tender of tenderTypes) if (!enabled.includes(tender)) throw new BadRequestException(`${tender} payments are switched off for this store`);
     const onlyCash = tenderTypes.every((tender) => tender === 'CASH');
-    const cashRoundingCents = onlyCash ? await this.cashRoundingUnit(organizationId) : 0;
+    const cashRoundingCents = onlyCash ? this.cashRoundingFrom(settings) : 0;
     const roundedTotalCents = cashRoundingCents > 0 ? Math.round(expectedTotalCents / cashRoundingCents) * cashRoundingCents : expectedTotalCents;
+    const pointValueCents = Number.isInteger(settings.pointValueCents) && (settings.pointValueCents as number) > 0 ? settings.pointValueCents as number : 10;
+    let walletCents = 0;
+    let pointsUsed = 0;
     const payments = values.map((payment, index) => {
       const tenderType = tenderTypes[index]!;
+      const attempt = isUuid(payment.attemptId) ? attempts.get(payment.attemptId) : undefined;
       const tenderedCents = payment.tenderedCents === undefined ? null : money(payment.tenderedCents, 'tenderedCents');
-      const requestedAmount = payment.amountCents === undefined ? tenderedCents : money(payment.amountCents);
+      const requestedAmount = attempt ? attempt.amountCents : payment.amountCents === undefined ? tenderedCents : money(payment.amountCents);
       if (requestedAmount === null || requestedAmount === undefined) throw new BadRequestException('amountCents is required for every payment');
+      if (attempt && payment.amountCents !== undefined && money(payment.amountCents) !== attempt.amountCents) throw new BadRequestException('The amount does not match the confirmed payment');
       const amountCents = onlyCash && values.length === 1 && tenderType === 'CASH' && tenderedCents !== null ? roundedTotalCents : requestedAmount;
+      if (amountCents <= 0) throw new BadRequestException('Every payment must be greater than zero');
       if (tenderedCents !== null && tenderType !== 'CASH') throw new BadRequestException('tenderedCents is only valid for cash');
       if (tenderedCents !== null && tenderedCents < amountCents) throw new BadRequestException('Cash tendered cannot be less than the applied amount');
+      if (tenderType === 'WALLET' || tenderType === 'POINTS') {
+        if (!customer) throw new BadRequestException('Attach a customer to pay with wallet or points');
+        if (tenderType === 'WALLET') walletCents += amountCents;
+        else {
+          if (amountCents % pointValueCents !== 0) throw new BadRequestException(`Points are worth ${formatMinor(pointValueCents, currencyFromSettings(settings))} each; the amount must be a whole number of points`);
+          pointsUsed += amountCents / pointValueCents;
+        }
+      }
       return {
         tenderType,
         amountCents,
         tenderedCents,
         changeCents: tenderedCents === null ? 0 : tenderedCents - amountCents,
-        reference: optionalString(payment.reference) ?? '',
-      };
+        reference: attempt ? attempt.providerRef : optionalString(payment.reference) ?? '',
+        ...(attempt ? { attemptId: attempt.id } : {}),
+      } as { tenderType: TenderType; amountCents: number; tenderedCents: number | null; changeCents: number; reference: string; attemptId?: string };
     });
+    if (customer && walletCents > customer.walletBalanceCents) throw new BadRequestException(`Wallet balance is only ${formatMinor(customer.walletBalanceCents, currencyFromSettings(settings))}. Pay the rest another way.`);
+    if (customer && pointsUsed > customer.pointsBalance) throw new BadRequestException(`The customer only has ${customer.pointsBalance} points. Pay the rest another way.`);
     return {
       payments,
       appliedTotalCents: payments.reduce((sum, payment) => sum + payment.amountCents, 0),
       roundedTotalCents,
       roundingCents: roundedTotalCents - expectedTotalCents,
+      walletCents,
+      pointsUsed,
     };
   }
 
+  /** Seller, buyer and place of supply as they are now, saved on the sale so a reprint never changes. */
+  private async documentSnapshot(context: UserContext, storeId: string, customer: CustomerForPricing | null, settings: JsonObject): Promise<JsonObject> {
+    const [organization, store] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true } }),
+      this.prisma.store.findUnique({ where: { id: storeId }, select: { name: true, code: true, address: true, taxNumber: true, timezone: true } }),
+    ]);
+    const sellerTaxNumber = store?.taxNumber || organization?.gstin || '';
+    const sellerState = gstinStateCode(sellerTaxNumber);
+    const buyerState = customer ? customer.stateCode || gstinStateCode(customer.taxNumber) : '';
+    const intraState = isIntraState(sellerState, buyerState);
+    const supplyState = buyerState || sellerState;
+    return {
+      version: 1,
+      currency: currencyFromSettings(settings),
+      seller: {
+        name: organization?.legalName || organization?.tradeName || organization?.name || 'Invoice',
+        address: organization?.address ?? '',
+        taxNumber: sellerTaxNumber,
+        stateCode: sellerState,
+        storeName: store?.name ?? '',
+        storeCode: store?.code ?? '',
+        storeAddress: store?.address ?? '',
+        timezone: store?.timezone ?? 'Asia/Kolkata',
+      },
+      buyer: customer ? { name: customer.name, phone: customer.phone, isBusiness: customer.isBusiness, legalName: customer.legalName, taxNumber: customer.taxNumber, address: customer.billingAddress, stateCode: buyerState } : null,
+      placeOfSupply: { stateCode: supplyState, stateName: GST_STATES[supplyState] ?? '', intraState },
+      footer: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
+    };
+  }
+
+  /** The manager whose PIN was entered. Any active manager of this store (or organisation-wide) may approve. */
+  private async verifyManagerPin(context: UserContext, storeId: string, managerPin: unknown, action: string, message: string): Promise<string> {
+    const refuse = (text: string) => new ForbiddenException({ code: 'REQUIRE_APPROVAL', action, message: text });
+    if (typeof managerPin !== 'string' || managerPin.length === 0) throw refuse(message);
+    const managers = await this.prisma.user.findMany({
+      where: {
+        organizationId: context.organizationId,
+        id: { not: context.userId },
+        status: 'ACTIVE',
+        pinHash: { not: null },
+        roles: { some: { role: { status: 'ACTIVE', permissions: { some: { permissionCode: 'approval.manage', effect: { in: ['ALLOW', 'REQUIRE_APPROVAL'] } } } }, OR: [{ scopeType: 'ORGANIZATION' }, { scopeType: 'STORE', storeId }] } },
+      },
+      select: { id: true, pinHash: true },
+    });
+    const manager = managers.find((candidate) => candidate.pinHash && verifyPassword(managerPin, candidate.pinHash));
+    if (!manager) throw refuse('Manager PIN is invalid');
+    return manager.id;
+  }
+
+  private approvalPayloadHash(action: string, storeId: string, referenceId: string, payload: JsonObject): string {
+    const stable = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(stable);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, stable(entry)]));
+      return value;
+    };
+    return createHash('sha256').update(JSON.stringify([action, storeId, referenceId, stable(payload)])).digest('hex');
+  }
+
+  private async findApprovalToken(context: UserContext, approvalId: unknown, action: string, storeId: string, referenceId: string, payload: JsonObject) {
+    const id = isUuid(approvalId) ? approvalId : null;
+    const approval = id ? await this.prisma.approval.findFirst({
+      where: {
+        id, organizationId: context.organizationId, storeId, action, referenceId,
+        requestedById: context.userId, status: 'APPROVED', consumedAt: null,
+        expiresAt: { gt: new Date() }, payloadHash: this.approvalPayloadHash(action, storeId, referenceId, payload),
+      },
+      select: { id: true, approvedById: true },
+    }) : null;
+    if (!approval?.approvedById || approval.approvedById === context.userId) {
+      throw new ForbiddenException({ code: 'REQUIRE_APPROVAL', action, message: 'A valid, approved authorization for these exact details is required' });
+    }
+    return { tokenId: approval.id, approvedById: approval.approvedById };
+  }
+
+  private async consumeApprovalToken(tx: Tx, context: UserContext, tokenId: string, action: string, storeId: string, referenceId: string, payload: JsonObject) {
+    const now = new Date();
+    const result = await tx.approval.updateMany({
+      where: {
+        id: tokenId, organizationId: context.organizationId, storeId, action, referenceId,
+        requestedById: context.userId, status: 'APPROVED', approvedById: { not: context.userId }, consumedAt: null,
+        expiresAt: { gt: now }, payloadHash: this.approvalPayloadHash(action, storeId, referenceId, payload),
+      },
+      data: { consumedAt: now },
+    });
+    if (!result.count) throw new ConflictException('The authorization has expired, changed or was already used');
+    await this.audit.record(context, 'approval.consumed', 'Approval', tokenId, { action, referenceId, storeId }, tx);
+  }
+
   /** Discounts above the configured threshold need an approved manager authorisation for SALE_DISCOUNT. */
-  private async assertDiscountAllowed(context: UserContext, storeId: string, discountCents: number, subtotalCents: number, approvalId: unknown, managerPin: unknown): Promise<string | null> {
+  private async assertDiscountAllowed(context: UserContext, storeId: string, discountCents: number, subtotalCents: number, referenceId: string, approvalId: unknown, managerPin: unknown): Promise<{ approvedById: string; tokenId?: string } | null> {
     const effect = this.authorization.permissionEffect(context, 'sale.discount', storeId);
     if (discountCents > 0 && (effect === null || effect === 'DENY')) throw new ForbiddenException('Missing permission: sale.discount');
     const policy = await this.prisma.approvalPolicy.findUnique({
@@ -2315,30 +3280,13 @@ export class PosService {
       message: 'This discount needs manager approval',
       thresholdPercent: num(policy?.thresholdPercent),
     });
-    if (typeof managerPin === 'string' && managerPin.length > 0) {
-      const manager = await this.prisma.user.findFirst({
-        where: {
-          organizationId: context.organizationId,
-          id: { not: context.userId },
-          status: 'ACTIVE',
-          pinHash: { not: null },
-          roles: { some: { role: { status: 'ACTIVE', permissions: { some: { permissionCode: 'approval.manage', effect: { in: ['ALLOW', 'REQUIRE_APPROVAL'] } } } }, OR: [{ scopeType: 'ORGANIZATION' }, { scopeType: 'STORE', storeId }] } },
-        },
-        select: { id: true, pinHash: true },
-      });
-      if (manager?.pinHash && verifyPassword(managerPin, manager.pinHash)) return manager.id;
-      throw new ForbiddenException({ code: 'REQUIRE_APPROVAL', action: 'SALE_DISCOUNT', message: 'Manager PIN is invalid' });
-    }
+    if (typeof managerPin === 'string' && managerPin.length > 0) return { approvedById: await this.verifyManagerPin(context, storeId, managerPin, 'SALE_DISCOUNT', 'This discount needs manager approval') };
     if (approvalId === undefined) throw requireApproval();
-    const approved = isUuid(approvalId)
-      ? await this.prisma.approval.findFirst({ where: { id: approvalId, organizationId: context.organizationId, action: 'SALE_DISCOUNT', status: 'APPROVED' }, select: { id: true } })
-      : null;
-    if (!approved) throw requireApproval();
-    return null;
+    return this.findApprovalToken(context, approvalId, 'SALE_DISCOUNT', storeId, referenceId, { discountCents, subtotalCents });
   }
 
   /** Refunds above the organisation's configured amount, or with a REQUIRE_APPROVAL role effect, need a manager. */
-  private async assertRefundAllowed(context: UserContext, storeId: string, totalCents: number, approvalId: unknown, managerPin: unknown): Promise<string | null> {
+  private async assertRefundAllowed(context: UserContext, storeId: string, totalCents: number, referenceId: string, approvalId: unknown, managerPin: unknown): Promise<{ approvedById: string; tokenId?: string } | null> {
     const effect = this.authorization.permissionEffect(context, 'refund.create', storeId);
     if (effect === null || effect === 'DENY') throw new ForbiddenException('Missing permission: refund.create');
     const settingsRow = await this.prisma.organizationSettings.findUnique({ where: { organizationId: context.organizationId }, select: { settings: true } });
@@ -2361,31 +3309,12 @@ export class PosService {
       message: 'This refund needs manager approval',
       thresholdCents: thresholdCents ?? undefined,
     });
-    if (typeof managerPin === 'string' && managerPin.length > 0) {
-      const manager = await this.prisma.user.findFirst({
-        where: {
-          organizationId: context.organizationId,
-          id: { not: context.userId },
-          status: 'ACTIVE',
-          pinHash: { not: null },
-          roles: { some: { role: { status: 'ACTIVE', permissions: { some: { permissionCode: 'approval.manage', effect: { in: ['ALLOW', 'REQUIRE_APPROVAL'] } } } }, OR: [{ scopeType: 'ORGANIZATION' }, { scopeType: 'STORE', storeId }] } },
-        },
-        select: { id: true, pinHash: true },
-      });
-      if (manager?.pinHash && verifyPassword(managerPin, manager.pinHash)) return manager.id;
-      throw new ForbiddenException({ code: 'REQUIRE_APPROVAL', action: 'RETURN_REFUND', message: 'Manager PIN is invalid' });
-    }
+    if (typeof managerPin === 'string' && managerPin.length > 0) return { approvedById: await this.verifyManagerPin(context, storeId, managerPin, 'RETURN_REFUND', 'This refund needs manager approval') };
     if (approvalId === undefined) throw requireApproval();
-    const approved = isUuid(approvalId)
-      ? await this.prisma.approval.findFirst({ where: { id: approvalId, organizationId: context.organizationId, action: 'RETURN_REFUND', status: 'APPROVED' }, select: { approvedById: true } })
-      : null;
-    if (!approved) throw requireApproval();
-    return approved.approvedById;
+    return this.findApprovalToken(context, approvalId, 'RETURN_REFUND', storeId, referenceId, { totalCents });
   }
 
-  private async cashRoundingUnit(organizationId: string): Promise<number> {
-    const row = await this.prisma.organizationSettings.findUnique({ where: { organizationId }, select: { settings: true } });
-    const settings = (row?.settings ?? {}) as JsonObject;
+  private cashRoundingFrom(settings: JsonObject): number {
     const value = Number(settings.cashRounding);
     return Number.isInteger(value) && value > 0 ? value : 0;
   }
@@ -2405,14 +3334,16 @@ export class PosService {
   }
 
   /** Sequential, gap-free numbering per store and document kind. Must run inside the document's transaction. */
+  /** Gap-free numbers per store, kind and financial year (April-March): TAX-2627-000001. Rolls back with the sale. */
   private async nextDocumentNumber(tx: Tx, organizationId: string, storeId: string, kind: 'TAX' | 'CN') {
+    const store = await tx.store.findUnique({ where: { id: storeId }, select: { timezone: true } });
+    const year = financialYearLabel(new Date(), store?.timezone ?? 'Asia/Kolkata');
     const sequence = await tx.documentSequence.upsert({
-      where: { storeId_kind: { storeId, kind } },
-      create: { organizationId, storeId, kind, lastValue: 1 },
+      where: { storeId_kind: { storeId, kind: `${kind}-${year}` } },
+      create: { organizationId, storeId, kind: `${kind}-${year}`, lastValue: 1 },
       update: { lastValue: { increment: 1 } },
     });
-    const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-    return `${kind}-${date}-${String(sequence.lastValue).padStart(4, '0')}`;
+    return `${kind}-${year}-${String(sequence.lastValue).padStart(6, '0')}`;
   }
 
   private async postInventory(
@@ -2441,6 +3372,11 @@ export class PosService {
     return tx.stockLocation.findFirst({ where: { organizationId, storeId }, orderBy: { createdAt: 'asc' }, select: { id: true } });
   }
 
+  /** What happens when a sale would take stock below zero in this store: BLOCK, WARN or ALLOW. The till uses it to decide whether an out-of-stock item can be added. */
+  async inventoryPolicyFor(organizationId: string, storeId: string) {
+    return this.negativeStockPolicy(this.prisma as unknown as Tx, organizationId, storeId);
+  }
+
   private async negativeStockPolicy(tx: Tx, organizationId: string, storeId: string): Promise<'BLOCK' | 'WARN' | 'ALLOW'> {
     const row = await tx.organizationSettings.findUnique({ where: { organizationId }, select: { settings: true } });
     const settings = (row?.settings ?? {}) as JsonObject;
@@ -2462,7 +3398,12 @@ export class PosService {
   }
 
   private async raiseAlert(tx: Tx, context: UserContext, type: string, severity: AlertSeverity, message: string, referenceId: string | null, storeId?: string) {
-    await tx.alert.create({ data: { organizationId: context.organizationId, type, severity, message, referenceId, storeId } });
+    const key = createHash('sha256').update(`${context.organizationId}|${storeId ?? ''}|${type}|${referenceId ?? message}`).digest('hex');
+    await tx.alert.upsert({
+      where: { activeDedupeKey: key },
+      create: { organizationId: context.organizationId, type, severity, message, referenceId, storeId, activeDedupeKey: key },
+      update: { occurrenceCount: { increment: 1 }, lastSeenAt: new Date(), severity, message },
+    });
   }
 
   private async assertVariantsInOrganization(organizationId: string, variantIds: string[]) {
@@ -2536,8 +3477,39 @@ export class PosService {
   private dayBoundary(value: string, field: string, endOfDay: boolean): Date {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new BadRequestException(`${field} must be a YYYY-MM-DD date`);
     const date = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
-    if (Number.isNaN(date.getTime())) throw new BadRequestException(`${field} must be a valid date`);
+    if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new BadRequestException(`${field} must be a valid date`);
     return date;
+  }
+
+  private localDate(value: Date, timeZone: string): string {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  }
+
+  private localDayBounds(dateText: string, timeZone: string): { from: Date; to: Date } {
+    const start = this.dayBoundary(dateText, 'businessDate', false);
+    const next = new Date(start.getTime() + 86_400_000);
+    const toDateText = next.toISOString().slice(0, 10);
+    const midnight = (date: string) => {
+      const [year, month, day] = date.split('-').map(Number);
+      const desired = Date.UTC(year!, month! - 1, day!);
+      let instant = desired;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant));
+        const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+        const representedAsUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+        instant = desired - (representedAsUtc - instant);
+      }
+      return new Date(instant);
+    };
+    return { from: midnight(dateText), to: midnight(toDateText) };
+  }
+
+  private async ensureStore(organizationId: string, storeId: string) {
+    const store = await this.prisma.store.findFirst({ where: { id: storeId, organizationId }, select: { id: true } });
+    if (!store) throw new NotFoundException('Store not found');
+    return store;
   }
 
   private optionalDate(value: unknown, field: string): Date | null {
@@ -2581,10 +3553,13 @@ export class PosService {
         taxCents: sale.taxCents,
         chargeCents: sale.chargeCents,
         charges: Array.isArray(sale.charges) ? sale.charges : [],
+        promotions: Array.isArray(sale.promotions) ? sale.promotions : [],
         roundingCents: sale.roundingCents,
         totalCents: sale.totalCents,
         notes: sale.notes,
         customerId: sale.customerId,
+        handledById: sale.handledById,
+        customFields: objectField(sale.customFields),
         createdAt: sale.createdAt,
         lines: sale.lines.map((line) => ({
           id: line.id,
@@ -2616,6 +3591,12 @@ export class PosService {
       minSubtotalCents: promotion.minSubtotalCents,
       usageLimit: promotion.usageLimit,
       usageCount: promotion.usageCount,
+      perCustomerLimit: promotion.perCustomerLimit,
+      scope: promotion.scope,
+      scopeId: promotion.scopeId,
+      autoApply: promotion.autoApply,
+      priority: promotion.priority,
+      stackable: promotion.stackable,
       startsAt: promotion.startsAt,
       endsAt: promotion.endsAt,
       status: promotion.status,

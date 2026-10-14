@@ -1,7 +1,7 @@
 "use client";
-/* Additional charges and store tax groups. Organisation-wide records are managed under Organisation → Catalogue;
-   each store adds its own on the store's "Tax & charges" page. The API checks the permission on every call. */
+/* Additional charges and store-owned tax group controls. The API checks store access on every call. */
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { FormSheet } from "@/components/form/dialogs";
 import { L, SheetFooter, rupeesToPaise, send, useRun } from "@/features/actions";
 import type { ChargeRow } from "@/features/types";
+import { currencyCode, formatMoney, toInput } from "@/lib/format";
 
 type TaxOption = { id: string; name: string; ratePercent: number };
 
-const describeValue = (charge: ChargeRow) => charge.kind === "FLAT" ? `₹${((charge.amountCents ?? 0) / 100).toFixed(2)}` : `${charge.ratePercent}%`;
+const describeValue = (charge: ChargeRow) => charge.kind === "FLAT" ? formatMoney(charge.amountCents ?? 0) : `${charge.ratePercent}%`;
 const describeApplies = (charge: ChargeRow) => charge.applies === "PER_ITEM" ? (charge.kind === "FLAT" ? "per item" : "on each item") : "per bill";
 
 export function ChargeForm({ storeId, taxGroups, charge, onDone }: { storeId?: string; taxGroups: TaxOption[]; charge?: ChargeRow; onDone: () => void }) {
@@ -21,7 +22,7 @@ export function ChargeForm({ storeId, taxGroups, charge, onDone }: { storeId?: s
   const [v, setV] = React.useState({
     name: charge?.name ?? "",
     kind: charge?.kind ?? "FLAT",
-    value: charge ? (charge.kind === "FLAT" ? ((charge.amountCents ?? 0) / 100).toFixed(2) : String(charge.ratePercent ?? 0)) : "",
+    value: charge ? (charge.kind === "FLAT" ? toInput(charge.amountCents ?? 0) : String(charge.ratePercent ?? 0)) : "",
     applies: charge?.applies ?? "PER_BILL",
     taxGroupId: charge?.taxGroupId ?? "",
   });
@@ -40,8 +41,8 @@ export function ChargeForm({ storeId, taxGroups, charge, onDone }: { storeId?: s
   }}>
     <L label="Name" hint="Shown on the bill and the invoice, e.g. Packaging or Service charge."><Input value={v.name} onChange={set("name")} /></L>
     <div className="grid gap-4 sm:grid-cols-2">
-      <L label="Type"><NativeSelect value={v.kind} onChange={set("kind")}><option value="FLAT">Fixed amount (₹)</option><option value="PERCENT">Percentage of the bill (%)</option></NativeSelect></L>
-      <L label={v.kind === "FLAT" ? "Amount (₹)" : "Percentage (%)"}><Input value={v.value} onChange={set("value")} inputMode="decimal" /></L>
+      <L label="Type"><NativeSelect value={v.kind} onChange={set("kind")}><option value="FLAT">Fixed amount ({currencyCode()})</option><option value="PERCENT">Percentage of the bill (%)</option></NativeSelect></L>
+      <L label={v.kind === "FLAT" ? `Amount (${currencyCode()})` : "Percentage (%)"}><Input value={v.value} onChange={set("value")} inputMode="decimal" /></L>
     </div>
     <L label="Applies" hint={v.kind === "FLAT" ? "Per bill is charged once; per item is charged for every unit sold." : "Percentages are taken on the bill value before GST."}><NativeSelect value={v.applies} onChange={set("applies")}><option value="PER_BILL">Once per bill</option><option value="PER_ITEM">For every item</option></NativeSelect></L>
     <L label="GST on this charge" hint="Optional."><NativeSelect value={v.taxGroupId} onChange={set("taxGroupId")}><option value="">No GST</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.ratePercent}%</option>)}</NativeSelect></L>
@@ -84,7 +85,7 @@ export function NewStoreTaxGroupSheet({ storeId }: { storeId: string }) {
   const { busy, run } = useRun();
   const [open, setOpen] = React.useState(false);
   const [v, setV] = React.useState({ name: "", ratePercent: "", hsnCode: "" });
-  return <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add tax group</Button>} title="Add a tax group for this store" description="Only this store can see and use it. Organisation-wide tax groups are already available.">
+  return <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add tax group</Button>} title="Add a tax group" description="This tax group and its product assignments belong to this store alone.">
     <form className="grid gap-4 pb-6" onSubmit={async (e) => {
       e.preventDefault();
       const rate = Number(v.ratePercent);
@@ -97,4 +98,50 @@ export function NewStoreTaxGroupSheet({ storeId }: { storeId: string }) {
       <SheetFooter busy={busy} label="Add tax group" />
     </form>
   </FormSheet>;
+}
+
+export type StoreTaxGroup = { id: string; name: string; code: string; hsnCode: string; ratePercent: number; includesTax: boolean; status: "ACTIVE" | "DISABLED" };
+export function StoreTaxGroupsList({ storeId, groups, canEdit }: { storeId: string; groups: StoreTaxGroup[]; canEdit: boolean }) {
+  const { busy, run } = useRun();
+  const [editing, setEditing] = React.useState<string | null>(null);
+  if (!groups.length) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">No tax groups yet. Add the rates this store uses, then assign each product below.</p>;
+  return <div className="divide-y rounded-md border bg-card">
+    {groups.map((group) => <div key={group.id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
+      <div className="min-w-0 flex-1"><p className="font-medium">{group.name} {group.status === "DISABLED" && <Badge tone="warning">Off</Badge>}</p><p className="text-xs text-muted-foreground">{group.ratePercent}% GST{group.hsnCode ? ` · HSN ${group.hsnCode}` : ""}{group.includesTax ? " · price includes tax" : ""}</p></div>
+      {canEdit && <div className="flex gap-2">
+        <FormSheet open={editing === group.id} onOpenChange={(open) => setEditing(open ? group.id : null)} trigger={<Button size="sm" variant="outline">Edit</Button>} title={`Edit ${group.name}`}>
+          <StoreTaxGroupEditor storeId={storeId} group={group} onDone={() => setEditing(null)} />
+        </FormSheet>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/tax-groups/${group.id}`, "PATCH", { storeId, status: group.status === "ACTIVE" ? "DISABLED" : "ACTIVE" }, storeId), group.status === "ACTIVE" ? "Tax group turned off" : "Tax group turned on")}>{group.status === "ACTIVE" ? "Turn off" : "Turn on"}</Button>
+      </div>}
+    </div>)}
+  </div>;
+}
+
+function StoreTaxGroupEditor({ storeId, group, onDone }: { storeId: string; group: StoreTaxGroup; onDone: () => void }) {
+  const { busy, run } = useRun();
+  const [value, setValue] = React.useState({ name: group.name, rate: String(group.ratePercent), hsnCode: group.hsnCode, includesTax: group.includesTax });
+  return <form className="grid gap-4 pb-6" onSubmit={async (event) => {
+    event.preventDefault();
+    const ratePercent = Number(value.rate);
+    if (value.name.trim().length < 2 || !Number.isFinite(ratePercent) || ratePercent < 0 || ratePercent > 100) { toast.error("Enter a name and a rate from 0% to 100%."); return; }
+    if (await run(() => send(`/pos/v1/tax-groups/${group.id}`, "PATCH", { storeId, name: value.name.trim(), ratePercent, hsnCode: value.hsnCode.trim(), includesTax: value.includesTax }, storeId), "Tax group updated")) onDone();
+  }}>
+    <L label="Name"><Input value={value.name} onChange={(event) => setValue((current) => ({ ...current, name: event.target.value }))} /></L>
+    <L label="GST rate (%)"><Input value={value.rate} onChange={(event) => setValue((current) => ({ ...current, rate: event.target.value }))} inputMode="decimal" /></L>
+    <L label="HSN / SAC" hint="Optional."><Input value={value.hsnCode} onChange={(event) => setValue((current) => ({ ...current, hsnCode: event.target.value }))} /></L>
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.includesTax} onChange={(event) => setValue((current) => ({ ...current, includesTax: event.target.checked }))} /> Product prices using this group include GST</label>
+    <SheetFooter busy={busy} label="Save tax group" />
+  </form>;
+}
+
+export function StoreTaxAssignmentTable({ storeId, items, groups, canEdit }: { storeId: string; items: { variantId: string; sku: string; name: string; storeTaxGroupId: string | null; taxGroupName: string | null; taxRatePercent: number }[]; groups: StoreTaxGroup[]; canEdit: boolean }) {
+  const { busy, run } = useRun();
+  const router = useRouter();
+  const activeGroups = groups.filter((group) => group.status === "ACTIVE");
+  const rows = items;
+  if (!rows.length) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">Assign organization catalog products to this store to configure their tax.</p>;
+  return <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[540px] text-left text-sm"><thead><tr className="border-b bg-muted/40"><th className="p-3">Product</th><th className="p-3">SKU</th><th className="p-3">Tax group</th></tr></thead><tbody>
+    {rows.map((item) => <tr className="border-b last:border-0" key={item.variantId}><td className="p-3 font-medium">{item.name}</td><td className="p-3 font-mono text-xs">{item.sku}</td><td className="p-3"><NativeSelect aria-label={`Tax group for ${item.name}`} className="min-w-48" disabled={!canEdit || busy} value={item.storeTaxGroupId ?? ""} onChange={async (event) => { const ok = await run(() => send("/pos/v1/store-products", "PATCH", { storeId, variantId: item.variantId, taxGroupId: event.target.value || null }, storeId), "Product tax assignment saved"); if (ok) router.refresh(); }}><option value="">No tax group assigned</option>{activeGroups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.ratePercent}%</option>)}</NativeSelect></td></tr>)}
+  </tbody></table></div>;
 }

@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
-/* POS design tokens. Warm paper surfaces, a near-black sidebar in BOTH themes, one deep-green brand accent,
+/* DeltCRM POS: paper-and-sage work surfaces, a quiet mint navigation rail, and deep green for active work.
    muted semantic status colours. Every component reads these tokens; do not hardcode colours in components.
    Density: --row-compact (back office) and --target-touch (POS, onboarding). */
 :root {
   color-scheme: light;
-  --background: oklch(0.967 0.004 95);
-  --foreground: oklch(0.2 0.006 250);
+  --background: oklch(0.975 0.008 150);
+  --foreground: oklch(0.23 0.018 164);
   --card: oklch(1 0 0);
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.42 0.075 172);
+  --primary: oklch(0.43 0.09 164);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.945 0.006 95);
-  --secondary-foreground: oklch(0.28 0.008 250);
-  --muted: oklch(0.945 0.006 95);
-  --muted-foreground: oklch(0.5 0.008 250);
-  --accent: oklch(0.94 0.025 172);
-  --accent-foreground: oklch(0.32 0.06 172);
-  --border: oklch(0.9 0.008 90);
-  --input: oklch(0.84 0.01 90);
-  --ring: oklch(0.5 0.09 172);
+  --secondary: oklch(0.95 0.009 150);
+  --secondary-foreground: oklch(0.3 0.018 164);
+  --muted: oklch(0.95 0.009 150);
+  --muted-foreground: oklch(0.49 0.022 164);
+  --accent: oklch(0.93 0.035 158);
+  --accent-foreground: oklch(0.31 0.07 164);
+  --border: oklch(0.9 0.014 155);
+  --input: oklch(0.85 0.016 155);
+  --ring: oklch(0.52 0.09 164);
   --success: oklch(0.45 0.1 150);
   --success-soft: oklch(0.945 0.035 150);
   --warning: oklch(0.48 0.1 75);
@@ -30,13 +30,13 @@
   --danger-soft: oklch(0.95 0.03 30);
   --info: oklch(0.42 0.09 255);
   --info-soft: oklch(0.94 0.02 255);
-  --sidebar: oklch(0.15 0.004 90);
-  --sidebar-foreground: oklch(0.88 0.004 90);
-  --sidebar-muted: oklch(0.64 0.006 90);
-  --sidebar-accent: oklch(0.24 0.005 90);
-  --sidebar-border: oklch(0.27 0.005 90);
-  --sidebar-primary: oklch(0.74 0.13 165);
-  --radius: 0.4rem;
+  --sidebar: oklch(0.962 0.018 153);
+  --sidebar-foreground: oklch(0.26 0.022 164);
+  --sidebar-muted: oklch(0.49 0.022 164);
+  --sidebar-accent: oklch(0.91 0.042 155);
+  --sidebar-border: oklch(0.89 0.02 153);
+  --sidebar-primary: var(--primary);
+  --radius: 0.35rem;
   --row-compact: 2rem;
   --target-touch: 2.75rem;
 }
@@ -66,9 +66,12 @@
   --danger-soft: oklch(0.31 0.06 28);
   --info: oklch(0.76 0.1 250);
   --info-soft: oklch(0.3 0.04 250);
-  --sidebar: oklch(0.12 0.003 90);
-  --sidebar-accent: oklch(0.21 0.005 90);
-  --sidebar-border: oklch(0.24 0.005 90);
+  --sidebar: oklch(0.2 0.018 164);
+  --sidebar-foreground: oklch(0.91 0.012 150);
+  --sidebar-muted: oklch(0.72 0.016 150);
+  --sidebar-accent: oklch(0.29 0.026 164);
+  --sidebar-border: oklch(0.33 0.025 164);
+  --sidebar-primary: oklch(0.76 0.12 158);
 }
 
 @theme inline {
@@ -122,6 +125,7 @@ body {
   }
   h1, h2, h3 { letter-spacing: -0.012em; }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 }
 
 @media print {
@@ -132,7 +136,7 @@ body {
 
 .tabular { font-variant-numeric: tabular-nums; }
 
-/* Slim scrollbar that suits the always-dark sidebar. */
+/* Quiet scrollbars in navigation rails and long operational lists. */
 .sidebar-scroll { scrollbar-width: thin; scrollbar-color: var(--sidebar-border) transparent; }
 .sidebar-scroll::-webkit-scrollbar { width: 6px; }
 .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--sidebar-border); border-radius: 9999px; }
