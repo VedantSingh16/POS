@@ -32,19 +32,6 @@ export function groupNavItems(items: NavItem[]): NavGroup[] {
   return groups;
 }
 
-/** Grouped navigation starts open; this set tracks only groups the user collapsed. */
-export function isNavGroupOpen(groupId: string, collapsedGroupIds: ReadonlySet<string>) {
-  return !collapsedGroupIds.has(groupId);
-}
-
-/** Toggle one navigation group while preserving the user's state for the others. */
-export function toggleNavGroup(groupId: string, collapsedGroupIds: ReadonlySet<string>) {
-  const next = new Set(collapsedGroupIds);
-  if (next.has(groupId)) next.delete(groupId);
-  else next.add(groupId);
-  return next;
-}
-
 /**
  * Two separate areas, never shown together:
  *  - org   → organisation administration (stores, people, catalogue, organisation-wide reports)

@@ -3,12 +3,12 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Command } from "cmdk";
-import { ArrowLeft, Bell, Building2, Check, ChevronDown, ChevronsUpDown, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Store as StoreIcon, Sun } from "lucide-react";
+import { ArrowLeft, Bell, Building2, Check, ChevronsUpDown, Menu, Moon, Search, Store as StoreIcon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { groupNavItems, isNavGroupOpen, isNavItemActive, navMode, resolveHref, toggleNavGroup, visibleNav, type NavMode } from "@/lib/nav";
+import { groupNavItems, isNavItemActive, navMode, resolveHref, visibleNav, type NavMode } from "@/lib/nav";
 import { hasOrgScope, isOrganisationReadOnlyStoreView } from "@/lib/permissions";
 import { useMe } from "@/components/app/session-context";
 import { IdleLock, UserMenu } from "@/components/app/user-menu";
@@ -26,14 +26,11 @@ function activeStoreId(pathname: string, fallback: string) {
 }
 
 /** Tells the user, in the sidebar itself, which area they are in and how to leave it. */
-function ContextCard({ collapsed }: { collapsed: boolean }) {
+function ContextCard() {
   const { stores, storeId, orgName, mode } = useShell();
   const me = useMe();
   const store = stores.find((s) => s.id === storeId);
   const canLeaveToOrg = hasOrgScope(me);
-  if (collapsed) {
-    return <div className="mx-2 mt-3 grid h-10 place-items-center rounded-xl border border-sidebar-border bg-sidebar-accent/70 text-sidebar-foreground" title={mode === "org" ? `Organisation: ${orgName}` : `Store: ${store?.name ?? ""}`}>{mode === "org" ? <Building2 className="size-4" /> : <StoreIcon className="size-4" />}</div>;
-  }
   return (
     <div className="mx-3 mt-3 rounded-xl border border-sidebar-border-soft bg-sidebar-surface p-3.5 text-sidebar-foreground">
       <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted">{mode === "org" ? "Organisation" : "Store workspace"}</p>
@@ -49,17 +46,15 @@ function ContextCard({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; onNavigate?: () => void; onExpand?: () => void }) {
+function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { storeId, mode } = useShell();
   const me = useMe();
   const sections = visibleNav(me, storeId, mode);
   const groups = sections.flatMap((section) => groupNavItems(section.items).map((group) => ({ ...group, id: `${section.id}-${group.id}` })));
-  const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<Set<string>>(() => new Set());
-
   return (
     <nav aria-label={mode === "org" ? "Organisation navigation" : "Store navigation"} className="sidebar-scroll flex-1 overflow-y-auto px-2.5 py-4">
-      {sections.length === 0 && !collapsed && <p className="px-2 text-sm text-sidebar-muted">No pages are available to your account in this area.</p>}
+      {sections.length === 0 && <p className="px-2 text-sm text-sidebar-muted">No pages are available to your account in this area.</p>}
       <ul className="space-y-1">
         {groups.map((group) => {
           const active = group.items.some((item) => isNavItemActive(pathname, item, storeId));
@@ -68,24 +63,14 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
           if (!group.title) {
             const href = resolveHref(firstItem.href, storeId);
             return <li key={group.id}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined}
-              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[17px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary", collapsed && "justify-center px-0")}>
-              <firstItem.icon className="size-5 shrink-0" />{!collapsed && <span className="truncate">{firstItem.label}</span>}{collapsed && <span className="sr-only">{firstItem.label}</span>}
+              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[17px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
+              <firstItem.icon className="size-5 shrink-0" /><span className="truncate">{firstItem.label}</span>
             </Link></li>;
           }
 
-          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={() => { setCollapsedGroupIds((current) => { const next = new Set(current); next.delete(group.id); return next; }); onExpand?.(); }}
-            className={cn("relative flex h-12 w-full items-center justify-center rounded-lg text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent text-sidebar-foreground")}>
-            <firstItem.icon className="size-5" />
-          </button></li>;
-
-          const open = isNavGroupOpen(group.id, collapsedGroupIds);
-          const listId = `nav-${group.id.replace(/[^a-z0-9-]/gi, "-")}`;
-          return <li key={group.id} className="pt-1">
-            <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setCollapsedGroupIds((current) => toggleNavGroup(group.id, current))}
-              className={cn("flex min-h-11 w-full items-center justify-between rounded-lg px-2.5 text-left text-sm font-semibold uppercase tracking-[0.1em] text-sidebar-muted transition-colors hover:bg-sidebar-overlay hover:text-sidebar-foreground", active && "text-sidebar-primary")}>
-              <span className="truncate">{group.title}</span><ChevronDown aria-hidden className={cn("size-4 shrink-0 transition-transform", !open && "-rotate-90")} />
-            </button>
-            <ul id={listId} aria-hidden={!open} hidden={!open} className={cn("ml-2 grid gap-1 border-l border-sidebar-border pb-1 pl-2 pt-1", !open && "hidden")}>
+          return <li key={group.id} className="pt-2">
+            <h2 className="flex min-h-10 items-center px-2.5 text-sm font-semibold uppercase tracking-[0.1em] text-sidebar-muted">{group.title}</h2>
+            <ul className="ml-1 grid gap-1 pb-2 pl-1 pt-1">
               {group.items.map((item) => {
                 const href = resolveHref(item.href, storeId);
                 const itemActive = isNavItemActive(pathname, item, storeId);
@@ -102,11 +87,11 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
   );
 }
 
-function Brand({ collapsed, home }: { collapsed: boolean; home: string }) {
+function Brand({ home }: { home: string }) {
   return (
-    <Link href={home} aria-label="DeltCRM POS home" className={cn("flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground", collapsed && "justify-center px-0")}>
+    <Link href={home} aria-label="DeltCRM POS home" className="flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
       <BrandMark size="compact" className="bg-sidebar-accent text-sidebar-primary ring-sidebar-border" />
-      {!collapsed && <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight">DeltCRM</span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-overlay px-2 py-1 text-[11px] font-bold leading-none tracking-[0.08em] text-sidebar-primary">POS</span></span>}
+      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight">DeltCRM</span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-overlay px-2 py-1 text-[11px] font-bold leading-none tracking-[0.08em] text-sidebar-primary">POS</span></span>
     </Link>
   );
 }
@@ -245,7 +230,6 @@ function StoreContextBanner() {
 export function AppShell({ stores, orgName, defaultStoreId, home, children }: { stores: ShellStore[]; orgName: string; defaultStoreId: string; home: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const me = useMe();
-  const [collapsed, setCollapsed] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const storeId = activeStoreId(pathname, defaultStoreId);
@@ -262,21 +246,17 @@ export function AppShell({ stores, orgName, defaultStoreId, home, children }: { 
     <ShellContext.Provider value={{ stores, storeId, orgName, mode, setPaletteOpen }}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2">Skip to content</a>
       <div className="flex min-h-dvh">
-        <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex", collapsed ? "w-[4.5rem]" : "w-[17rem]")}>
-          <Brand collapsed={collapsed} home={home} />
-          <ContextCard collapsed={collapsed} />
-          <SidebarNav collapsed={collapsed} onExpand={() => setCollapsed(false)} />
-          <button onClick={() => setCollapsed((v) => !v)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="m-3 flex h-11 items-center justify-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-overlay hover:text-sidebar-foreground">
-            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-          </button>
+        <aside className="sticky top-0 hidden h-dvh w-[17rem] shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+          <Brand home={home} />
+          <ContextCard />
+          <SidebarNav />
         </aside>
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent side="left" className="w-[min(20rem,90vw)] border-sidebar-border bg-sidebar p-0">
             <SheetTitle className="sr-only">Navigation</SheetTitle>
-            <Brand collapsed={false} home={home} />
-            <ContextCard collapsed={false} />
-            <SidebarNav collapsed={false} onNavigate={() => setMobileOpen(false)} />
+            <Brand home={home} />
+            <ContextCard />
+            <SidebarNav onNavigate={() => setMobileOpen(false)} />
           </SheetContent>
         </Sheet>
         <IdleLock />
