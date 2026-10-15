@@ -63,7 +63,7 @@ describe("permissions", () => {
     expect(labels(cashier, A)).not.toEqual(expect.arrayContaining(["Store overview", "Alerts"]));
     expect(labels(cashier, A)).not.toEqual(expect.arrayContaining(["Team members", "Roles & access", "Reports & analytics", "Audit log", "Inventory"]));
     expect(labels(cashier, B)).toEqual([]);
-    expect(labels(admin, A)).toEqual(expect.arrayContaining(["Overview", "Team members", "Product catalogue", "Sales", "Returns"]));
+    expect(labels(admin, A)).toEqual(expect.arrayContaining(["Overview", "Team members", "Product catalogue", "Catalogue setup", "Sales", "Returns"]));
     expect(labels(manager, A)).toEqual(expect.arrayContaining(["Store reports"]));
     expect(labels(manager, A)).toEqual(expect.arrayContaining(["Products", "Staff", "Store settings", "Billing & checkout"]));
     expect(labels(manager, A)).toContain("Brands");
@@ -86,20 +86,27 @@ describe("permissions", () => {
     const orgGroups = groupNavItems(NAV.find((section) => section.id === "org")!.items);
     const storeGroups = groupNavItems(NAV.find((section) => section.id === "store")!.items);
     expect(orgGroups.map((group) => group.title ?? group.items[0]?.label)).toEqual([
-      "Overview", "Locations & stock", "People & access", "Catalogue", "Customers & reports", "Administration",
+      "Overview", "Locations & stock", "People & access", "Catalogue", "Customers & insights", "Administration",
     ]);
     expect(storeGroups.map((group) => group.title ?? group.items[0]?.label)).toEqual([
-      "Store overview", "Selling", "Stock", "Tills & control", "Team & reports", "Settings",
+      "Store overview", "Sales & reports", "Stock", "Store operations", "Settings",
     ]);
-    expect(storeGroups.find((group) => group.title === "Selling")?.items.map((item) => item.label)).toEqual([
-      "Point of sale", "Sales", "Returns", "Offers & price rules",
+    expect(storeGroups.find((group) => group.title === "Sales & reports")?.items.map((item) => item.label)).toEqual([
+      "Point of sale", "Sales", "Returns", "Offers & price rules", "Store reports",
+    ]);
+    expect(storeGroups.find((group) => group.title === "Store operations")?.items.map((item) => item.label)).toEqual([
+      "Registers", "Approvals", "Alerts", "Staff",
     ]);
     expect(groupNavItems([NAV[0]!.items[0]!, NAV[1]!.items[0]!])).toHaveLength(2);
   });
   it("keeps catalogue and settings groups active on their nested routes", () => {
     const orgItems = NAV.find((section) => section.id === "org")!.items;
     const storeItems = NAV.find((section) => section.id === "store")!.items;
-    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/import", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(false);
+    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Catalogue setup")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/types", orgItems.find((item) => item.label === "Catalogue setup")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/fields", orgItems.find((item) => item.label === "Catalogue setup")!, A)).toBe(true);
     expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(false);
     expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Categories")!, A)).toBe(true);
     expect(isNavItemActive("/org/settings/tax", orgItems.find((item) => item.label === "Organisation settings")!, A)).toBe(true);

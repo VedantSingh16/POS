@@ -43,7 +43,7 @@ export default async function Onboarding({ params }: PageProps<"/onboarding/[ste
         <AuthBrand />
         <div className="mt-16">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-auth-primary">Workspace setup</p>
-          <h2 className="mt-3 break-words font-display text-[22px] font-bold leading-tight tracking-[-0.045em] text-auth-ink">{organization.name}</h2>
+          <h2 className="mt-3 break-words font-sans text-[22px] font-semibold leading-tight tracking-tight text-auth-ink">{organization.name}</h2>
           <p className="mt-8 text-xs font-bold uppercase tracking-[0.18em] text-auth-muted">Setup roadmap</p>
           <ol aria-label="Setup roadmap" className="relative mt-5 grid gap-5 before:absolute before:inset-y-[18px] before:left-[17px] before:w-px before:bg-auth-border before:content-['']">
             {STEPS.map((item, position) => {

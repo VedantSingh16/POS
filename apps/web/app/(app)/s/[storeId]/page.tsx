@@ -42,7 +42,7 @@ export default async function StoreDashboard({ params }: PageProps<"/s/[storeId]
     <>
       <PageHeader title="Store overview" description={`Today at ${store?.name ?? "this store"}. Sales and operational status for this store.`} crumbs={[{ label: "Stores" }, { label: store?.name ?? "" }]}
         actions={canSell ? <Link href={`/s/${storeId}/pos`} className={buttonVariants()}><ShoppingCart /> Open POS</Link> : undefined} />
-      <div className="mb-6 grid grid-cols-2 rounded-2xl border border-border/80 bg-card px-4 py-4 shadow-[0_1px_3px_rgb(26_35_32/5%)] sm:grid-cols-4 sm:px-5">
+      <div className="mb-6 grid grid-cols-2 rounded-xl border border-border bg-card px-4 py-4 sm:grid-cols-4 sm:px-5">
         <KpiTile label="Sales today" value={canViewSales ? <Money minor={gross} /> : "—"} hint={canViewSales ? "Gross sales" : "No access"} icon={Receipt} />
         <KpiTile label="Transactions" value={canViewSales ? today.length : "—"} hint={canViewSales ? "Today" : "No access"} icon={ShoppingCart} />
         <KpiTile label="Average basket" value={canViewSales ? <Money minor={today.length ? Math.round(gross / today.length) : 0} /> : "—"} hint={canViewSales ? "Today" : "No access"} icon={ShoppingCart} />

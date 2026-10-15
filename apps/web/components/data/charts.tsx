@@ -8,7 +8,7 @@ const axisTick = (minor: number) => { const major = minor / minorPerUnit(); retu
 
 const COLORS = ["var(--primary)", "var(--success)", "var(--warning)", "var(--info)"];
 function EmptyChart({ children }: { children: React.ReactNode }) {
-  return <div className="grid h-48 place-items-center px-6 text-center text-sm text-muted-foreground">{children}</div>;
+  return <div className="grid h-28 place-items-center px-6 text-center text-sm text-muted-foreground">{children}</div>;
 }
 const axis = { stroke: "var(--muted-foreground)", fontSize: 12, tickLine: false, axisLine: false } as const;
 

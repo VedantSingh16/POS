@@ -236,13 +236,69 @@ export function ApprovalsTable({ data, storeId }: { data: Appr[]; storeId: strin
 }
 
 type Aud = M.AuditRow;
+const auditActionLabels: Record<string, string> = {
+  "auth.login": "Signed in",
+  "auth.lockout": "Account locked",
+  "auth.unlock": "Account unlocked",
+  "organization.registered": "Created organisation",
+  "organization.updated": "Updated organisation",
+  "organization.settings.updated": "Updated organisation settings",
+  "onboarding.progressed": "Updated setup progress",
+  "onboarding.required-completed": "Completed initial setup",
+  "onboarding.optional-skipped": "Skipped optional setup",
+  "onboarding.completed": "Finished setup",
+  "store.created": "Created store",
+  "store.updated": "Updated store",
+  "sale.completed": "Completed sale",
+  "return.completed": "Completed return",
+  "inventory.adjusted": "Adjusted inventory",
+  "catalog.imported": "Imported catalogue",
+};
+
+function splitCamelCase(value: string) {
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+}
+
+function readableAuditAction(action: string) {
+  return auditActionLabels[action] ?? action
+    .split(/[.-]/)
+    .map(splitCamelCase)
+    .join(" ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readableAuditKey(key: string) {
+  return splitCamelCase(key)
+    .replace(/\bid\b/gi, "ID")
+    .replace(/\b([a-z])/g, (letter) => letter.toUpperCase());
+}
+
+function AuditDetail({ value }: { value: string }) {
+  if (!value) return <span className="text-muted-foreground">—</span>;
+  const fields = value.split(" · ").map((item) => {
+    const separator = item.indexOf(": ");
+    return separator < 0 ? ["Detail", item] : [readableAuditKey(item.slice(0, separator)), item.slice(separator + 2)];
+  });
+  return (
+    <details className="min-w-32 max-w-[28rem]">
+      <summary className="min-h-9 cursor-pointer content-center text-sm font-semibold text-primary marker:text-muted-foreground hover:underline">View details</summary>
+      <dl className="mt-2 grid gap-x-4 gap-y-1.5 rounded-lg bg-muted/70 p-3 text-sm sm:grid-cols-[minmax(6rem,auto)_minmax(0,1fr)]">
+        {fields.map(([label, detail], index) => <div key={`${label}-${index}`} className="contents">
+          <dt className="font-medium text-muted-foreground">{label}</dt>
+          <dd className="min-w-0 break-words text-foreground">{detail}</dd>
+        </div>)}
+      </dl>
+    </details>
+  );
+}
+
 export function AuditTable({ data }: { data: Aud[] }) {
   const cols: Row<Aud> = [
     { accessorKey: "at", header: "When", cell: (c) => when(c.getValue() as string) },
     { accessorKey: "actor", header: "Actor" },
-    { accessorKey: "action", header: "Action", cell: (c) => mono(c.getValue() as string) },
-    { accessorKey: "entity", header: "Entity" },
-    { accessorKey: "detail", header: "Detail" },
+    { accessorKey: "action", header: "Activity", cell: (c) => <span className="font-medium">{readableAuditAction(c.getValue() as string)}</span> },
+    { accessorKey: "entity", header: "Record", cell: (c) => <span className="whitespace-nowrap text-muted-foreground">{c.getValue() as string}</span> },
+    { accessorKey: "detail", header: "Details", cell: (c) => <AuditDetail value={c.getValue() as string} /> },
   ];
   return <DataTable columns={cols} data={data} searchPlaceholder="Search audit log…" />;
 }

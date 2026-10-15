@@ -47,17 +47,17 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
   const total = table.getFilteredRowModel().rows.length;
 
   return (
-    <div className="rounded-md border bg-card">
-      <div className="flex flex-wrap items-center gap-2 border-b p-2.5 sm:p-3">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-border p-3 sm:p-4">
         <div className="relative min-w-48 flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
           <Input aria-label="Search table" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={searchPlaceholder} className="pl-8!" />
         </div>
         {toolbar}
         <div className="ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm"><Columns3 /> Columns</Button>
+          <Button variant="outline" size="sm"><Columns3 /> Columns</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {table.getAllLeafColumns().filter((c) => c.getCanHide() && !(typeof c.columnDef.header === "string" && c.columnDef.header === "")).map((c) => (
@@ -108,14 +108,14 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
       )}
       {!loading && !error && rows.length === 0 && <EmptyState title={filter ? "No matches" : emptyTitle} description={filter ? "Try a different search term." : emptyDescription} />}
 
-      <div className="flex items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
+      {total > 0 && <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground">
         <span className="tabular">{total} {total === 1 ? "row" : "rows"}</span>
-        <div className="flex items-center gap-1">
-          <span className="tabular mr-2">Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}</span>
+        {table.getPageCount() > 1 && <div className="flex items-center gap-2">
+          <span className="tabular mr-1">Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>
           <Button variant="outline" size="icon-sm" aria-label="Previous page" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}><ChevronLeft /></Button>
           <Button variant="outline" size="icon-sm" aria-label="Next page" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}><ChevronRight /></Button>
-        </div>
-      </div>
+        </div>}
+      </div>}
     </div>
   );
 }

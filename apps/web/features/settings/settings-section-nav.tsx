@@ -11,7 +11,7 @@ export function SettingsSectionNav({ items }: { items: SettingsSectionLink[] }) 
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+    <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:rounded-xl lg:border lg:border-border lg:bg-card lg:p-2 lg:pb-2">
       {items.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
@@ -20,8 +20,8 @@ export function SettingsSectionNav({ items }: { items: SettingsSectionLink[] }) 
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "shrink-0 rounded-sm border-l-2 border-transparent px-3 py-2 text-sm text-muted-foreground hover:bg-muted/70 hover:text-foreground lg:rounded-r-sm",
-              active && "border-l-primary bg-accent/70 font-semibold text-accent-foreground",
+              "flex min-h-11 shrink-0 items-center rounded-lg border-l-2 border-transparent px-3.5 py-2.5 text-base font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground",
+              active && "border-l-primary bg-accent font-semibold text-accent-foreground",
             )}
           >
             {item.label}
