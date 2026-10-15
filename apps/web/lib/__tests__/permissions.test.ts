@@ -100,6 +100,8 @@ describe("permissions", () => {
     const orgItems = NAV.find((section) => section.id === "org")!.items;
     const storeItems = NAV.find((section) => section.id === "store")!.items;
     expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(false);
+    expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Categories")!, A)).toBe(true);
     expect(isNavItemActive("/org/settings/tax", orgItems.find((item) => item.label === "Organisation settings")!, A)).toBe(true);
     expect(isNavItemActive(`/s/${A}/brands`, storeItems.find((item) => item.label === "Brands")!, A)).toBe(true);
     expect(isNavItemActive(`/s/${A}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(true);

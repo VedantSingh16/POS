@@ -48,7 +48,7 @@ export const NAV: NavSection[] = [
       { label: "Distributions", href: "/org/distributions", icon: ArrowLeftRight, permission: "catalog.distribute", group: "Locations & stock", keywords: ["push stock", "distribute", "allocation"] },
       { label: "Team members", href: "/org/users", icon: Users, permission: "users.view", group: "People & access", keywords: ["users", "staff", "managers"] },
       { label: "Roles & access", href: "/org/roles", icon: ShieldCheck, permission: "roles.view", group: "People & access", keywords: ["permissions"] },
-      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items"], activePaths: ["/org/catalog"] },
+      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items"], activePaths: ["/org/catalog/brands", "/org/catalog/import", "/org/catalog/units"] },
       { label: "Categories", href: "/org/catalog/categories", icon: FolderTree, permission: "catalog.view", group: "Catalogue" },
       { label: "Product types", href: "/org/catalog/types", icon: FolderTree, permission: "catalog.manage", group: "Catalogue", keywords: ["version", "setup"] },
       { label: "Product fields", href: "/org/catalog/fields", icon: FolderTree, permission: "org.settings.manage", group: "Catalogue", keywords: ["attributes", "schema"] },
