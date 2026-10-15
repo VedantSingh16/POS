@@ -47,6 +47,7 @@
   --sidebar-border: #e3ddd3;
   --sidebar-primary: var(--primary);
   --radius: 0.65rem;
+  --surface-shadow: 0 1px 3px rgb(17 26 36 / 5%);
   --row-compact: 2rem;
   --target-touch: 2.75rem;
 }
@@ -82,6 +83,7 @@
   --sidebar-accent: oklch(0.29 0.026 164);
   --sidebar-border: oklch(0.33 0.025 164);
   --sidebar-primary: oklch(0.76 0.12 158);
+  --surface-shadow: 0 1px 3px rgb(0 0 0 / 20%);
 }
 
 @theme inline {
@@ -95,6 +97,7 @@
   --color-auth-primary: var(--auth-primary);
   --color-auth-primary-hover: var(--auth-primary-hover);
   --color-auth-on-primary: var(--auth-on-primary);
+  --shadow-surface: var(--surface-shadow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

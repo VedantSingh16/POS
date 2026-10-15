@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { groupNavItems, navMode, resolveHref, visibleNav, type NavMode } from "@/lib/nav";
+import { groupNavItems, isNavItemActive, navMode, resolveHref, visibleNav, type NavMode } from "@/lib/nav";
 import { hasOrgScope, isOrganisationReadOnlyStoreView } from "@/lib/permissions";
 import { useMe } from "@/components/app/session-context";
 import { IdleLock, UserMenu } from "@/components/app/user-menu";
@@ -23,11 +23,6 @@ const useShell = () => { const c = React.useContext(ShellContext); if (!c) throw
 function activeStoreId(pathname: string, fallback: string) {
   const m = pathname.match(/^\/s\/([^/]+)/);
   return m ? m[1] : fallback;
-}
-
-function isActive(pathname: string, href: string) {
-  if (href === "/org" || /^\/s\/[^/]+$/.test(href)) return pathname === href;
-  return pathname === href || (href.split("/").length > 2 && pathname.startsWith(href + "/"));
 }
 
 /** Tells the user, in the sidebar itself, which area they are in and how to leave it. */
@@ -60,7 +55,7 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
   const me = useMe();
   const sections = visibleNav(me, storeId, mode);
   const groups = sections.flatMap((section) => groupNavItems(section.items).map((group) => ({ ...group, id: `${section.id}-${group.id}` })));
-  const activeGroup = groups.find((group) => group.title && group.items.some((item) => isActive(pathname, resolveHref(item.href, storeId))));
+  const activeGroup = groups.find((group) => group.title && group.items.some((item) => isNavItemActive(pathname, item, storeId)));
   const activeGroupId = activeGroup?.id ?? null;
   const [manualGroup, setManualGroup] = React.useState<{ pathname: string; id: string | null } | null>(null);
   const openGroupId = manualGroup?.pathname === pathname ? manualGroup.id : activeGroupId;
@@ -70,7 +65,7 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
       {sections.length === 0 && !collapsed && <p className="px-2 text-xs text-sidebar-muted">No pages are available to your account in this area.</p>}
       <ul className="space-y-1">
         {groups.map((group) => {
-          const active = group.items.some((item) => isActive(pathname, resolveHref(item.href, storeId)));
+          const active = group.items.some((item) => isNavItemActive(pathname, item, storeId));
           const firstItem = group.items[0];
           if (!firstItem) return null;
           if (!group.title) {
@@ -81,7 +76,7 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
             </Link></li>;
           }
 
-          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={onExpand}
+          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={() => { setManualGroup({ pathname, id: group.id }); onExpand?.(); }}
             className={cn("relative flex h-10 w-full items-center justify-center rounded-xl text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", active && "bg-sidebar-accent text-sidebar-primary")}>
             <firstItem.icon className="size-[18px]" />
           </button></li>;
@@ -96,7 +91,7 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
             <ul id={listId} aria-hidden={!open} hidden={!open} className={cn("grid gap-0.5 pb-1 pt-1", !open && "hidden")}>
               {group.items.map((item) => {
                 const href = resolveHref(item.href, storeId);
-                const itemActive = isActive(pathname, href);
+                const itemActive = isNavItemActive(pathname, item, storeId);
                 return <li key={item.href}><Link href={href} onClick={onNavigate} aria-current={itemActive ? "page" : undefined}
                   className={cn("relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground", itemActive && "bg-sidebar-accent font-semibold text-sidebar-primary before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
                   <item.icon className="size-[18px] shrink-0" /><span className="truncate">{item.label}</span>

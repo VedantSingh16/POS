@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canAccessStore, hasOrgScope, hasPermission, isOrganisationReadOnlyStoreView, landingPath, safeNext, type Me } from "../permissions";
-import { groupNavItems, NAV, navMode, visibleNav } from "../nav";
+import { groupNavItems, isNavItemActive, NAV, navMode, visibleNav } from "../nav";
 
 const A = "store-a";
 const B = "store-b";
@@ -66,6 +66,7 @@ describe("permissions", () => {
     expect(labels(admin, A)).toEqual(expect.arrayContaining(["Overview", "Team members", "Product catalogue", "Sales", "Returns"]));
     expect(labels(manager, A)).toEqual(expect.arrayContaining(["Store reports"]));
     expect(labels(manager, A)).toEqual(expect.arrayContaining(["Products", "Staff", "Store settings", "Billing & checkout"]));
+    expect(labels(manager, A)).toContain("Brands");
     expect(labels(manager, A)).not.toEqual(expect.arrayContaining(["Team members", "Roles & access", "Stores", "Organisation settings"]));
     const settingsAdmin = { ...admin, permissions: { ...admin.permissions, organization: [...admin.permissions.organization, "org.settings.manage"] } };
     expect(labels(settingsAdmin, A)).toEqual(expect.arrayContaining(["Organisation settings", "Billing & checkout"]));
@@ -94,6 +95,15 @@ describe("permissions", () => {
       "Point of sale", "Sales", "Returns", "Offers & price rules",
     ]);
     expect(groupNavItems([NAV[0]!.items[0]!, NAV[1]!.items[0]!])).toHaveLength(2);
+  });
+  it("keeps catalogue and settings groups active on their nested routes", () => {
+    const orgItems = NAV.find((section) => section.id === "org")!.items;
+    const storeItems = NAV.find((section) => section.id === "store")!.items;
+    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/settings/tax", orgItems.find((item) => item.label === "Organisation settings")!, A)).toBe(true);
+    expect(isNavItemActive(`/s/${A}/brands`, storeItems.find((item) => item.label === "Brands")!, A)).toBe(true);
+    expect(isNavItemActive(`/s/${A}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(true);
+    expect(isNavItemActive(`/s/${B}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(false);
   });
   it("the URL decides the context", () => {
     expect(navMode("/org")).toBe("org");

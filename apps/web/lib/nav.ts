@@ -1,7 +1,7 @@
 import { hasOrgScope, hasPermission, type Me } from "@/lib/permissions";
 import {
   LayoutDashboard, Users, ShieldCheck, Store, Package, FolderTree, Percent, UserRound, BarChart3, Settings,
-  ScrollText, ArrowLeftRight, CircleDollarSign, Receipt, Undo2, Boxes, Landmark, CheckCheck, Bell, ShoppingCart, type LucideIcon,
+  ScrollText, ArrowLeftRight, CircleDollarSign, Receipt, Undo2, Boxes, Landmark, CheckCheck, Bell, ShoppingCart, Tags, type LucideIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -12,6 +12,8 @@ export type NavItem = {
   /** Permission code that gates visibility. The API enforces the same rule on every call. */
   permission?: string;
   keywords?: string[];
+  /** Additional routes whose active state belongs to this navigation item. */
+  activePaths?: string[];
   /** Collapsible area in the sidebar; related destinations stay together. */
   group?: string;
 };
@@ -46,13 +48,13 @@ export const NAV: NavSection[] = [
       { label: "Distributions", href: "/org/distributions", icon: ArrowLeftRight, permission: "catalog.distribute", group: "Locations & stock", keywords: ["push stock", "distribute", "allocation"] },
       { label: "Team members", href: "/org/users", icon: Users, permission: "users.view", group: "People & access", keywords: ["users", "staff", "managers"] },
       { label: "Roles & access", href: "/org/roles", icon: ShieldCheck, permission: "roles.view", group: "People & access", keywords: ["permissions"] },
-      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items"] },
+      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items"], activePaths: ["/org/catalog"] },
       { label: "Categories", href: "/org/catalog/categories", icon: FolderTree, permission: "catalog.view", group: "Catalogue" },
       { label: "Product types", href: "/org/catalog/types", icon: FolderTree, permission: "catalog.manage", group: "Catalogue", keywords: ["version", "setup"] },
       { label: "Product fields", href: "/org/catalog/fields", icon: FolderTree, permission: "org.settings.manage", group: "Catalogue", keywords: ["attributes", "schema"] },
       { label: "Customers", href: "/org/customers", icon: UserRound, permission: "customer.view", group: "Customers & reports" },
       { label: "Reports & analytics", href: "/org/reports", icon: BarChart3, permission: "report.view", group: "Customers & reports", keywords: ["sales", "gst", "compare"] },
-      { label: "Organisation settings", href: "/org/settings/general", icon: Settings, permission: "org.settings.manage", group: "Administration" },
+      { label: "Organisation settings", href: "/org/settings/general", icon: Settings, permission: "org.settings.manage", group: "Administration", activePaths: ["/org/settings"] },
       { label: "Audit log", href: "/org/audit", icon: ScrollText, permission: "audit.view", group: "Administration" },
     ],
   },
@@ -68,6 +70,7 @@ export const NAV: NavSection[] = [
       { label: "Inventory", href: "/s/:storeId/inventory", icon: Boxes, permission: "inventory.view", group: "Stock", keywords: ["stock"] },
       { label: "Products", href: "/s/:storeId/products", icon: Package, permission: "catalog.view", group: "Stock", keywords: ["catalogue", "items"] },
       { label: "Categories", href: "/s/:storeId/categories", icon: FolderTree, permission: "catalog.view", group: "Stock" },
+      { label: "Brands", href: "/s/:storeId/brands", icon: Tags, permission: "catalog.view", group: "Stock", keywords: ["product taxonomy"] },
       { label: "Tax groups & charges", href: "/s/:storeId/settings/tax", icon: CircleDollarSign, permission: "tax.view", group: "Stock", keywords: ["gst", "service charge"] },
       { label: "Registers", href: "/s/:storeId/registers", icon: Landmark, permission: "registers.view", group: "Tills & control", keywords: ["cash", "shift", "till"] },
       { label: "Approvals", href: "/s/:storeId/approvals", icon: CheckCheck, permission: "approval.manage", group: "Tills & control" },
@@ -75,7 +78,7 @@ export const NAV: NavSection[] = [
       { label: "Staff", href: "/s/:storeId/staff", icon: Users, permission: "store.staff.view", group: "Team & reports" },
       { label: "Store reports", href: "/s/:storeId/reports", icon: BarChart3, permission: "report.view", group: "Team & reports" },
       { label: "Store settings", href: "/s/:storeId/settings/profile", icon: Settings, permission: "store.settings.view", group: "Settings" },
-      { label: "Billing & checkout", href: "/s/:storeId/settings/billing", icon: Receipt, permission: "store.settings.view", group: "Settings", keywords: ["billing", "checkout", "payment methods", "discounts", "receipt"] },
+      { label: "Billing & checkout", href: "/s/:storeId/settings/billing", icon: Receipt, permission: "store.settings.view", group: "Settings", keywords: ["billing", "checkout", "payment methods", "discounts", "receipt"], activePaths: ["/s/:storeId/settings/checkout"] },
     ],
   },
 ];
@@ -84,6 +87,15 @@ export const NAV: NavSection[] = [
 export const navMode = (pathname: string): NavMode => (pathname.startsWith("/s/") ? "store" : "org");
 
 export const resolveHref = (href: string, storeId: string) => href.replace(":storeId", storeId);
+
+/** Keeps a navigation destination highlighted on its related detail and setup routes. */
+export function isNavItemActive(pathname: string, item: NavItem, storeId: string) {
+  return [item.href, ...(item.activePaths ?? [])].some((path) => {
+    const href = resolveHref(path, storeId);
+    if (href === "/org" || /^\/s\/[^/]+$/.test(href)) return pathname === href;
+    return pathname === href || (href.split("/").length > 2 && pathname.startsWith(href + "/"));
+  });
+}
 
 /** Labels for breadcrumb segments. */
 export const SEGMENT_LABELS: Record<string, string> = {
