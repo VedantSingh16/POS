@@ -1,9 +1,9 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
@@ -19,7 +19,7 @@ type Values = {
 type Key = keyof Values;
 function SettingsGroup({ title, children, initiallyOpen = false }: { title: string; children: React.ReactNode; initiallyOpen?: boolean }) {
   const [open, setOpen] = React.useState(initiallyOpen);
-  return <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="rounded-md border px-3"><summary className="cursor-pointer py-3 text-sm font-semibold">{title}</summary><div className="grid gap-4 border-t py-4">{children}</div></details>;
+  return <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="rounded-md border px-3"><summary className="cursor-pointer py-3 text-sm font-semibold"><LocalizedText value={title} /></summary><div className="grid gap-4 border-t py-4">{children}</div></details>;
 }
 
 const DEFAULTS: Required<Values> = {
@@ -75,15 +75,15 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
   }
 
   const textInput = (value: string, set: (value: string) => void, props: React.ComponentProps<typeof Input> = {}) => <Input {...props} value={value} onChange={(event) => set(event.target.value)} />;
-  const setting = (label: string, hint: string, control: React.ReactNode) => <div className="grid gap-1.5"><span className="text-sm font-medium">{label}</span>{control}<span className="text-xs text-muted-foreground">{hint}</span></div>;
-  const toggle = (label: string, checked: boolean, onChange: (checked: boolean) => void, hint?: string) => <label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span>{label}{hint && <span className="block text-xs text-muted-foreground">{hint}</span>}</span></label>;
+  const setting = (label: string, hint: string, control: React.ReactNode) => <div className="grid gap-1.5"><span className="text-sm font-medium"><LocalizedText value={label} /></span>{control}<span className="text-xs text-muted-foreground"><LocalizedText value={hint} /></span></div>;
+  const toggle = (label: string, checked: boolean, onChange: (checked: boolean) => void, hint?: string) => <label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span><LocalizedText value={label} />{hint && <span className="block text-xs text-muted-foreground"><LocalizedText value={hint} /></span>}</span></label>;
   const details = (title: string, children: React.ReactNode, initiallyOpen = false) => <SettingsGroup title={title} initiallyOpen={initiallyOpen}>{children}</SettingsGroup>;
 
   return <fieldset disabled={!canEdit} className="m-0 grid min-w-0 gap-3 border-0 p-0">
-    <p className="text-sm text-muted-foreground">These settings apply only to this store. Product field definitions are managed from the organization catalog.</p>
+    <p className="text-sm text-muted-foreground"><LocalizedText value={"These settings apply only to this store. Product field definitions are managed from the organization catalog."} /></p>
     <div className="grid gap-3 xl:grid-cols-2">
       {details("Payments and checkout", <>
-        <div className="grid gap-2"><span className="text-sm font-medium">Payment methods offered</span><div className="grid gap-2 sm:grid-cols-2">{TENDERS.map(([key, name]) => <label key={key} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={tenders.includes(key)} onChange={(event) => setTenders((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))} /> {name}</label>)}</div></div>
+        <div className="grid gap-2"><span className="text-sm font-medium"><LocalizedText value={"Payment methods offered"} /></span><div className="grid gap-2 sm:grid-cols-2">{TENDERS.map(([key, name]) => <label key={key} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={tenders.includes(key)} onChange={(event) => setTenders((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))} /> <LocalizedText value={name} /></label>)}</div></div>
         {setting(`Cash rounding (${currencyCode()}, 0 = off)`, "Rounds cash totals to this amount.", textInput(rounding, setRounding, { inputMode: "decimal" }))}
         {toggle("Require a bill handler selection", requireHandler, setRequireHandler, "When off, the signed-in cashier is recorded by default.")}
       </>, true)}
@@ -94,7 +94,7 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
         {billEnabled && setting("Maximum combined bill discount (%)", "Caps all discounts applied to the whole bill, including coupons and automatic offers.", textInput(billMax, setBillMax, { type: "number", min: 0, max: 100, step: "0.1" }))}
         {toggle("Allow a manual discount to stack with an offer", stacking, setStacking, "Turn off to allow only one of these discount sources on a bill.")}
         {toggle("Require a configured reason code", reason, setReason, "Cashiers must choose a store-owned reason when applying a manual discount.")}
-        <p className="text-sm text-muted-foreground">Set discounts for a specific product, category, brand, or all products; manage whole-bill coupons and offers in <Link className="font-medium text-foreground underline" href={`/s/${storeId}/pricing`}>Offers &amp; price rules</Link>.</p>
+        <p className="text-sm text-muted-foreground"><LocalizedText value={"Set discounts for a specific product, category, brand, or all products; manage whole-bill coupons and offers in "} /><Link className="font-medium text-foreground underline" href={`/s/${storeId}/pricing`}><LocalizedText value={"Offers & price rules"} /></Link>.</p>
       </>, true)}
     </div>
     <div className="grid gap-3 xl:grid-cols-2">
@@ -108,6 +108,6 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
       </>)}
     </div>
     {details("Receipt", setting("Receipt footer", "Printed below the bill (up to 300 characters).", textInput(footer, setFooter, { maxLength: 300 })))}
-    {canEdit && <Button className="w-fit" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save store billing"}</Button>}
+    {canEdit && <Button className="w-fit" onClick={() => void save()} disabled={busy}><LocalizedText value={busy ? "Saving…" : "Save store billing"} /></Button>}
   </fieldset>;
 }

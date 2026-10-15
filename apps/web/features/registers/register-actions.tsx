@@ -1,16 +1,17 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { ChevronDown, ChevronUp, CircleHelp, Landmark, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
-import { formatMoney, currencyCode, currencyNotes, minorPerUnit, toMinor } from "@/lib/format";
+import { formatDateTime, formatMoney as formatMoneyValue, currencyCode, currencyNotes, minorPerUnit, toMinor } from "@/lib/format";
+import { useLocale } from "@/components/i18n/locale-provider";
 
 export type BoardRegister = { id: string; name: string; code?: string; status: string; sessionId: string; cashier: string; openedAt: string; expectedMinor: number; active: boolean };
 
@@ -36,18 +37,18 @@ export function RegistersBoard({ storeId, registers }: { storeId: string; regist
     <div className="grid gap-4">
       <Card>
         <CardContent className="p-0">
-          <button type="button" className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium" aria-expanded={help} onClick={() => setHelp((v) => !v)}>
-            <CircleHelp className="size-4 text-muted-foreground" /> Register help {help ? <ChevronUp className="ml-auto size-4" /> : <ChevronDown className="ml-auto size-4" />}
+          <button type="button" className="flex w-full items-center gap-2 px-4 py-3 text-start text-sm font-medium" aria-expanded={help} onClick={() => setHelp((v) => !v)}>
+            <CircleHelp className="size-4 text-muted-foreground" /> <LocalizedText value={"Register help "} />{help ? <ChevronUp className="ms-auto size-4" /> : <ChevronDown className="ms-auto size-4" />}
           </button>
           {help && <div className="grid gap-3 border-t px-4 py-3 text-sm sm:grid-cols-3">
-            <div><p className="font-medium">1. Register = a till</p><p className="text-muted-foreground">The physical cash drawer at a counter, for example “Front Till”. It is set up once for the store.</p></div>
-            <div><p className="font-medium">2. Open it to start a shift</p><p className="text-muted-foreground">Count the cash already in the drawer and enter it as the opening float. Sales can only be taken while a register is open.</p></div>
-            <div><p className="font-medium">3. Close it to end the shift</p><p className="text-muted-foreground">Count the cash without looking at the expected figure. The difference (variance) is recorded and raises an alert if it is not zero.</p></div>
-            <p className="text-muted-foreground sm:col-span-3">The <b>Point of sale</b> screen is where cashiers scan items and take payment all day. A <b>register</b> is the cash drawer that screen sells from. The POS needs an open register; this page opens and closes it and records cash moved in or out.</p>
+            <div><p className="font-medium"><LocalizedText value={"1. Register = a till"} /></p><p className="text-muted-foreground"><LocalizedText value={"The physical cash drawer at a counter, for example “Front Till”. It is set up once for the store."} /></p></div>
+            <div><p className="font-medium"><LocalizedText value={"2. Open it to start a shift"} /></p><p className="text-muted-foreground"><LocalizedText value={"Count the cash already in the drawer and enter it as the opening float. Sales can only be taken while a register is open."} /></p></div>
+            <div><p className="font-medium"><LocalizedText value={"3. Close it to end the shift"} /></p><p className="text-muted-foreground"><LocalizedText value={"Count the cash without looking at the expected figure. The difference (variance) is recorded and raises an alert if it is not zero."} /></p></div>
+            <p className="text-muted-foreground sm:col-span-3"><LocalizedText value={"The "} /><b><LocalizedText value={"Point of sale"} /></b> <LocalizedText value={"screen is where cashiers scan items and take payment all day. A "} /><b><LocalizedText value={"register"} /></b> <LocalizedText value={"is the cash drawer that screen sells from. The POS needs an open register; this page opens and closes it and records cash moved in or out."} /></p>
           </div>}
         </CardContent>
       </Card>
-      {registers.length === 0 && <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">This store has no register yet. An organisation administrator can add one from Organisation → Stores.</CardContent></Card>}
+      {registers.length === 0 && <Card><CardContent className="p-6 text-center text-sm text-muted-foreground"><LocalizedText value={"This store has no register yet. An organisation administrator can add one from Organisation → Stores."} /></CardContent></Card>}
       <div className="grid gap-4 lg:grid-cols-2">{registers.map((register) => <RegisterCard key={register.id} storeId={storeId} register={register} />)}</div>
     </div>
   );
@@ -55,6 +56,8 @@ export function RegistersBoard({ storeId, registers }: { storeId: string; regist
 
 function RegisterCard({ storeId, register }: { storeId: string; register: BoardRegister }) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const formatMoney = (minor: number) => formatMoneyValue(minor, locale);
   const isOpen = register.status === "OPEN";
   const [busy, setBusy] = React.useState(false);
   const [panel, setPanel] = React.useState<"" | "cash" | "close">("");
@@ -96,7 +99,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
       try {
         await clientApi(`/pos/v1/sessions/${item.sessionId}/cash`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify({ type: item.type, amountCents: item.amountCents, reason: item.reason, clientMovementId: item.clientMovementId, ...(managerPin ? { managerPin } : {}) }) });
         storeQueue((items) => items.filter((row) => row.clientMovementId !== item.clientMovementId));
-        toast.success(`Pending cash movement from ${new Date(item.createdAt).toLocaleString()} synced.`);
+        toast.success(`Pending cash movement from ${formatDateTime(item.createdAt, locale)} synced.`);
         router.refresh();
       } catch (error) {
         const detail = error as Error & { status?: number; payload?: { code?: string } };
@@ -105,7 +108,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
       }
     }
     setBusy(false);
-  }, [managerPin, register.id, router, storeId, storeQueue]);
+  }, [locale, managerPin, register.id, router, storeId, storeQueue]);
 
   const retryPendingRef = React.useRef(retryPending);
   React.useEffect(() => { retryPendingRef.current = retryPending; }, [retryPending]);
@@ -165,46 +168,46 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
   return (
     <Card>
       <CardContent className="grid gap-4 p-4">
-        {pendingMovements.filter((item) => item.registerId === register.id).map((item) => <div key={item.clientMovementId} className="flex flex-wrap items-center gap-2 rounded-md border border-warning/50 bg-warning-soft p-3 text-sm"><div className="min-w-48 flex-1"><p className="font-medium">Cash movement pending · {formatMoney(item.amountCents)}</p><p className="text-xs text-muted-foreground">{item.type.replaceAll("_", " ")} · {item.reason} · {new Date(item.createdAt).toLocaleString()}</p>{item.error && <p className="text-xs text-warning">{item.error}</p>}</div><Button size="sm" variant="outline" disabled={busy} onClick={() => void retryPending()}>Retry sync</Button></div>)}
+        {pendingMovements.filter((item) => item.registerId === register.id).map((item) => <div key={item.clientMovementId} className="flex flex-wrap items-center gap-2 rounded-md border border-warning/50 bg-warning-soft p-3 text-sm"><div className="min-w-48 flex-1"><p className="font-medium"><LocalizedText value={"Cash movement pending · "} />{formatMoney(item.amountCents)}</p><p className="text-xs text-muted-foreground"><LocalizedText value={MOVEMENTS.find(([value]) => value === item.type)?.[1] ?? item.type.replaceAll("_", " ")} /> · {item.reason} · {formatDateTime(item.createdAt, locale)}</p>{item.error && <p className="text-xs text-warning">{item.error}</p>}</div><Button size="sm" variant="outline" disabled={busy} onClick={() => void retryPending()}><LocalizedText value={"Retry sync"} /></Button></div>)}
         <div className="flex items-start gap-3">
           <span className="grid size-10 place-items-center rounded-md bg-secondary"><Landmark className="size-5" /></span>
           <div className="min-w-0 flex-1">
             <p className="font-semibold">{register.name} {register.code && <span className="text-xs font-normal text-muted-foreground">· {register.code}</span>}</p>
-            <p className="text-sm text-muted-foreground">{!register.active ? "Deactivated: it cannot be opened." : isOpen ? `Open${register.cashier && register.cashier !== "—" ? ` · cashier ${register.cashier}` : ""}` : "Closed: no sales can be taken on this till."}</p>
+            <p className="text-sm text-muted-foreground">{!register.active ? <LocalizedText value="Deactivated: it cannot be opened." /> : isOpen ? <><LocalizedText value="Open" />{register.cashier && register.cashier !== "—" ? <> · <LocalizedText value="cashier" /> {register.cashier}</> : null}</> : <LocalizedText value="Closed: no sales can be taken on this till." />}</p>
           </div>
-          <Badge tone={!register.active ? "neutral" : isOpen ? "success" : "warning"}>{!register.active ? "Inactive" : isOpen ? "Open" : "Closed"}</Badge>
+          <Badge tone={!register.active ? "neutral" : isOpen ? "success" : "warning"}><LocalizedText value={!register.active ? "Inactive" : isOpen ? "Open" : "Closed"} /></Badge>
         </div>
 
-        {isOpen && <div className="grid grid-cols-2 gap-3 rounded-md bg-secondary/60 p-3 text-sm"><div><p className="text-xs text-muted-foreground">Cash expected in drawer</p><p className="tabular text-lg font-semibold">{formatMoney(register.expectedMinor)}</p></div><div><p className="text-xs text-muted-foreground">Opened</p><p className="font-medium">{register.openedAt ? new Date(register.openedAt).toLocaleString() : "—"}</p></div></div>}
+        {isOpen && <div className="grid grid-cols-2 gap-3 rounded-md bg-secondary/60 p-3 text-sm"><div><p className="text-xs text-muted-foreground"><LocalizedText value={"Cash expected in drawer"} /></p><p className="tabular text-lg font-semibold">{formatMoney(register.expectedMinor)}</p></div><div><p className="text-xs text-muted-foreground"><LocalizedText value={"Opened"} /></p><p className="font-medium">{register.openedAt ? formatDateTime(register.openedAt, locale) : "—"}</p></div></div>}
 
         {!isOpen && register.active && <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-          <label className="grid gap-1 text-sm">Opening float ({currencyCode()})<Input value={float} onChange={(e) => setFloat(e.target.value)} inputMode="decimal" aria-describedby={`float-${register.id}`} /><span id={`float-${register.id}`} className="text-xs text-muted-foreground">Enter the cash counted before the first sale. Enter 0 for an empty drawer.</span></label>
-          <Button disabled={busy || !float.trim()} onClick={() => void open()}>Open register</Button>
+          <label className="grid gap-1 text-sm"><LocalizedText value={"Opening float ("} />{currencyCode()})<Input value={float} onChange={(e) => setFloat(e.target.value)} inputMode="decimal" aria-describedby={`float-${register.id}`} /><span id={`float-${register.id}`} className="text-xs text-muted-foreground"><LocalizedText value={"Enter the cash counted before the first sale. Enter 0 for an empty drawer."} /></span></label>
+          <Button disabled={busy || !float.trim()} onClick={() => void open()}><LocalizedText value={"Open register"} /></Button>
         </div>}
 
         {isOpen && <div className="flex flex-wrap gap-2">
-          <Button asChild><Link href={`/s/${storeId}/pos`}><ShoppingCart /> Go to POS</Link></Button>
-          <Button variant="outline" onClick={() => setPanel(panel === "cash" ? "" : "cash")}>Cash in / out</Button>
-          <Button variant="outline" onClick={() => setPanel(panel === "close" ? "" : "close")}>Close register</Button>
+          <Button asChild><Link href={`/s/${storeId}/pos`}><ShoppingCart /> <LocalizedText value={"Go to POS"} /></Link></Button>
+          <Button variant="outline" onClick={() => setPanel(panel === "cash" ? "" : "cash")}><LocalizedText value={"Cash in / out"} /></Button>
+          <Button variant="outline" onClick={() => setPanel(panel === "close" ? "" : "close")}><LocalizedText value={"Close register"} /></Button>
         </div>}
 
         {isOpen && panel === "cash" && <div className="grid gap-3 rounded-md border p-3">
-          <p className="text-sm font-medium">Record cash moved in or out of the drawer</p>
-          <label className="grid gap-1 text-sm">What happened<NativeSelect value={type} onChange={(e) => setType(e.target.value as typeof type)}>{MOVEMENTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect><span className="text-xs text-muted-foreground">{MOVEMENTS.find(([value]) => value === type)?.[2]}</span></label>
-          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm">Amount ({currencyCode()})<Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label><label className="grid gap-1 text-sm">Reason<Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Tea for staff" /></label></div>
-          <label className="grid gap-1 text-sm">Manager PIN (required above the configured amount)<Input type="password" inputMode="numeric" autoComplete="off" value={managerPin} onChange={(e) => setManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label>
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPanel("")}>Cancel</Button><Button disabled={busy} onClick={record}>Record</Button></div>
+          <p className="text-sm font-medium"><LocalizedText value={"Record cash moved in or out of the drawer"} /></p>
+          <label className="grid gap-1 text-sm"><LocalizedText value={"What happened"} /><NativeSelect value={type} onChange={(e) => setType(e.target.value as typeof type)}>{MOVEMENTS.map(([value, label]) => <option key={value} value={value}><LocalizedText value={label} /></option>)}</NativeSelect><span className="text-xs text-muted-foreground"><LocalizedText value={MOVEMENTS.find(([value]) => value === type)?.[2] ?? ""} /></span></label>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm"><LocalizedText value={"Amount ("} />{currencyCode()})<Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label><label className="grid gap-1 text-sm"><LocalizedText value={"Reason"} /><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Tea for staff" /></label></div>
+          <label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN (required above the configured amount)"} /><Input type="password" inputMode="numeric" autoComplete="off" value={managerPin} onChange={(e) => setManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPanel("")}><LocalizedText value={"Cancel"} /></Button><Button disabled={busy} onClick={record}><LocalizedText value={"Record"} /></Button></div>
         </div>}
 
         {isOpen && panel === "close" && <div className="grid gap-3 rounded-md border p-3">
-          <div><p className="text-sm font-medium">Count the cash in the drawer</p><p className="text-xs text-muted-foreground">The expected amount is hidden on purpose so the count is honest. The difference is shown after closing.</p></div>
-          <div className="flex gap-1 text-sm"><Button size="sm" variant={mode === "notes" ? "default" : "outline"} onClick={() => setMode("notes")}>Count by notes</Button><Button size="sm" variant={mode === "total" ? "default" : "outline"} onClick={() => setMode("total")}>Enter a total</Button></div>
+          <div><p className="text-sm font-medium"><LocalizedText value={"Count the cash in the drawer"} /></p><p className="text-xs text-muted-foreground"><LocalizedText value={"The expected amount is hidden on purpose so the count is honest. The difference is shown after closing."} /></p></div>
+          <div className="flex gap-1 text-sm"><Button size="sm" variant={mode === "notes" ? "default" : "outline"} onClick={() => setMode("notes")}><LocalizedText value={"Count by notes"} /></Button><Button size="sm" variant={mode === "total" ? "default" : "outline"} onClick={() => setMode("total")}><LocalizedText value={"Enter a total"} /></Button></div>
           {mode === "notes" ? <div className="grid gap-2">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{NOTES.map((note) => <label key={note} className="grid gap-1 text-xs font-medium">{formatMoney(Math.round(note * minorPerUnit()))} notes<Input aria-label={`Number of ${note} ${currencyCode()} notes`} inputMode="numeric" value={counts[note] ?? ""} onChange={(e) => setCounts((c) => ({ ...c, [note]: e.target.value }))} placeholder="0" /></label>)}<label className="grid gap-1 text-xs font-medium">Coins, total ({currencyCode()})<Input aria-label="Coins total" inputMode="decimal" value={coins} onChange={(e) => setCoins(e.target.value)} placeholder="0" /></label></div>
-          </div> : <label className="grid gap-1 text-sm">Total counted ({currencyCode()})<Input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" /></label>}
-          <p className="text-sm">Counted total: <b className="tabular">{formatMoney(countedCents)}</b></p>
-          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm">Reason for variance (if any)<Input value={closeReason} onChange={(e) => setCloseReason(e.target.value)} /></label><label className="grid gap-1 text-sm">Manager PIN (required outside tolerance)<Input type="password" inputMode="numeric" autoComplete="off" value={closeManagerPin} onChange={(e) => setCloseManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label></div>
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPanel("")}>Cancel</Button><Button disabled={busy} onClick={() => void close()}>Close register</Button></div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{NOTES.map((note) => <label key={note} className="grid gap-1 text-xs font-medium">{formatMoney(Math.round(note * minorPerUnit()))} <LocalizedText value={"notes"} /><Input aria-label={`Number of ${note} ${currencyCode()} notes`} inputMode="numeric" value={counts[note] ?? ""} onChange={(e) => setCounts((c) => ({ ...c, [note]: e.target.value }))} placeholder="0" /></label>)}<label className="grid gap-1 text-xs font-medium"><LocalizedText value={"Coins, total ("} />{currencyCode()})<Input aria-label="Coins total" inputMode="decimal" value={coins} onChange={(e) => setCoins(e.target.value)} placeholder="0" /></label></div>
+          </div> : <label className="grid gap-1 text-sm"><LocalizedText value={"Total counted ("} />{currencyCode()})<Input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" /></label>}
+          <p className="text-sm"><LocalizedText value={"Counted total: "} /><b className="tabular">{formatMoney(countedCents)}</b></p>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm"><LocalizedText value={"Reason for variance (if any)"} /><Input value={closeReason} onChange={(e) => setCloseReason(e.target.value)} /></label><label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN (required outside tolerance)"} /><Input type="password" inputMode="numeric" autoComplete="off" value={closeManagerPin} onChange={(e) => setCloseManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label></div>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPanel("")}><LocalizedText value={"Cancel"} /></Button><Button disabled={busy} onClick={() => void close()}><LocalizedText value={"Close register"} /></Button></div>
         </div>}
       </CardContent>
     </Card>

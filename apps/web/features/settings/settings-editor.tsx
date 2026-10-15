@@ -1,8 +1,8 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
@@ -39,15 +39,15 @@ export function SettingsEditor({ section, initial }: { section: string; initial:
       <div className="grid gap-4 sm:max-w-xl">
         {fields.map((f) => (
           <label key={f.key} className="grid gap-1.5 text-sm">
-            <span className="font-medium">{f.label}</span>
+            <span className="font-medium"><LocalizedText value={f.label} /></span>
             {f.kind === "select"
-              ? <NativeSelect value={values[f.key]} onChange={(e) => setValues((c) => ({ ...c, [f.key]: e.target.value }))}><option value="BLOCK">Block the sale</option><option value="WARN">Warn but allow</option><option value="ALLOW">Allow silently</option></NativeSelect>
+              ? <NativeSelect value={values[f.key]} onChange={(e) => setValues((c) => ({ ...c, [f.key]: e.target.value }))}><option value="BLOCK"><LocalizedText value={"Block the sale"} /></option><option value="WARN"><LocalizedText value={"Warn but allow"} /></option><option value="ALLOW"><LocalizedText value={"Allow silently"} /></option></NativeSelect>
               : <Input type={f.kind === "number" ? "number" : "text"} maxLength={f.kind === "text" ? 300 : undefined} value={values[f.key]} onChange={(e) => setValues((c) => ({ ...c, [f.key]: e.target.value }))} />}
-            <span className="text-xs text-muted-foreground">{f.hint}</span>
+            <span className="text-xs text-muted-foreground"><LocalizedText value={f.hint} /></span>
           </label>
         ))}
       </div>
-      <Button className="sm:w-fit" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save settings"}</Button>
+      <Button className="sm:w-fit" onClick={() => void save()} disabled={busy}><LocalizedText value={busy ? "Saving…" : "Save settings"} /></Button>
     </div>
   );
 }
@@ -67,13 +67,13 @@ export function ApprovalPolicyForm({ initial }: { initial: { enabled: boolean; t
   }
   return (
     <div className="grid gap-4 sm:max-w-xl">
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Require manager approval for large sale discounts</label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> <LocalizedText value={"Require manager approval for large sale discounts"} /></label>
       <label className="grid gap-1.5 text-sm">
-        <span className="font-medium">Approval needed above (% of the sale subtotal)</span>
+        <span className="font-medium"><LocalizedText value={"Approval needed above (% of the sale subtotal)"} /></span>
         <Input type="number" min={0} max={100} step="0.5" value={percent} onChange={(e) => setPercent(e.target.value)} disabled={!enabled} />
-        <span className="text-xs text-muted-foreground">Discounts at or below this share go through; larger ones need a manager PIN or an approved request. When the rule is off, any permitted discount goes through.</span>
+        <span className="text-xs text-muted-foreground"><LocalizedText value={"Discounts at or below this share go through; larger ones need a manager PIN or an approved request. When the rule is off, any permitted discount goes through."} /></span>
       </label>
-      <Button className="sm:w-fit" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save rule"}</Button>
+      <Button className="sm:w-fit" onClick={() => void save()} disabled={busy}><LocalizedText value={busy ? "Saving…" : "Save rule"} /></Button>
     </div>
   );
 }
@@ -92,11 +92,11 @@ export function CurrencyForm({ initial, locked = false }: { initial: string; loc
   return (
     <div className="grid gap-3 sm:max-w-xl">
       <label className="grid gap-1.5 text-sm">
-        <span className="font-medium">Currency</span>
-        <NativeSelect value={code} disabled={locked || busy} onChange={(e) => setCode(e.target.value)}>{Object.values(CURRENCIES).map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}{c.code === "OMR" ? " (default)" : ""}</option>)}</NativeSelect>
+        <span className="font-medium"><LocalizedText value={"Currency"} /></span>
+        <NativeSelect value={code} disabled={locked || busy} onChange={(e) => setCode(e.target.value)}>{Object.values(CURRENCIES).map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}<LocalizedText value={c.code === "OMR" ? " (default)" : ""} /></option>)}</NativeSelect>
         <span className="text-xs text-muted-foreground">{locked ? `Locked at ${initial} because this organisation has completed a sale. Past amounts are kept in their original currency.` : "Applies to every store, price, bill, receipt, and invoice. Choose it before the first sale; stores inherit this value."}</span>
       </label>
-      {!locked && <Button className="sm:w-fit" onClick={() => void save()} disabled={busy || code === initial}>{busy ? "Saving…" : "Save currency"}</Button>}
+      {!locked && <Button className="sm:w-fit" onClick={() => void save()} disabled={busy || code === initial}><LocalizedText value={busy ? "Saving…" : "Save currency"} /></Button>}
     </div>
   );
 }

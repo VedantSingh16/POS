@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     : safeNext(typeof body.next === "string" ? body.next : null) ?? landingPath(me);
   const res = NextResponse.json({ landing });
   res.cookies.set(SESSION_COOKIE, accessToken, cookieOptions(req, maxAge));
+  const selectedLocale = req.cookies.get("pos_locale")?.value;
+  const preferredLocale = me.user.preferredLocale === "en" || me.user.preferredLocale === "ar" ? me.user.preferredLocale : "en";
+  res.cookies.set("pos_locale", selectedLocale === "en" || selectedLocale === "ar" ? selectedLocale : preferredLocale, cookieOptions(req, 60 * 60 * 24 * 365));
   res.cookies.delete(LOCK_COOKIE);
   return res;
 }

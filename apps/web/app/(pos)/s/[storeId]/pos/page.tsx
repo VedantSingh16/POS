@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { PosScreen } from "@/features/pos/pos-screen";
 import { api, soft } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 import { SessionProvider } from "@/components/app/session-context";
 
-export const metadata = { title: "Point of sale" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Point of sale") }; }
 
 export default async function PosPage({ params }: PageProps<"/s/[storeId]/pos">) {
   const { storeId } = await params;

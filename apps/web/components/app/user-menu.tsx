@@ -1,8 +1,9 @@
 "use client";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { KeyRound, Lock, LogOut, User } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -46,12 +47,12 @@ function SetPinDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>Set till PIN</DialogTitle>
-        <DialogDescription>4 to 8 digits. Used to unlock a shared till without signing in again.</DialogDescription>
+        <DialogTitle><LocalizedText value={"Set till PIN"} /></DialogTitle>
+        <DialogDescription><LocalizedText value={"4 to 8 digits. Used to unlock a shared till without signing in again."} /></DialogDescription>
         <form onSubmit={save} className="grid gap-3">
           <Input aria-label="PIN" type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 8)); setError(""); }} />
           {error && <p role="alert" className="text-xs text-danger">{error}</p>}
-          <div className="flex justify-end gap-2"><DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose><Button type="submit" disabled={!valid}>Save PIN</Button></div>
+          <div className="flex justify-end gap-2"><DialogClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></DialogClose><Button type="submit" disabled={!valid}><LocalizedText value={"Save PIN"} /></Button></div>
         </form>
       </DialogContent>
     </Dialog>
@@ -77,10 +78,10 @@ export function UserMenu() {
             <span className="block">{[...new Set(me.roles.map((r) => r.name))].join(", ")}</span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {me.hasPin && <DropdownMenuItem onSelect={() => void lockTill(router)}><Lock /> Lock till</DropdownMenuItem>}
-          <DropdownMenuItem onSelect={() => router.push("/account")}><User /> My account</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setPinOpen(true)}><KeyRound /> {me.hasPin ? "Change PIN" : "Set PIN"}</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void signOut()}><LogOut /> Sign out</DropdownMenuItem>
+          {me.hasPin && <DropdownMenuItem onSelect={() => void lockTill(router)}><Lock /> <LocalizedText value={"Lock till"} /></DropdownMenuItem>}
+          <DropdownMenuItem onSelect={() => router.push("/account")}><User /> <LocalizedText value={"My account"} /></DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setPinOpen(true)}><KeyRound /> <LocalizedText value={me.hasPin ? "Change PIN" : "Set PIN"} /></DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void signOut()}><LogOut /> <LocalizedText value={"Sign out"} /></DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <SetPinDialog open={pinOpen} onOpenChange={setPinOpen} />

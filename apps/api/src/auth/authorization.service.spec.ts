@@ -16,6 +16,7 @@ const context = (overrides: Partial<UserContext> = {}): UserContext => ({
   organizationId: ORG,
   email: 'user@example.com',
   displayName: 'Test User',
+  preferredLocale: 'en',
   status: 'ACTIVE',
   defaultStoreId: STORE,
   storeIds: [STORE],

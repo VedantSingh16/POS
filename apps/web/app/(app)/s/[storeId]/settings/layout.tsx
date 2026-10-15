@@ -1,3 +1,4 @@
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { requirePermission } from "@/lib/server/session";
 import { SettingsSectionNav } from "@/features/settings/settings-section-nav";
 
@@ -12,7 +13,7 @@ export default async function StoreSettingsLayout({ children, params }: LayoutPr
 
   return <div className="grid gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
     <aside className="min-w-0 lg:pr-2">
-      <p className="mb-2 hidden px-3 text-xs font-medium text-muted-foreground lg:block">Store settings</p>
+      <p className="mb-2 hidden px-3 text-xs font-medium text-muted-foreground lg:block"><LocalizedText value={"Store settings"} /></p>
       <SettingsSectionNav items={sections} />
     </aside>
     <div className="min-w-0">{children}</div>

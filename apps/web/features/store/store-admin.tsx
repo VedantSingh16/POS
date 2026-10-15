@@ -1,8 +1,9 @@
 "use client";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Power } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SheetClose } from "@/components/ui/sheet";
@@ -23,7 +24,7 @@ export function StoreStatusButton({ storeId, storeName, status }: { storeId: str
   }
   return (
     <ConfirmDialog
-      trigger={<Button variant="outline"><Power /> {active ? "Deactivate" : "Activate"}</Button>}
+      trigger={<Button variant="outline"><Power /> <LocalizedText value={active ? "Deactivate" : "Activate"} /></Button>}
       title={active ? `Deactivate ${storeName}?` : `Activate ${storeName}?`}
       description={active ? "A deactivated store no longer counts toward your store limit. Its sales, stock history and staff records are kept, and you can activate it again at any time." : "The store will count toward your store limit again. This fails if the limit has been reached."}
       confirmLabel={active ? "Deactivate store" : "Activate store"}
@@ -51,11 +52,11 @@ export function AddRegisterSheet({ storeId, existing }: { storeId: string; exist
     finally { setBusy(false); }
   }
   return (
-    <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add register</Button>} title="Add register" description="A register is a till. Cashiers open a session on it with an opening float.">
+    <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> <LocalizedText value={"Add register"} /></Button>} title="Add register" description="A register is a till. Cashiers open a session on it with an opening float.">
       <div className="grid gap-4">
         <Field label="Register code" htmlFor="r-code" hint="Unique within this store."><Input id="r-code" value={code} onChange={(event) => setCode(event.target.value)} /></Field>
         <Field label="Register name" htmlFor="r-name"><Input id="r-name" value={name} onChange={(event) => setName(event.target.value)} /></Field>
-        <div className="flex justify-end gap-2 pt-2"><SheetClose asChild><Button type="button" variant="outline">Cancel</Button></SheetClose><Button onClick={() => void save()} disabled={busy}>{busy ? "Adding…" : "Add register"}</Button></div>
+        <div className="flex justify-end gap-2 pt-2"><SheetClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></SheetClose><Button onClick={() => void save()} disabled={busy}><LocalizedText value={busy ? "Adding…" : "Add register"} /></Button></div>
       </div>
     </FormSheet>
   );

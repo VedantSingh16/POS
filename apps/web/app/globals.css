@@ -191,3 +191,26 @@
 .sidebar-scroll::-webkit-scrollbar { width: 6px; }
 .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--sidebar-border); border-radius: 9999px; }
 .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--sidebar-muted); }
+
+/* Arabic needs an Arabic-capable system font; the English brand font remains unchanged. */
+html[lang="ar"] body,
+html[lang="ar"] .font-sans,
+html[lang="ar"] .font-display {
+  font-family: "Noto Sans Arabic", "Noto Naskh Arabic", Tahoma, Arial, sans-serif;
+  letter-spacing: normal;
+}
+
+html[lang="ar"] h1,
+html[lang="ar"] h2,
+html[lang="ar"] h3 {
+  letter-spacing: normal;
+}
+
+html[dir="rtl"] .auth-hero-visual {
+  -webkit-mask-image: linear-gradient(270deg, #000 0%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(270deg, #000 0%, #000 78%, transparent 100%);
+}
+
+html[dir="rtl"] .sidebar-scroll {
+  direction: rtl;
+}

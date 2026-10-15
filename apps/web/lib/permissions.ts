@@ -1,8 +1,9 @@
 import { STORE_READ_ONLY_PERMISSION_CODES } from "@pos/shared/permissions";
+import type { Locale } from "@pos/shared/locale";
 
 // Pure permission helpers shared by server and client code. The API enforces every rule again; this only decides what to show and where to land.
 export type Me = {
-  user: { userId: string; email: string; displayName: string; defaultStoreId: string | null; isOrganisationAdministrator: boolean };
+  user: { userId: string; email: string; displayName: string; defaultStoreId: string | null; isOrganisationAdministrator: boolean; preferredLocale?: Locale };
   hasPin: boolean;
   /** Minutes of inactivity before a till with a PIN locks; set under Settings → Security. */
   idleLockMinutes?: number;

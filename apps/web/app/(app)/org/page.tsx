@@ -1,3 +1,5 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { requirePermission } from "@/lib/server/session";
 import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Store, Users } from "lucide-react";
 import Link from "next/link";
@@ -10,7 +12,7 @@ import { AuditTable } from "@/features/tables";
 import { api } from "@/features/api";
 import { hasPermission } from "@/lib/permissions";
 
-export const metadata = { title: "Organisation overview" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Organisation overview") }; }
 
 export default async function OrgOverview() {
   const me = await requirePermission("org.overview.view");
@@ -63,20 +65,20 @@ export default async function OrgOverview() {
         <KpiTile label="Needs attention" value={checklist.length - done} hint="Open setup items" icon={AlertTriangle} tone={checklist.length - done ? "warning" : "success"} />
       </div>
       <Card className="mb-6 overflow-hidden">
-        <CardHeader><CardTitle>Your stores</CardTitle><Link href="/org/stores" className="text-sm font-semibold text-primary hover:underline">Manage stores</Link></CardHeader>
+        <CardHeader><CardTitle><LocalizedText value={"Your stores"} /></CardTitle><Link href="/org/stores" className="text-sm font-semibold text-primary hover:underline"><LocalizedText value={"Manage stores"} /></Link></CardHeader>
         <CardContent>
-          {stores.length === 0 ? <p className="text-sm text-muted-foreground">No stores yet. <Link href="/org/stores" className="font-medium text-primary hover:underline">Create the first store</Link>.</p> : (
+          {stores.length === 0 ? <p className="text-sm text-muted-foreground"><LocalizedText value={"No stores yet. "} /><Link href="/org/stores" className="font-medium text-primary hover:underline"><LocalizedText value={"Create the first store"} /></Link>.</p> : (
             <ul className="divide-y">
               {stores.map((store) => (
                 <li key={store.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
                   <div className="min-w-0 flex-1">
                     <Link href={`/org/stores/${store.id}`} className="font-medium break-words hover:underline">{store.name}</Link>
-                    <span className="ml-2 whitespace-nowrap font-mono text-xs text-muted-foreground">{store.code}</span>
-                    <p className="mt-1 text-sm text-muted-foreground">{store.city || "Address not set"} · {store.registers} register{store.registers === 1 ? "" : "s"} · {store.staff} staff</p>
+                    <span className="ms-2 whitespace-nowrap font-mono text-xs text-muted-foreground">{store.code}</span>
+                    <p className="mt-1 text-sm text-muted-foreground">{store.city || "Address not set"} · {store.registers} <LocalizedText value={"register"} /><LocalizedText value={store.registers === 1 ? "" : "s"} /> · {store.staff} <LocalizedText value={"staff"} /></p>
                   </div>
-                  {(store.registers === 0 || !ready.some((entry) => entry.id === store.id)) && <Badge tone="warning">Needs setup</Badge>}
+                  {(store.registers === 0 || !ready.some((entry) => entry.id === store.id)) && <Badge tone="warning"><LocalizedText value={"Needs setup"} /></Badge>}
                   <StatusBadge status={store.status} />
-                  <Link href={`/s/${store.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>Open store <ArrowRight /></Link>
+                  <Link href={`/s/${store.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}><LocalizedText value={"Open store "} /><ArrowRight className="rtl:rotate-180" /></Link>
                 </li>
               ))}
             </ul>
@@ -85,7 +87,7 @@ export default async function OrgOverview() {
       </Card>
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]">
         <Card className="overflow-hidden">
-          <CardHeader><CardTitle>Setup progress <span className="ml-1 font-sans text-sm font-medium text-muted-foreground">{done} of {checklist.length}</span></CardTitle><Link href="/onboarding/optional" className="text-sm font-semibold text-primary hover:underline">Continue setup</Link></CardHeader>
+          <CardHeader><CardTitle><LocalizedText value={"Setup progress "} /><span className="ms-1 font-sans text-sm font-medium text-muted-foreground">{done} <LocalizedText value={"of "} />{checklist.length}</span></CardTitle><Link href="/onboarding/optional" className="text-sm font-semibold text-primary hover:underline"><LocalizedText value={"Continue setup"} /></Link></CardHeader>
           <CardContent>
             <ul className="grid gap-3">
               {checklist.map((c) => (
@@ -101,8 +103,8 @@ export default async function OrgOverview() {
         </Card>
         <div className="min-w-0">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div><h2 className="text-lg font-semibold tracking-tight">Recent activity</h2><p className="mt-1 text-sm text-muted-foreground">A short view of changes across your organisation.</p></div>
-            <Link href="/org/audit" className="shrink-0 text-sm font-semibold text-primary hover:underline">View audit log</Link>
+            <div><h2 className="text-lg font-semibold tracking-tight"><LocalizedText value={"Recent activity"} /></h2><p className="mt-1 text-sm text-muted-foreground"><LocalizedText value={"A short view of changes across your organisation."} /></p></div>
+            <Link href="/org/audit" className="shrink-0 text-sm font-semibold text-primary hover:underline"><LocalizedText value={"View audit log"} /></Link>
           </div>
           <AuditTable data={audit.slice(0, 4)} />
         </div>

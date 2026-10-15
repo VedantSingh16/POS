@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { LocalizedText, useTranslate } from "@/components/i18n/localized-text";
 
 export type SettingsSectionLink = { label: string; href: string };
 
 /** Responsive secondary navigation for settings pages. */
 export function SettingsSectionNav({ items }: { items: SettingsSectionLink[] }) {
   const pathname = usePathname();
+  const t = useTranslate();
 
   return (
-    <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:self-start lg:overflow-visible lg:rounded-xl lg:border lg:border-border lg:bg-card lg:p-2 lg:pb-2">
+    <nav aria-label={t("Settings sections")} className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:self-start lg:overflow-visible lg:rounded-xl lg:border lg:border-border lg:bg-card lg:p-2 lg:pb-2">
       {items.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
@@ -20,11 +22,11 @@ export function SettingsSectionNav({ items }: { items: SettingsSectionLink[] }) 
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-11 shrink-0 items-center rounded-lg border-l-2 border-transparent px-3.5 py-2.5 text-sm font-normal text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground",
-              active && "border-l-primary bg-accent font-medium text-accent-foreground",
+              "flex min-h-11 shrink-0 items-center rounded-lg border-s-2 border-transparent px-3.5 py-2.5 text-sm font-normal text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground",
+              active && "border-s-primary bg-accent font-medium text-accent-foreground",
             )}
           >
-            {item.label}
+            <LocalizedText value={item.label} />
           </Link>
         );
       })}

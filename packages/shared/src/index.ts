@@ -7,3 +7,4 @@ export * from './tax-id.js';
 export * from './fiscal.js';
 export * from './currency.js';
 export * from './markets.js';
+export * from './locale.js';

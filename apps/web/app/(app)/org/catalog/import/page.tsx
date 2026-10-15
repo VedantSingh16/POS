@@ -1,8 +1,9 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { ImportWizard } from "@/features/catalog/import-wizard";
 
-export const metadata = { title: "Import products" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Import products") }; }
 
 export default async function ImportPage() {
   await requirePermission("catalog.manage");

@@ -1,9 +1,11 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { PageHeader } from "@/components/app/page-header";
 import { NamedTable } from "@/features/tables";
 import { api, soft } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "Store brands" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Store brands") }; }
 
 export default async function Page({ params }: { params: Promise<{ storeId: string }> }) {
   const { storeId } = await params;
@@ -15,7 +17,7 @@ export default async function Page({ params }: { params: Promise<{ storeId: stri
   return (
     <>
       <PageHeader title="Brands" description="Listed automatically from the products this store sells. When you add a product sent by the organisation, its category and brand appear here." crumbs={[{ label: "Store", href: `/s/${storeId}` }, { label: store?.name ?? "Store" }, { label: "Brands" }]} />
-      {problems[0] && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">Could not load: {problems[0]}</p>}
+      {problems[0] && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning"><LocalizedText value={"Could not load: "} />{problems[0]}</p>}
       <NamedTable data={rows} noun="Brand" />
     </>
   );

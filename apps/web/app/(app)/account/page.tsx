@@ -1,8 +1,9 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { AccountForms } from "@/features/actions";
 
-export const metadata = { title: "My account" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("My account") }; }
 
 export default async function Page() {
   const me = await requireSession();

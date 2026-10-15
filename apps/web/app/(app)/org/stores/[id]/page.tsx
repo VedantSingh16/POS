@@ -1,3 +1,5 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowRight } from "lucide-react";
@@ -14,7 +16,7 @@ import { RegistersTable } from "@/features/tables";
 import { api } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "Store" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Store") }; }
 
 export default async function StoreDetail({ params }: PageProps<"/org/stores/[id]">) {
   const me = await requirePermission("stores.view");
@@ -34,7 +36,7 @@ export default async function StoreDetail({ params }: PageProps<"/org/stores/[id
     <>
       <PageHeader title={store.name} description={`Store code ${store.code}${store.city ? ` · ${store.city}` : ""}`} crumbs={[{ label: "Organisation", href: "/org" }, { label: "Stores", href: "/org/stores" }, { label: store.name }]} backHref="/org/stores" backLabel="Back to stores"
         actions={<>
-          <Link href={`/s/${store.id}`} className={buttonVariants()}>Open store operations <ArrowRight /></Link>
+          <Link href={`/s/${store.id}`} className={buttonVariants()}><LocalizedText value={"Open store operations "} /><ArrowRight className="rtl:rotate-180" /></Link>
           {canManageStore && <StoreStatusButton storeId={store.id} storeName={store.name} status={store.status} />}
         </>} />
       {setupIssues.length > 0 && (
@@ -46,17 +48,17 @@ export default async function StoreDetail({ params }: PageProps<"/org/stores/[id
       <Tabs defaultValue="overview">
         <TabsList>{[["overview", "Overview"], ["registers", "Registers"], ["team", "Team"], ["settings", "Settings"]].map(([value, label]) => <TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}</TabsList>
         <TabsContent value="overview"><Card><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div><p className="text-xs text-muted-foreground">Status</p><StatusBadge status={store.status} /></div>
-          <div><p className="text-xs text-muted-foreground">Store manager</p>{managers.length ? <ul className="text-sm">{managers.map((m) => <li key={m.id}>{m.name}<span className="block text-xs text-muted-foreground">{m.email}</span></li>)}</ul> : <p className="text-sm text-muted-foreground">Not assigned</p>}</div>
-          <div><p className="text-xs text-muted-foreground">Registers</p><p className="text-sm">{store.registerCount}</p></div>
-          <div><p className="text-xs text-muted-foreground">Staff assigned</p><p className="text-sm">{staff.length}</p></div>
+          <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Status"} /></p><StatusBadge status={store.status} /></div>
+          <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Store manager"} /></p>{managers.length ? <ul className="text-sm">{managers.map((m) => <li key={m.id}>{m.name}<span className="block text-xs text-muted-foreground">{m.email}</span></li>)}</ul> : <p className="text-sm text-muted-foreground"><LocalizedText value={"Not assigned"} /></p>}</div>
+          <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Registers"} /></p><p className="text-sm">{store.registerCount}</p></div>
+          <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Staff assigned"} /></p><p className="text-sm">{staff.length}</p></div>
         </CardContent></Card></TabsContent>
         <TabsContent value="registers">
           {canManageRegisters && <div className="mb-3 flex justify-end"><AddRegisterSheet storeId={store.id} existing={registers.length} /></div>}
           <RegistersTable data={registers} storeId={store.id} admin />
         </TabsContent>
         <TabsContent value="team">
-          {canManageUsers && <div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground">People here can only work in {store.name}. Assign the Store Manager role to give someone responsibility for this store.</p><InviteUserSheet roles={roles.map((r) => ({ id: r.id, name: r.name, system: Boolean(r.system) }))} fixedStore={{ id: store.id, name: store.name }} /></div>}
+          {canManageUsers && <div className="mb-3 flex items-center justify-between gap-3"><p className="text-sm text-muted-foreground"><LocalizedText value={"People here can only work in "} />{store.name}<LocalizedText value={". Assign the Store Manager role to give someone responsibility for this store."} /></p><InviteUserSheet roles={roles.map((r) => ({ id: r.id, name: r.name, system: Boolean(r.system) }))} fixedStore={{ id: store.id, name: store.name }} /></div>}
           <StoreStaffTable data={staff} storeId={id} />
         </TabsContent>
         <TabsContent value="settings"><Card><CardContent><StoreSettingsForm initial={settings} canEdit={false} /></CardContent></Card></TabsContent>

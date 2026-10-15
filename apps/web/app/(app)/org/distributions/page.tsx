@@ -1,3 +1,5 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { PageHeader } from "@/components/app/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, EmptyState } from "@/components/data/primitives";
@@ -6,7 +8,7 @@ import { NewDistributionSheet } from "@/features/actions";
 import { api } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "Distributions" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Distributions") }; }
 
 export default async function Page() {
   const me = await requirePermission("catalog.distribute");
@@ -23,8 +25,8 @@ export default async function Page() {
         <CardContent>
           {distributions.length === 0 ? <EmptyState title="No distributions yet" description="Push master products out to a store to seed its catalogue with pending stock." /> : (
             <table className="w-full text-sm">
-              <thead className="bg-secondary/60"><tr className="border-b text-left text-xs font-semibold text-muted-foreground">
-                <th className="px-4 py-2">When</th><th className="px-4 py-2">To store</th><th className="px-4 py-2">Items</th><th className="px-4 py-2">Status</th><th className="px-4 py-2">Notes</th>
+              <thead className="bg-secondary/60"><tr className="border-b text-start text-xs font-semibold text-muted-foreground">
+                <th className="px-4 py-2"><LocalizedText value={"When"} /></th><th className="px-4 py-2"><LocalizedText value={"To store"} /></th><th className="px-4 py-2"><LocalizedText value={"Items"} /></th><th className="px-4 py-2"><LocalizedText value={"Status"} /></th><th className="px-4 py-2"><LocalizedText value={"Notes"} /></th>
               </tr></thead>
               <tbody>
                 {distributions.map((d) => (

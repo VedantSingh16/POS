@@ -1,7 +1,7 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -44,10 +44,10 @@ export function ReturnForm({ storeId, sessions }: { storeId: string; sessions: S
   }
 
   return <Card className="max-w-3xl"><CardContent className="grid gap-5 p-5">
-    <div className="flex gap-2"><Input value={receipt} onChange={(event) => setReceipt(event.target.value)} placeholder="TAX-YYYYMMDD-0000" aria-label="Receipt number" /><Button onClick={() => void findReceipt()} disabled={busy || !receipt.trim()}>Find receipt</Button></div>
-    {sale && <div className="grid gap-3"><p className="font-medium">{sale.receiptNumber}</p>{sale.lines.map((line) => <div key={line.id} className="flex items-center gap-3 rounded-md border p-3"><div className="min-w-0 flex-1"><p className="font-medium">{line.name}</p><p className="text-xs text-muted-foreground">{line.sku} · sold {line.quantity}</p></div><Money minor={line.lineTotalCents} /><Input className="w-24" type="number" min="0" max={line.quantity} value={quantities[line.id] ?? ""} onChange={(event) => setQuantities((current) => ({ ...current, [line.id]: Math.min(line.quantity, Math.max(0, Number(event.target.value) || 0)) }))} aria-label={`Return quantity for ${line.name}`} /></div>)}
-      <div className="grid gap-3 sm:grid-cols-4"><label className="grid gap-1 text-sm">Reason<Input value={reason} onChange={(event) => setReason(event.target.value)} /></label><label className="grid gap-1 text-sm">Restock<NativeSelect value={restockStatus} onChange={(event) => setRestockStatus(event.target.value)}><option value="SELLABLE">Sellable</option><option value="DAMAGED">Damaged</option></NativeSelect></label><label className="grid gap-1 text-sm">Refund tender<NativeSelect value={tenderType} onChange={(event) => setTenderType(event.target.value)}><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></NativeSelect></label><label className="grid gap-1 text-sm">Manager PIN if required<Input type="password" inputMode="numeric" value={managerPin} onChange={(event) => setManagerPin(event.target.value.replace(/\D/g, "").slice(0, 8))} /></label></div>
-      <Button onClick={() => void submit()} disabled={busy}>Complete refund</Button>
+    <div className="flex gap-2"><Input value={receipt} onChange={(event) => setReceipt(event.target.value)} placeholder="TAX-YYYYMMDD-0000" aria-label="Receipt number" /><Button onClick={() => void findReceipt()} disabled={busy || !receipt.trim()}><LocalizedText value={"Find receipt"} /></Button></div>
+    {sale && <div className="grid gap-3"><p className="font-medium">{sale.receiptNumber}</p>{sale.lines.map((line) => <div key={line.id} className="flex items-center gap-3 rounded-md border p-3"><div className="min-w-0 flex-1"><p className="font-medium">{line.name}</p><p className="text-xs text-muted-foreground">{line.sku} <LocalizedText value={"· sold "} />{line.quantity}</p></div><Money minor={line.lineTotalCents} /><Input className="w-24" type="number" min="0" max={line.quantity} value={quantities[line.id] ?? ""} onChange={(event) => setQuantities((current) => ({ ...current, [line.id]: Math.min(line.quantity, Math.max(0, Number(event.target.value) || 0)) }))} aria-label={`Return quantity for ${line.name}`} /></div>)}
+      <div className="grid gap-3 sm:grid-cols-4"><label className="grid gap-1 text-sm"><LocalizedText value={"Reason"} /><Input value={reason} onChange={(event) => setReason(event.target.value)} /></label><label className="grid gap-1 text-sm"><LocalizedText value={"Restock"} /><NativeSelect value={restockStatus} onChange={(event) => setRestockStatus(event.target.value)}><option value="SELLABLE"><LocalizedText value={"Sellable"} /></option><option value="DAMAGED"><LocalizedText value={"Damaged"} /></option></NativeSelect></label><label className="grid gap-1 text-sm"><LocalizedText value={"Refund tender"} /><NativeSelect value={tenderType} onChange={(event) => setTenderType(event.target.value)}><option value="CASH"><LocalizedText value={"Cash"} /></option><option value="CARD"><LocalizedText value={"Card"} /></option><option value="UPI"><LocalizedText value={"UPI"} /></option></NativeSelect></label><label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN if required"} /><Input type="password" inputMode="numeric" value={managerPin} onChange={(event) => setManagerPin(event.target.value.replace(/\D/g, "").slice(0, 8))} /></label></div>
+      <Button onClick={() => void submit()} disabled={busy}><LocalizedText value={"Complete refund"} /></Button>
     </div>}
     {status && <p role="alert" className="text-sm text-danger">{status}</p>}
   </CardContent></Card>;

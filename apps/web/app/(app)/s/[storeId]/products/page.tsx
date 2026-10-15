@@ -1,3 +1,5 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { PageHeader } from "@/components/app/page-header";
 import { StoreProductsTable } from "@/features/store/store-tables";
 import { AddStoreProductsSheet, PendingVerificationList } from "@/features/actions";
@@ -7,7 +9,7 @@ import { requirePermission } from "@/lib/server/session";
 import type * as M from "@/features/types";
 import type { ConfiguredField } from "@/features/settings/configurable-field-values";
 
-export const metadata = { title: "Store products" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Store products") }; }
 
 export default async function StoreProducts({ params }: PageProps<"/s/[storeId]/products">) {
   const { storeId } = await params;
@@ -46,12 +48,12 @@ export default async function StoreProducts({ params }: PageProps<"/s/[storeId]/
           {canManageStore && <AddStoreProductsSheet storeId={storeId} items={data} />}
         </div>}
       />
-      {problems.length > 0 && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">Part of this page could not be loaded ({problems[0]}). The rest is shown below.</p>}
+      {problems.length > 0 && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning"><LocalizedText value={"Part of this page could not be loaded ("} />{problems[0]}<LocalizedText value={"). The rest is shown below."} /></p>}
       {pending.length > 0 && (
         <section className="mb-6 rounded-md border bg-warning-soft p-4">
           <div className="mb-3">
-            <h2 className="font-semibold">Pending from the organisation ({pending.length})</h2>
-            <p className="text-sm text-muted-foreground">Products and stock sent to this store are held here until a store manager reviews them.{canVerify ? " Accepted products become available for sale; their category and brand are added to the store automatically." : " This organisation view can see their status but cannot accept or reject them."}</p>
+            <h2 className="font-semibold"><LocalizedText value={"Pending from the organisation ("} />{pending.length})</h2>
+            <p className="text-sm text-muted-foreground"><LocalizedText value={"Products and stock sent to this store are held here until a store manager reviews them."} /><LocalizedText value={canVerify ? " Accepted products become available for sale; their category and brand are added to the store automatically." : " This organisation view can see their status but cannot accept or reject them."} /></p>
           </div>
           <PendingVerificationList storeId={storeId} items={pending} taxGroups={taxOptions.map((t) => ({ id: t.id, name: t.name, rate: t.ratePercent }))} canReview={canVerify} />
         </section>

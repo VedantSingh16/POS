@@ -1,10 +1,11 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { InviteUserSheet } from "@/features/forms";
 import { UsersTable } from "@/features/tables";
 import { api } from "@/features/api";
 
-export const metadata = { title: "Team members" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Team members") }; }
 
 export default async function UsersPage() {
   await requirePermission("users.view");

@@ -1,8 +1,8 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
@@ -31,9 +31,9 @@ export function StoreStaffRoleSelect({ storeId, userId, initialRoleId, roleOptio
 
   return <div className="flex min-w-48 items-center gap-2">
     <NativeSelect aria-label="Assign store role" value={roleId} onChange={(event) => setRoleId(event.target.value)}>
-      <option value="">No store role</option>
+      <option value=""><LocalizedText value={"No store role"} /></option>
       {roleOptions.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
     </NativeSelect>
-    <Button size="sm" variant="outline" disabled={!changed || busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</Button>
+    <Button size="sm" variant="outline" disabled={!changed || busy} onClick={() => void save()}><LocalizedText value={busy ? "Saving…" : "Save"} /></Button>
   </div>;
 }

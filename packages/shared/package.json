@@ -55,6 +55,11 @@
       "types": "./src/markets.ts",
       "node": "./dist/markets.js",
       "default": "./src/markets.ts"
+    },
+    "./locale": {
+      "types": "./src/locale.ts",
+      "node": "./dist/locale.js",
+      "default": "./src/locale.ts"
     }
   },
   "scripts": {

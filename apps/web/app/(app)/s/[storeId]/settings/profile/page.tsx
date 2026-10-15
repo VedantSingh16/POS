@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { PageHeader } from "@/components/app/page-header";
 import { StoreSettingsForm } from "@/features/store/store-settings-form";
 import { api } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "Store profile" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Store profile") }; }
 export default async function StoreProfileSettings({ params }: PageProps<"/s/[storeId]/settings/profile">) {
   const { storeId } = await params;
   const me = await requirePermission("store.settings.view", storeId);

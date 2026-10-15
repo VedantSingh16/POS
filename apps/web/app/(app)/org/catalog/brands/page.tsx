@@ -1,10 +1,11 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { NamedTable } from "@/features/tables";
 import { NewBrandSheet } from "@/features/catalog/record-forms";
 import { api } from "@/features/api";
 
-export const metadata = { title: "Brands" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Brands") }; }
 
 export default async function Page() {
   const me = await requirePermission("catalog.view");

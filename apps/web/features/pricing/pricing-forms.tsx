@@ -1,8 +1,10 @@
 "use client";
+import { LocalizedText } from "@/components/i18n/localized-text";
+
 /* Additional charges and store-owned tax group controls. The API checks store access on every call. */
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -10,11 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { FormSheet } from "@/components/form/dialogs";
 import { L, SheetFooter, rupeesToPaise, send, useRun } from "@/features/actions";
 import type { ChargeRow } from "@/features/types";
-import { currencyCode, formatMoney, toInput } from "@/lib/format";
+import { currencyCode, formatMoney, formatNumber, toInput } from "@/lib/format";
+import { useLocale } from "@/components/i18n/locale-provider";
+import type { Locale } from "@pos/shared/locale";
 
 type TaxOption = { id: string; name: string; ratePercent: number };
 
-const describeValue = (charge: ChargeRow) => charge.kind === "FLAT" ? formatMoney(charge.amountCents ?? 0) : `${charge.ratePercent}%`;
+const describeValue = (charge: ChargeRow, locale: Locale) => charge.kind === "FLAT" ? formatMoney(charge.amountCents ?? 0, locale) : `${formatNumber(charge.ratePercent ?? 0, locale)}%`;
 const describeApplies = (charge: ChargeRow) => charge.applies === "PER_ITEM" ? (charge.kind === "FLAT" ? "per item" : "on each item") : "per bill";
 
 export function ChargeForm({ storeId, taxGroups, charge, onDone }: { storeId?: string; taxGroups: TaxOption[]; charge?: ChargeRow; onDone: () => void }) {
@@ -41,40 +45,41 @@ export function ChargeForm({ storeId, taxGroups, charge, onDone }: { storeId?: s
   }}>
     <L label="Name" hint="Shown on the bill and the invoice, e.g. Packaging or Service charge."><Input value={v.name} onChange={set("name")} /></L>
     <div className="grid gap-4 sm:grid-cols-2">
-      <L label="Type"><NativeSelect value={v.kind} onChange={set("kind")}><option value="FLAT">Fixed amount ({currencyCode()})</option><option value="PERCENT">Percentage of the bill (%)</option></NativeSelect></L>
+      <L label="Type"><NativeSelect value={v.kind} onChange={set("kind")}><option value="FLAT"><LocalizedText value={"Fixed amount ("} />{currencyCode()})</option><option value="PERCENT"><LocalizedText value={"Percentage of the bill (%)"} /></option></NativeSelect></L>
       <L label={v.kind === "FLAT" ? `Amount (${currencyCode()})` : "Percentage (%)"}><Input value={v.value} onChange={set("value")} inputMode="decimal" /></L>
     </div>
-    <L label="Applies" hint={v.kind === "FLAT" ? "Per bill is charged once; per item is charged for every unit sold." : "Percentages are taken on the bill value before GST."}><NativeSelect value={v.applies} onChange={set("applies")}><option value="PER_BILL">Once per bill</option><option value="PER_ITEM">For every item</option></NativeSelect></L>
-    <L label="GST on this charge" hint="Optional."><NativeSelect value={v.taxGroupId} onChange={set("taxGroupId")}><option value="">No GST</option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.ratePercent}%</option>)}</NativeSelect></L>
+    <L label="Applies" hint={v.kind === "FLAT" ? "Per bill is charged once; per item is charged for every unit sold." : "Percentages are taken on the bill value before GST."}><NativeSelect value={v.applies} onChange={set("applies")}><option value="PER_BILL"><LocalizedText value={"Once per bill"} /></option><option value="PER_ITEM"><LocalizedText value={"For every item"} /></option></NativeSelect></L>
+    <L label="GST on this charge" hint="Optional."><NativeSelect value={v.taxGroupId} onChange={set("taxGroupId")}><option value=""><LocalizedText value={"No GST"} /></option>{taxGroups.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.ratePercent}%</option>)}</NativeSelect></L>
     <SheetFooter busy={busy} label={charge ? "Save charge" : "Add charge"} />
   </form>;
 }
 
 export function NewChargeSheet({ storeId, taxGroups }: { storeId?: string; taxGroups: TaxOption[] }) {
   const [open, setOpen] = React.useState(false);
-  return <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add charge</Button>} title={storeId ? "Add a charge for this store" : "Add an organisation-wide charge"} description={storeId ? "Applies to bills in this store only, on top of any organisation-wide charges." : "Applies to bills in every store."}>
+  return <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> <LocalizedText value={"Add charge"} /></Button>} title={storeId ? "Add a charge for this store" : "Add an organisation-wide charge"} description={storeId ? "Applies to bills in this store only, on top of any organisation-wide charges." : "Applies to bills in every store."}>
     <ChargeForm storeId={storeId} taxGroups={taxGroups} onDone={() => setOpen(false)} />
   </FormSheet>;
 }
 
 /** Table of charges. `editableScope` is the scope this screen may edit; the other scope is shown read-only. */
 export function ChargesList({ charges, storeId, taxGroups, canEdit }: { charges: ChargeRow[]; storeId?: string; taxGroups: TaxOption[]; canEdit: boolean }) {
+  const { locale } = useLocale();
   const { busy, run } = useRun();
   const [editing, setEditing] = React.useState<string | null>(null);
-  if (charges.length === 0) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">No additional charges yet.</p>;
+  if (charges.length === 0) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground"><LocalizedText value={"No additional charges yet."} /></p>;
   return <div className="divide-y rounded-md border bg-card">
     {charges.map((charge) => {
       const mine = canEdit && (storeId ? charge.storeId === storeId : charge.storeId === null);
       return <div key={charge.id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
         <div className="min-w-0 flex-1">
-          <p className="font-medium">{charge.name} <Badge tone={charge.scope === "ORGANISATION" ? "brand" : "neutral"}>{charge.scope === "ORGANISATION" ? "Organisation" : "This store"}</Badge> {charge.status === "DISABLED" && <Badge tone="warning">Off</Badge>}</p>
-          <p className="text-xs text-muted-foreground">{describeValue(charge)} {describeApplies(charge)}{charge.taxGroupName ? ` · GST ${charge.taxRatePercent}% (${charge.taxGroupName})` : " · no GST"}</p>
+          <p className="font-medium">{charge.name} <Badge tone={charge.scope === "ORGANISATION" ? "brand" : "neutral"}><LocalizedText value={charge.scope === "ORGANISATION" ? "Organisation" : "This store"} /></Badge> {charge.status === "DISABLED" && <Badge tone="warning"><LocalizedText value={"Off"} /></Badge>}</p>
+          <p className="text-xs text-muted-foreground">{describeValue(charge, locale)} <LocalizedText value={describeApplies(charge)} />{charge.taxGroupName ? <> · GST {formatNumber(charge.taxRatePercent, locale)}% ({charge.taxGroupName})</> : <> · <LocalizedText value={"no GST"} /></>}</p>
         </div>
         {mine && <div className="flex gap-1.5">
-          <FormSheet open={editing === charge.id} onOpenChange={(o) => setEditing(o ? charge.id : null)} trigger={<Button size="sm" variant="outline">Edit</Button>} title={`Edit ${charge.name}`}>
+          <FormSheet open={editing === charge.id} onOpenChange={(o) => setEditing(o ? charge.id : null)} trigger={<Button size="sm" variant="outline"><LocalizedText value={"Edit"} /></Button>} title={`Edit ${charge.name}`}>
             <ChargeForm storeId={storeId} taxGroups={taxGroups} charge={charge} onDone={() => setEditing(null)} />
           </FormSheet>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/charges/${charge.id}`, "PATCH", { ...(storeId ? { storeId } : {}), status: charge.status === "ACTIVE" ? "DISABLED" : "ACTIVE" }, storeId), charge.status === "ACTIVE" ? "Charge turned off" : "Charge turned on")}>{charge.status === "ACTIVE" ? "Turn off" : "Turn on"}</Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/charges/${charge.id}`, "PATCH", { ...(storeId ? { storeId } : {}), status: charge.status === "ACTIVE" ? "DISABLED" : "ACTIVE" }, storeId), charge.status === "ACTIVE" ? "Charge turned off" : "Charge turned on")}><LocalizedText value={charge.status === "ACTIVE" ? "Turn off" : "Turn on"} /></Button>
         </div>}
       </div>;
     })}
@@ -85,7 +90,7 @@ export function NewStoreTaxGroupSheet({ storeId }: { storeId: string }) {
   const { busy, run } = useRun();
   const [open, setOpen] = React.useState(false);
   const [v, setV] = React.useState({ name: "", ratePercent: "", hsnCode: "" });
-  return <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> Add tax group</Button>} title="Add a tax group" description="This tax group and its product assignments belong to this store alone.">
+  return <FormSheet open={open} onOpenChange={setOpen} trigger={<Button><Plus /> <LocalizedText value={"Add tax group"} /></Button>} title="Add a tax group" description="This tax group and its product assignments belong to this store alone.">
     <form className="grid gap-4 pb-6" onSubmit={async (e) => {
       e.preventDefault();
       const rate = Number(v.ratePercent);
@@ -104,15 +109,15 @@ export type StoreTaxGroup = { id: string; name: string; code: string; hsnCode: s
 export function StoreTaxGroupsList({ storeId, groups, canEdit }: { storeId: string; groups: StoreTaxGroup[]; canEdit: boolean }) {
   const { busy, run } = useRun();
   const [editing, setEditing] = React.useState<string | null>(null);
-  if (!groups.length) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">No tax groups yet. Add the rates this store uses, then assign each product below.</p>;
+  if (!groups.length) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground"><LocalizedText value={"No tax groups yet. Add the rates this store uses, then assign each product below."} /></p>;
   return <div className="divide-y rounded-md border bg-card">
     {groups.map((group) => <div key={group.id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
-      <div className="min-w-0 flex-1"><p className="font-medium">{group.name} {group.status === "DISABLED" && <Badge tone="warning">Off</Badge>}</p><p className="text-xs text-muted-foreground">{group.ratePercent}% GST{group.hsnCode ? ` · HSN ${group.hsnCode}` : ""}{group.includesTax ? " · price includes tax" : ""}</p></div>
+      <div className="min-w-0 flex-1"><p className="font-medium">{group.name} {group.status === "DISABLED" && <Badge tone="warning"><LocalizedText value={"Off"} /></Badge>}</p><p className="text-xs text-muted-foreground">{group.ratePercent}<LocalizedText value={"% GST"} />{group.hsnCode ? ` · HSN ${group.hsnCode}` : ""}<LocalizedText value={group.includesTax ? " · price includes tax" : ""} /></p></div>
       {canEdit && <div className="flex gap-2">
-        <FormSheet open={editing === group.id} onOpenChange={(open) => setEditing(open ? group.id : null)} trigger={<Button size="sm" variant="outline">Edit</Button>} title={`Edit ${group.name}`}>
+        <FormSheet open={editing === group.id} onOpenChange={(open) => setEditing(open ? group.id : null)} trigger={<Button size="sm" variant="outline"><LocalizedText value={"Edit"} /></Button>} title={`Edit ${group.name}`}>
           <StoreTaxGroupEditor storeId={storeId} group={group} onDone={() => setEditing(null)} />
         </FormSheet>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/tax-groups/${group.id}`, "PATCH", { storeId, status: group.status === "ACTIVE" ? "DISABLED" : "ACTIVE" }, storeId), group.status === "ACTIVE" ? "Tax group turned off" : "Tax group turned on")}>{group.status === "ACTIVE" ? "Turn off" : "Turn on"}</Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => send(`/pos/v1/tax-groups/${group.id}`, "PATCH", { storeId, status: group.status === "ACTIVE" ? "DISABLED" : "ACTIVE" }, storeId), group.status === "ACTIVE" ? "Tax group turned off" : "Tax group turned on")}><LocalizedText value={group.status === "ACTIVE" ? "Turn off" : "Turn on"} /></Button>
       </div>}
     </div>)}
   </div>;
@@ -130,7 +135,7 @@ function StoreTaxGroupEditor({ storeId, group, onDone }: { storeId: string; grou
     <L label="Name"><Input value={value.name} onChange={(event) => setValue((current) => ({ ...current, name: event.target.value }))} /></L>
     <L label="GST rate (%)"><Input value={value.rate} onChange={(event) => setValue((current) => ({ ...current, rate: event.target.value }))} inputMode="decimal" /></L>
     <L label="HSN / SAC" hint="Optional."><Input value={value.hsnCode} onChange={(event) => setValue((current) => ({ ...current, hsnCode: event.target.value }))} /></L>
-    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.includesTax} onChange={(event) => setValue((current) => ({ ...current, includesTax: event.target.checked }))} /> Product prices using this group include GST</label>
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.includesTax} onChange={(event) => setValue((current) => ({ ...current, includesTax: event.target.checked }))} /> <LocalizedText value={"Product prices using this group include GST"} /></label>
     <SheetFooter busy={busy} label="Save tax group" />
   </form>;
 }
@@ -140,8 +145,8 @@ export function StoreTaxAssignmentTable({ storeId, items, groups, canEdit }: { s
   const router = useRouter();
   const activeGroups = groups.filter((group) => group.status === "ACTIVE");
   const rows = items;
-  if (!rows.length) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground">Assign organization catalog products to this store to configure their tax.</p>;
-  return <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[540px] text-left text-sm"><thead><tr className="border-b bg-muted/40"><th className="p-3">Product</th><th className="p-3">SKU</th><th className="p-3">Tax group</th></tr></thead><tbody>
-    {rows.map((item) => <tr className="border-b last:border-0" key={item.variantId}><td className="p-3 font-medium">{item.name}</td><td className="p-3 font-mono text-xs">{item.sku}</td><td className="p-3"><NativeSelect aria-label={`Tax group for ${item.name}`} className="min-w-48" disabled={!canEdit || busy} value={item.storeTaxGroupId ?? ""} onChange={async (event) => { const ok = await run(() => send("/pos/v1/store-products", "PATCH", { storeId, variantId: item.variantId, taxGroupId: event.target.value || null }, storeId), "Product tax assignment saved"); if (ok) router.refresh(); }}><option value="">No tax group assigned</option>{activeGroups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.ratePercent}%</option>)}</NativeSelect></td></tr>)}
+  if (!rows.length) return <p className="rounded-md border p-6 text-center text-sm text-muted-foreground"><LocalizedText value={"Assign organization catalog products to this store to configure their tax."} /></p>;
+  return <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[540px] text-start text-sm"><thead><tr className="border-b bg-muted/40"><th className="p-3"><LocalizedText value={"Product"} /></th><th className="p-3"><LocalizedText value={"SKU"} /></th><th className="p-3"><LocalizedText value={"Tax group"} /></th></tr></thead><tbody>
+    {rows.map((item) => <tr className="border-b last:border-0" key={item.variantId}><td className="p-3 font-medium">{item.name}</td><td className="p-3 font-mono text-xs">{item.sku}</td><td className="p-3"><NativeSelect aria-label={`Tax group for ${item.name}`} className="min-w-48" disabled={!canEdit || busy} value={item.storeTaxGroupId ?? ""} onChange={async (event) => { const ok = await run(() => send("/pos/v1/store-products", "PATCH", { storeId, variantId: item.variantId, taxGroupId: event.target.value || null }, storeId), "Product tax assignment saved"); if (ok) router.refresh(); }}><option value=""><LocalizedText value={"No tax group assigned"} /></option>{activeGroups.map((group) => <option key={group.id} value={group.id}>{group.name} · {group.ratePercent}%</option>)}</NativeSelect></td></tr>)}
   </tbody></table></div>;
 }

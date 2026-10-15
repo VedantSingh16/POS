@@ -1,15 +1,11 @@
+import { LocalizedText } from "@/components/i18n/localized-text";
 import type { ReactNode } from "react";
 import Image from "next/image";
-import { Globe2 } from "lucide-react";
 import { AuthBrand } from "@/features/auth/auth-brand";
+import { LocaleSwitch } from "@/components/i18n/locale-switch";
 
 function AuthLanguage() {
-  return (
-    <div aria-label="Language: English" className="flex items-center gap-2 text-sm font-medium text-auth-muted">
-      <Globe2 aria-hidden="true" className="size-4 text-auth-muted" strokeWidth={1.8} />
-      <span>English</span>
-    </div>
-  );
+  return <LocaleSwitch className="border-auth-outline bg-auth-surface/90 text-auth-muted" />;
 }
 
 /** Sign-in split layout with a subdued product image. */
@@ -24,19 +20,16 @@ export function AuthSplit({ children }: { children: ReactNode }) {
         <div className="relative z-10 mt-14 max-w-[670px] sm:mt-16 lg:mt-[clamp(58px,8vh,100px)]">
           <p className="mb-5 flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-auth-primary sm:text-xs">
             <span aria-hidden="true" className="size-2 rounded-full bg-auth-primary" />
-            Multi-store point of sale
-          </p>
+            <LocalizedText value={"Multi-store point of sale"} /></p>
           <h1 className="font-display text-[clamp(3.45rem,5.35vw,5.7rem)] font-extrabold leading-[0.98] tracking-[-0.075em] text-auth-ink">
-            Keep every store
-            <br />
-            <span className="text-auth-primary">in sync.</span>
+            <LocalizedText value={"Keep every store"} /><br />
+            <span className="text-auth-primary"><LocalizedText value={"in sync."} /></span>
           </h1>
           <p className="mt-5 max-w-[450px] text-[17px] leading-[1.6] text-auth-muted sm:text-[18px]">
-            Sales, stock and store teams, together in one place.
-          </p>
+            <LocalizedText value={"Sales, stock and store teams, together in one place."} /></p>
         </div>
 
-        <div aria-hidden="true" className="auth-hero-visual pointer-events-none relative z-0 -mx-6 mt-auto h-[260px] sm:-mx-10 sm:h-[320px] lg:absolute lg:left-0 lg:right-[-160px] lg:bottom-0 lg:top-[37%] lg:mx-0 lg:mt-0 lg:h-auto">
+        <div aria-hidden="true" className="auth-hero-visual pointer-events-none relative z-0 -mx-6 mt-auto h-[260px] sm:-mx-10 sm:h-[320px] lg:absolute lg:start-0 lg:end-[-160px] lg:bottom-0 lg:top-[37%] lg:mx-0 lg:mt-0 lg:h-auto">
           <Image
             src="/images/pos-auth-hero.png"
             alt=""
@@ -55,7 +48,7 @@ export function AuthSplit({ children }: { children: ReactNode }) {
       </section>
 
       <section className="relative z-10 flex min-h-[620px] items-center justify-center px-5 pb-12 pt-[92px] sm:px-8 lg:min-h-screen lg:px-10 lg:py-24">
-        <div className="absolute right-6 top-6 z-20 sm:right-10 sm:top-8"><AuthLanguage /></div>
+        <div className="absolute end-6 top-6 z-20 sm:end-10 sm:top-8"><AuthLanguage /></div>
         <div className="w-full max-w-[37rem] rounded-[24px] bg-auth-surface/95 px-6 py-8 shadow-xl ring-1 ring-auth-outline backdrop-blur-sm sm:px-10 sm:py-11 lg:px-12 lg:py-12">
           {children}
         </div>

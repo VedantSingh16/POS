@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { isLocale } from '@pos/shared/locale';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -199,9 +200,13 @@ export class AuthService {
     });
   }
 
-  async updateProfile(context: UserContext, input: { firstName?: unknown; lastName?: unknown; password?: unknown; currentPassword?: unknown; pin?: unknown }): Promise<void> {
+  async updateProfile(context: UserContext, input: { firstName?: unknown; lastName?: unknown; password?: unknown; currentPassword?: unknown; pin?: unknown; preferredLocale?: unknown }): Promise<void> {
     const password = typeof input.password === 'string' && input.password.length ? input.password : undefined;
     const pin = typeof input.pin === 'string' && input.pin.length ? input.pin : undefined;
+    const preferredLocale = input.preferredLocale;
+    if (preferredLocale !== undefined && !isLocale(preferredLocale)) {
+      throw new BadRequestException('Preferred language must be en or ar');
+    }
     if (password && password.length < 12) throw new UnauthorizedException('Password must be at least 12 characters');
     if (password) {
       const stored = await this.prisma.user.findUnique({ where: { id: context.userId }, select: { passwordHash: true } });
@@ -209,15 +214,16 @@ export class AuthService {
       if (!stored || !supplied || !verifyPassword(supplied, stored.passwordHash)) throw new UnauthorizedException('Current password is incorrect');
     }
     if (pin && !/^\d{4,8}$/.test(pin)) throw new UnauthorizedException('PIN must contain 4 to 8 digits');
-    if (!password && !pin && typeof input.firstName !== 'string' && typeof input.lastName !== 'string') throw new UnauthorizedException('At least one profile field is required');
+    if (!password && !pin && typeof input.firstName !== 'string' && typeof input.lastName !== 'string' && preferredLocale === undefined) throw new UnauthorizedException('At least one profile field is required');
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: context.userId }, data: {
         ...(typeof input.firstName === 'string' && input.firstName.trim() ? { firstName: input.firstName.trim() } : {}),
         ...(typeof input.lastName === 'string' ? { lastName: input.lastName.trim() } : {}),
         ...(password ? { passwordHash: hashPassword(password), failedAttempts: 0, lockedUntil: null } : {}),
         ...(pin ? { pinHash: hashPassword(pin) } : {}),
+        ...(preferredLocale ? { preferredLocale } : {}),
       } });
-      await this.audit.record(context, 'auth.profile.updated', 'User', context.userId, { passwordChanged: Boolean(password), pinChanged: Boolean(pin) }, tx);
+      await this.audit.record(context, 'auth.profile.updated', 'User', context.userId, { passwordChanged: Boolean(password), pinChanged: Boolean(pin), preferredLocaleChanged: preferredLocale !== undefined }, tx);
     });
   }
 

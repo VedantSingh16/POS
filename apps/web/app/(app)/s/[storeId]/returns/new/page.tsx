@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { ReturnForm } from "@/features/returns/return-form";
 import { api } from "@/features/api";
 
-export const metadata = { title: "New return" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("New return") }; }
 
 export default async function NewReturn({ params }: PageProps<"/s/[storeId]/returns/new">) {
   const { storeId } = await params;

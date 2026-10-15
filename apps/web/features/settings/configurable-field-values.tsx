@@ -1,5 +1,5 @@
 "use client";
-
+import { LocalizedText, useTranslate } from "@/components/i18n/localized-text";
 import { Input, NativeSelect } from "@/components/ui/input";
 
 export type ConfiguredField = {
@@ -15,6 +15,7 @@ export function ConfigurableFieldValues({ fields, values, onChange, idPrefix }: 
   onChange: (next: Record<string, string | number | boolean>) => void;
   idPrefix: string;
 }) {
+  const t = useTranslate();
   const visible = fields.filter((field) => field.active).sort((a, b) => a.order - b.order);
   if (!visible.length) return null;
   const set = (key: string, value: string | number | boolean | undefined) => {
@@ -23,17 +24,17 @@ export function ConfigurableFieldValues({ fields, values, onChange, idPrefix }: 
     else next[key] = value;
     onChange(next);
   };
-  return <div className="grid gap-3" aria-label="Configured fields">
+  return <div className="grid gap-3" role="group" aria-label={t("Configured fields")}>
     {visible.map((field) => {
       const id = `${idPrefix}-${field.key}`;
       const value = values[field.key] ?? field.defaultValue;
       const control = field.type === "SELECT"
-        ? <NativeSelect id={id} required={field.required} value={typeof value === "string" ? value : ""} onChange={(event) => set(field.key, event.target.value)}><option value="">Choose…</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</NativeSelect>
+        ? <NativeSelect id={id} required={field.required} value={typeof value === "string" ? value : ""} onChange={(event) => set(field.key, event.target.value)}><option value=""><LocalizedText value={"Choose…"} /></option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</NativeSelect>
         : field.type === "YESNO"
-          ? <NativeSelect id={id} required={field.required} value={typeof value === "boolean" ? String(value) : ""} onChange={(event) => set(field.key, event.target.value === "" ? undefined : event.target.value === "true")}><option value="">Choose…</option><option value="true">Yes</option><option value="false">No</option></NativeSelect>
+          ? <NativeSelect id={id} required={field.required} value={typeof value === "boolean" ? String(value) : ""} onChange={(event) => set(field.key, event.target.value === "" ? undefined : event.target.value === "true")}><option value=""><LocalizedText value={"Choose…"} /></option><option value="true"><LocalizedText value={"Yes"} /></option><option value="false"><LocalizedText value={"No"} /></option></NativeSelect>
           : <Input id={id} required={field.required} type={field.type === "NUMBER" ? "number" : field.type === "DATE" ? "date" : "text"} min={field.type === "NUMBER" ? field.min : undefined} max={field.type === "NUMBER" ? field.max : undefined} value={value === undefined ? "" : String(value)} onChange={(event) => set(field.key, event.target.value === "" ? undefined : field.type === "NUMBER" ? Number(event.target.value) : event.target.value)} />;
       return <label className="grid gap-1 text-sm" htmlFor={id} key={field.key}>
-        <span className="font-medium">{field.label}{field.required ? " *" : ""}</span>
+        <span className="font-medium">{field.label}<LocalizedText value={field.required ? " *" : ""} /></span>
         {control}
         {field.helpText && <span className="text-xs text-muted-foreground">{field.helpText}</span>}
       </label>;

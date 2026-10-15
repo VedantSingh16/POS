@@ -1,8 +1,8 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Field } from "@/components/form/field";
@@ -16,6 +16,7 @@ import { allowedBy, missingAttribute, ProductTypeFields, type AttributeValues } 
 import { ConfigurableFieldValues, type ConfiguredField } from "@/features/settings/configurable-field-values";
 
 const statuses = ["DRAFT", "ACTIVE", "DISCONTINUED", "SEASONAL", "BLOCKED"] as const;
+const statusLabels: Record<(typeof statuses)[number], string> = { DRAFT: "Draft", ACTIVE: "Active", DISCONTINUED: "Discontinued", SEASONAL: "Seasonal", BLOCKED: "Blocked" };
 
 export function EditProductSheet({ product, categories, productTypes = [], customFieldDefinitions = [], coreFields }: {
   product: Pick<CatalogProductDetail, "id" | "name" | "description" | "brand" | "categoryId" | "status" | "productTypeId" | "attributes" | "customFields">;
@@ -33,7 +34,7 @@ export function EditProductSheet({ product, categories, productTypes = [], custo
   const showBrand = visibleCore.includes("brand") || selectedType?.config.requireBrand === true;
   const showCategory = visibleCore.includes("category") || selectedType?.config.requireCategory === true;
   const form = useForm({ defaultValues: { name: product.name, description: product.description, brand: product.brand, categoryId: product.categoryId ?? "", status: product.status } });
-  return <FormSheet trigger={<Button variant="outline">Edit product</Button>} title="Edit product" description="Update the product identity, category and status."><form className="grid gap-4 pb-6" onSubmit={form.handleSubmit(async (value) => {
+  return <FormSheet trigger={<Button variant="outline"><LocalizedText value={"Edit product"} /></Button>} title="Edit product" description="Update the product identity, category and status."><form className="grid gap-4 pb-6" onSubmit={form.handleSubmit(async (value) => {
     try {
       const type = productTypes.find((item) => item.id === typeId);
       const problem = missingAttribute(type, typeValues);
@@ -48,9 +49,9 @@ export function EditProductSheet({ product, categories, productTypes = [], custo
     <Field label="Product name" htmlFor={`edit-product-name-${product.id}`}><Input id={`edit-product-name-${product.id}`} required minLength={2} {...form.register("name", { required: true, minLength: 2 })} /></Field>
     {showBrand && <Field label="Brand" htmlFor={`edit-product-brand-${product.id}`}><Input id={`edit-product-brand-${product.id}`} {...form.register("brand")} /></Field>}
     {visibleCore.includes("description") && <Field label="Description" htmlFor={`edit-product-description-${product.id}`}><Input id={`edit-product-description-${product.id}`} {...form.register("description")} /></Field>}
-    {showCategory && <Field label="Category" htmlFor={`edit-product-category-${product.id}`}><NativeSelect id={`edit-product-category-${product.id}`} {...form.register("categoryId")}><option value="">Uncategorised</option>{allowedBy(selectedType, "categoryIds", categories).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</NativeSelect></Field>}
-    {visibleCore.includes("status") && <Field label="Status" htmlFor={`edit-product-status-${product.id}`}><NativeSelect id={`edit-product-status-${product.id}`} {...form.register("status")}>{statuses.map((status) => <option key={status} value={status}>{status}</option>)}</NativeSelect></Field>}
-    <div className="flex justify-end gap-2"><SheetClose asChild><Button type="button" variant="outline">Cancel</Button></SheetClose><Button type="submit" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Saving…" : "Save product"}</Button></div>
+    {showCategory && <Field label="Category" htmlFor={`edit-product-category-${product.id}`}><NativeSelect id={`edit-product-category-${product.id}`} {...form.register("categoryId")}><option value=""><LocalizedText value={"Uncategorised"} /></option>{allowedBy(selectedType, "categoryIds", categories).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</NativeSelect></Field>}
+    {visibleCore.includes("status") && <Field label="Status" htmlFor={`edit-product-status-${product.id}`}><NativeSelect id={`edit-product-status-${product.id}`} {...form.register("status")}>{statuses.map((status) => <option key={status} value={status}><LocalizedText value={statusLabels[status]} /></option>)}</NativeSelect></Field>}
+    <div className="flex justify-end gap-2"><SheetClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></SheetClose><Button type="submit" disabled={form.formState.isSubmitting}><LocalizedText value={form.formState.isSubmitting ? "Saving…" : "Save product"} /></Button></div>
   </form></FormSheet>;
 }
 
@@ -74,7 +75,7 @@ export function EditVariantSheet({ variant, customFieldDefinitions = [], coreFie
     barcodes: variant.barcodes.join(", "),
     includesTax: variant.prices[0]?.includesTax ?? false,
   } });
-  return <FormSheet trigger={<Button size="sm" variant="outline">Edit variant</Button>} title={`Edit ${variant.sku}`} description="SKU and barcode uniqueness are enforced by the catalogue API."><form className="grid gap-4 pb-6" onSubmit={form.handleSubmit(async (value) => {
+  return <FormSheet trigger={<Button size="sm" variant="outline"><LocalizedText value={"Edit variant"} /></Button>} title={`Edit ${variant.sku}`} description="SKU and barcode uniqueness are enforced by the catalogue API."><form className="grid gap-4 pb-6" onSubmit={form.handleSubmit(async (value) => {
     const costCents = toMinor(value.costCents);
     const amountCents = toMinor(value.amountCents);
     const floorPriceCents = toMinor(value.floorPriceCents || 0);
@@ -98,11 +99,11 @@ export function EditVariantSheet({ variant, customFieldDefinitions = [], coreFie
     {(visibleCore.includes("barcode") || forceBarcode) && <Field label="Barcodes (comma-separated)" htmlFor={`variant-barcodes-${variant.id}`}><Input id={`variant-barcodes-${variant.id}`} {...form.register("barcodes")} /></Field>}
     <Field label={`Base price (${currencyCode()})`} htmlFor={`variant-price-${variant.id}`}><Input id={`variant-price-${variant.id}`} type="number" min="0" step="0.01" required {...form.register("amountCents", { required: true })} /></Field>
     {visibleCore.includes("cost") && <Field label={`Cost (${currencyCode()})`} htmlFor={`variant-cost-${variant.id}`}><Input id={`variant-cost-${variant.id}`} type="number" min="0" step="0.01" required {...form.register("costCents", { required: true })} /></Field>}
-    {visibleCore.includes("status") && <Field label="Status" htmlFor={`variant-status-${variant.id}`}><NativeSelect id={`variant-status-${variant.id}`} {...form.register("status")}>{statuses.map((status) => <option key={status} value={status}>{status}</option>)}</NativeSelect></Field>}
+    {visibleCore.includes("status") && <Field label="Status" htmlFor={`variant-status-${variant.id}`}><NativeSelect id={`variant-status-${variant.id}`} {...form.register("status")}>{statuses.map((status) => <option key={status} value={status}><LocalizedText value={statusLabels[status]} /></option>)}</NativeSelect></Field>}
     <ConfigurableFieldValues fields={variantFields} values={customFields} onChange={setCustomFields} idPrefix={`edit-variant-field-${variant.id}`} />
-    {visibleCore.includes("includesTax") && <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...form.register("includesTax")} /> Price includes tax</label>}
-    {visibleCore.includes("openPrice") && <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...form.register("openPrice")} /> Open price: the cashier enters the price at the till (manager PIN needed)</label>}
+    {visibleCore.includes("includesTax") && <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...form.register("includesTax")} /> <LocalizedText value={"Price includes tax"} /></label>}
+    {visibleCore.includes("openPrice") && <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...form.register("openPrice")} /> <LocalizedText value={"Open price: the cashier enters the price at the till (manager PIN needed)"} /></label>}
     {visibleCore.includes("floorPrice") && <Field label={`Lowest allowed price (${currencyCode()})`} htmlFor={`variant-floor-${variant.id}`}><Input id={`variant-floor-${variant.id}`} type="number" min="0" step="0.01" {...form.register("floorPriceCents")} /></Field>}
-    <div className="flex justify-end gap-2"><SheetClose asChild><Button type="button" variant="outline">Cancel</Button></SheetClose><Button type="submit" disabled={form.formState.isSubmitting}>{form.formState.isSubmitting ? "Saving…" : "Save variant"}</Button></div>
+    <div className="flex justify-end gap-2"><SheetClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></SheetClose><Button type="submit" disabled={form.formState.isSubmitting}><LocalizedText value={form.formState.isSubmitting ? "Saving…" : "Save variant"} /></Button></div>
   </form></FormSheet>;
 }

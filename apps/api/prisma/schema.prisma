@@ -372,6 +372,7 @@ model User {
   email          String
   passwordHash   String     @map("password_hash")
   pinHash        String?    @map("pin_hash")
+  preferredLocale String    @default("en") @map("preferred_locale")
   firstName      String     @map("first_name")
   lastName       String     @default("") @map("last_name")
   status         UserStatus @default(ACTIVE)

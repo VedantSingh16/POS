@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { AdjustStockForm } from "@/features/adjust-form";
 import { api } from "@/features/api";
 
-export const metadata = { title: "Adjust stock" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Adjust stock") }; }
 
 export default async function Adjust({ params }: PageProps<"/s/[storeId]/inventory/adjust">) {
   const { storeId } = await params;

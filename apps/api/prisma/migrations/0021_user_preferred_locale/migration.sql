@@ -1,0 +1,2 @@
+ALTER TABLE "users"
+  ADD COLUMN "preferred_locale" TEXT NOT NULL DEFAULT 'en';

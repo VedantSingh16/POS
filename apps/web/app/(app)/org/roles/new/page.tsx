@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { PageHeader } from "@/components/app/page-header";
 import { RoleEditor } from "@/features/role-editor";
 import { api } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "New role" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("New role") }; }
 
 export default async function NewRolePage() {
   await requirePermission("roles.view");

@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { ProductTypesManager } from "@/features/catalog/product-types-manager";
 import { api } from "@/features/api";
 
-export const metadata = { title: "Product setup rules" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Product setup rules") }; }
 
 export default async function Page() {
   const me = await requirePermission("catalog.view");

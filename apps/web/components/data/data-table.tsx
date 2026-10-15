@@ -1,4 +1,5 @@
 "use client";
+import { LocalizedText, useTranslate } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -31,6 +32,7 @@ type Props<T> = {
 
 /** One table for every list in the product. Client-side paging here; swap to server-side with manualPagination in Phase 2+. */
 export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Search…", toolbar, loading, error, emptyTitle = "Nothing here yet", emptyDescription, pageSize = 10, initialVisibility }: Props<T>) {
+  const t = useTranslate();
   const router = useRouter();
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [filter, setFilter] = React.useState("");
@@ -50,20 +52,20 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border p-3 sm:p-4">
         <div className="relative min-w-48 flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
-          <Input aria-label="Search table" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={searchPlaceholder} className="pl-8!" />
+          <Search className="pointer-events-none absolute start-3 top-3.5 size-4 text-muted-foreground" />
+          <Input aria-label="Search table" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={searchPlaceholder} className="ps-8!" />
         </div>
         {toolbar}
-        <div className="ml-auto">
+        <div className="ms-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm"><Columns3 /> Columns</Button>
+          <Button variant="outline" size="sm"><Columns3 /> <LocalizedText value={"Columns"} /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {table.getAllLeafColumns().filter((c) => c.getCanHide() && !(typeof c.columnDef.header === "string" && c.columnDef.header === "")).map((c) => (
                 <M.CheckboxItem key={c.id} checked={c.getIsVisible()} onCheckedChange={(v) => c.toggleVisibility(!!v)} onSelect={(e) => e.preventDefault()}
                   className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm outline-none data-[highlighted]:bg-accent">
-                  <span className="grid size-4 shrink-0 place-items-center text-primary">{c.getIsVisible() ? "✓" : ""}</span>{typeof c.columnDef.header === "string" ? c.columnDef.header : c.id}
+                  <span className="grid size-4 shrink-0 place-items-center text-primary"><LocalizedText value={c.getIsVisible() ? "✓" : ""} /></span><LocalizedText value={typeof c.columnDef.header === "string" ? c.columnDef.header : c.id} />
                 </M.CheckboxItem>
               ))}
             </DropdownMenuContent>
@@ -82,10 +84,10 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
                     <TableHead key={h.id} aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}>
                       {h.isPlaceholder ? null : h.column.getCanSort() ? (
                         <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={h.column.getToggleSortingHandler()}>
-                          {flexRender(h.column.columnDef.header, h.getContext())}
+                          {typeof h.column.columnDef.header === "string" ? <LocalizedText value={h.column.columnDef.header} /> : flexRender(h.column.columnDef.header, h.getContext())}
                           {sorted === "asc" ? <ArrowUp className="size-3" /> : sorted === "desc" ? <ArrowDown className="size-3" /> : null}
                         </button>
-                      ) : flexRender(h.column.columnDef.header, h.getContext())}
+                      ) : typeof h.column.columnDef.header === "string" ? <LocalizedText value={h.column.columnDef.header} /> : flexRender(h.column.columnDef.header, h.getContext())}
                     </TableHead>
                   );
                 })}
@@ -109,11 +111,11 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
       {!loading && !error && rows.length === 0 && <EmptyState title={filter ? "No matches" : emptyTitle} description={filter ? "Try a different search term." : emptyDescription} />}
 
       {total > 0 && <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground">
-        <span className="tabular">{total} {total === 1 ? "row" : "rows"}</span>
+        <span className="tabular">{total} <LocalizedText value={total === 1 ? "row" : "rows"} /></span>
         {table.getPageCount() > 1 && <div className="flex items-center gap-2">
-          <span className="tabular mr-1">Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>
-          <Button variant="outline" size="icon-sm" aria-label="Previous page" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}><ChevronLeft /></Button>
-          <Button variant="outline" size="icon-sm" aria-label="Next page" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}><ChevronRight /></Button>
+          <span className="tabular me-1"><LocalizedText value={"Page "} />{table.getState().pagination.pageIndex + 1} <LocalizedText value={"of "} />{table.getPageCount()}</span>
+          <Button variant="outline" size="icon-sm" aria-label={t("Previous page")} onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}><ChevronLeft className="rtl:rotate-180" /></Button>
+          <Button variant="outline" size="icon-sm" aria-label={t("Next page")} onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}><ChevronRight className="rtl:rotate-180" /></Button>
         </div>}
       </div>}
     </div>

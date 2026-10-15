@@ -1,13 +1,14 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, formatNumber } from "@/lib/format";
+import { useLocale } from "@/components/i18n/locale-provider";
 
 type DayClose = { id: string; businessDate: string; version: number; status: string; snapshot: Record<string, unknown>; closeReason: string; closedAt: string; closedBy: string; revisions: { version: number; reason: string; createdAt: string }[] };
 type ExportJob = { id: string; status: "QUEUED" | "PROCESSING" | "READY" | "FAILED"; format: "CSV" | "PDF"; errorMessage?: string; attempts?: number; expiresAt?: string };
@@ -19,6 +20,7 @@ const today = () => {
 
 export function ReportOperations({ storeId, canExport, canDayClose, dayCloses }: { storeId: string; canExport: boolean; canDayClose: boolean; dayCloses: DayClose[] }) {
   const router = useRouter();
+  const { locale } = useLocale();
   const [businessDate, setBusinessDate] = React.useState(today);
   const [closeReason, setCloseReason] = React.useState("");
   const [forceClose, setForceClose] = React.useState(false);
@@ -81,24 +83,24 @@ export function ReportOperations({ storeId, canExport, canDayClose, dayCloses }:
   }
 
   return <div className="grid gap-4">
-    {canDayClose && <Card><CardHeader><CardTitle>Store day close</CardTitle></CardHeader><CardContent className="grid gap-4">
-      <p className="text-sm text-muted-foreground">Save a time-zone-aware snapshot after registers close. If registers are still open, close them first or force-close with a reason.</p>
+    {canDayClose && <Card><CardHeader><CardTitle><LocalizedText value={"Store day close"} /></CardTitle></CardHeader><CardContent className="grid gap-4">
+      <p className="text-sm text-muted-foreground"><LocalizedText value={"Save a time-zone-aware snapshot after registers close. If registers are still open, close them first or force-close with a reason."} /></p>
       <form className="grid gap-3 sm:grid-cols-[1fr_2fr_auto] sm:items-end" onSubmit={closeDay}>
-        <label className="grid gap-1 text-sm">Business date<Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} required /></label>
-        <label className="grid gap-1 text-sm">Close reason (required for force close or restatement)<Input value={closeReason} onChange={(event) => setCloseReason(event.target.value)} placeholder="Optional for a normal close" /></label>
-        <Button disabled={busy || !businessDate}>Close business day</Button>
-        <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={forceClose} onChange={(event) => setForceClose(event.target.checked)} /> Force-close open registers using their last ledger expected cash, with this reason recorded.</label>
+        <label className="grid gap-1 text-sm"><LocalizedText value={"Business date"} /><Input type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} required /></label>
+        <label className="grid gap-1 text-sm"><LocalizedText value={"Close reason (required for force close or restatement)"} /><Input value={closeReason} onChange={(event) => setCloseReason(event.target.value)} placeholder="Optional for a normal close" /></label>
+        <Button disabled={busy || !businessDate}><LocalizedText value={"Close business day"} /></Button>
+        <label className="flex items-center gap-2 text-sm sm:col-span-3"><input type="checkbox" checked={forceClose} onChange={(event) => setForceClose(event.target.checked)} /> <LocalizedText value={"Force-close open registers using their last ledger expected cash, with this reason recorded."} /></label>
       </form>
-      {dayCloses.length > 0 && <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b text-xs text-muted-foreground"><tr><th className="py-2">Date</th><th className="py-2">Status</th><th className="py-2">Sales</th><th className="py-2">Returns</th><th className="py-2">Version</th><th className="py-2">Closed by</th></tr></thead><tbody className="divide-y">{dayCloses.slice(0, 15).map((row) => <tr key={row.id}><td className="py-2">{row.businessDate}</td><td className="py-2">{row.status}</td><td className="py-2">{formatMoney(Number(row.snapshot.salesTotalCents ?? 0))}</td><td className="py-2">{formatMoney(Number(row.snapshot.returnsTotalCents ?? 0))}</td><td className="py-2">v{row.version}{row.revisions.length ? ` · ${row.revisions.length} prior` : ""}</td><td className="py-2">{row.closedBy}</td></tr>)}</tbody></table></div>}
+      {dayCloses.length > 0 && <div className="overflow-x-auto"><table className="w-full text-start text-sm"><thead className="border-b text-xs text-muted-foreground"><tr><th className="py-2"><LocalizedText value={"Date"} /></th><th className="py-2"><LocalizedText value={"Status"} /></th><th className="py-2"><LocalizedText value={"Sales"} /></th><th className="py-2"><LocalizedText value={"Returns"} /></th><th className="py-2"><LocalizedText value={"Version"} /></th><th className="py-2"><LocalizedText value={"Closed by"} /></th></tr></thead><tbody className="divide-y">{dayCloses.slice(0, 15).map((row) => <tr key={row.id}><td className="py-2">{formatDate(row.businessDate, locale, "UTC")}</td><td className="py-2"><LocalizedText value={row.status} /></td><td className="py-2">{formatMoney(Number(row.snapshot.salesTotalCents ?? 0), locale)}</td><td className="py-2">{formatMoney(Number(row.snapshot.returnsTotalCents ?? 0), locale)}</td><td className="py-2">v{formatNumber(row.version, locale)}{row.revisions.length ? <> · {formatNumber(row.revisions.length, locale)} <LocalizedText value={"prior"} /></> : null}</td><td className="py-2">{row.closedBy}</td></tr>)}</tbody></table></div>}
     </CardContent></Card>}
-    {canExport && <Card><CardHeader><CardTitle>Background report export</CardTitle></CardHeader><CardContent className="grid gap-4">
+    {canExport && <Card><CardHeader><CardTitle><LocalizedText value={"Background report export"} /></CardTitle></CardHeader><CardContent className="grid gap-4">
       <form className="grid gap-3 sm:grid-cols-4 sm:items-end" onSubmit={createExport}>
-        <label className="grid gap-1 text-sm">Format<NativeSelect value={format} onChange={(event) => setFormat(event.target.value as "CSV" | "PDF")}><option value="CSV">CSV</option><option value="PDF">PDF</option></NativeSelect></label>
-        <label className="grid gap-1 text-sm">From<Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-        <label className="grid gap-1 text-sm">To<Input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-        <Button disabled={busy}>Create export</Button>
+        <label className="grid gap-1 text-sm"><LocalizedText value={"Format"} /><NativeSelect value={format} onChange={(event) => setFormat(event.target.value as "CSV" | "PDF")}><option value="CSV"><LocalizedText value={"CSV"} /></option><option value="PDF"><LocalizedText value={"PDF"} /></option></NativeSelect></label>
+        <label className="grid gap-1 text-sm"><LocalizedText value={"From"} /><Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+        <label className="grid gap-1 text-sm"><LocalizedText value={"To"} /><Input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+        <Button disabled={busy}><LocalizedText value={"Create export"} /></Button>
       </form>
-      {job && <div className="flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm"><div className="min-w-48 flex-1"><p className="font-medium">{job.format} export · {job.status.toLowerCase()}</p>{job.errorMessage && <p className="text-danger">{job.errorMessage}</p>}{job.expiresAt && <p className="text-xs text-muted-foreground">Available until {new Date(job.expiresAt).toLocaleString()}</p>}</div>{job.status === "READY" && <Button size="sm" onClick={() => void download()}>Download</Button>}{job.status === "FAILED" && <Button size="sm" variant="outline" disabled={busy} onClick={() => void retry()}>Retry</Button>}</div>}
+      {job && <div className="flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm"><div className="min-w-48 flex-1"><p className="font-medium">{job.format} <LocalizedText value={"export · "} />{job.status.toLowerCase()}</p>{job.errorMessage && <p className="text-danger">{job.errorMessage}</p>}{job.expiresAt && <p className="text-xs text-muted-foreground"><LocalizedText value={"Available until "} />{formatDateTime(job.expiresAt, locale)}</p>}</div>{job.status === "READY" && <Button size="sm" onClick={() => void download()}><LocalizedText value={"Download"} /></Button>}{job.status === "FAILED" && <Button size="sm" variant="outline" disabled={busy} onClick={() => void retry()}><LocalizedText value={"Retry"} /></Button>}</div>}
     </CardContent></Card>}
   </div>;
 }

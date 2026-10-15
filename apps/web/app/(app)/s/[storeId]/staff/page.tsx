@@ -1,9 +1,10 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import { StoreStaffTable } from "@/features/store/store-tables";
 import { api } from "@/features/api";
 
-export const metadata = { title: "Staff" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Staff") }; }
 
 export default async function Page({ params }: PageProps<"/s/[storeId]/staff">) {
   const { storeId } = await params;

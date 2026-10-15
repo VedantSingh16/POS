@@ -1,5 +1,5 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +15,7 @@ export function PrintActions({ storeId, saleId, receipt }: { storeId: string; sa
     window.print();
   }
   return <div className="flex gap-2 print:hidden">
-    <Button asChild><a href={invoicePdfUrl(storeId, saleId)} target="_blank" rel="noreferrer" download={`${receipt || "invoice"}.pdf`}><Download /> Download invoice (PDF)</a></Button>
-    <Button variant="outline" onClick={() => print("80mm")}>Print 80 mm</Button>
+    <Button asChild><a href={invoicePdfUrl(storeId, saleId)} target="_blank" rel="noreferrer" download={`${receipt || "invoice"}.pdf`}><Download /> <LocalizedText value={"Download invoice (PDF)"} /></a></Button>
+    <Button variant="outline" onClick={() => print("80mm")}><LocalizedText value={"Print 80 mm"} /></Button>
   </div>;
 }

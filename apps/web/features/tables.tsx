@@ -1,4 +1,7 @@
 "use client";
+import { LocalizedText, useTranslate } from "@/components/i18n/localized-text";
+import { useLocale } from "@/components/i18n/locale-provider";
+
 // Column definitions for every list page. One DataTable, many column sets.
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -19,7 +22,11 @@ import type { ConfiguredField } from "@/features/settings/configurable-field-val
 type Row<T> = ColumnDef<T, unknown>[];
 const when = (v: string) => (v ? <span className="text-muted-foreground"><RelativeTime value={v} /></span> : <span className="text-muted-foreground">—</span>);
 const mono = (v: string) => <span className="font-mono text-[13px]">{v}</span>;
-const num = (v: number) => <span className="tabular">{formatNumber(v)}</span>;
+function LocalizedNumber({ value }: { value: number }) {
+  const { locale } = useLocale();
+  return <span className="tabular">{formatNumber(value, locale)}</span>;
+}
+const num = (v: number) => <LocalizedNumber value={v} />;
 
 type User = M.UserRow;
 export function UsersTable({ data }: { data: User[] }) {
@@ -27,7 +34,7 @@ export function UsersTable({ data }: { data: User[] }) {
     { accessorKey: "name", header: "Name", cell: (c) => <Link href={`/org/users/${c.row.original.id}`} className="font-medium hover:underline">{c.getValue() as string}</Link> },
     { accessorKey: "email", header: "Email" },
     { accessorKey: "role", header: "Role" },
-    { accessorKey: "scope", header: "Works in", cell: (c) => { const v = c.getValue() as string; return v.includes("Organisation-wide") ? <Badge tone="warning">{v}</Badge> : <span>{v}</span>; } },
+    { accessorKey: "scope", header: "Works in", cell: (c) => { const v = c.getValue() as string; return v.includes("Organisation-wide") ? <Badge tone="warning"><LocalizedText value={v} /></Badge> : <span>{v}</span>; } },
     { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
     { accessorKey: "lastLogin", header: "Last sign-in", cell: (c) => when(c.getValue() as string) },
   ];
@@ -39,9 +46,9 @@ export function RolesTable({ data }: { data: Role[] }) {
   const cols: Row<Role> = [
     { accessorKey: "name", header: "Role", cell: (c) => <span className="font-medium">{c.getValue() as string}</span> },
     { accessorKey: "description", header: "Description" },
-    { accessorKey: "users", header: "Assigned to", cell: (c) => <span className="tabular">{Number.isFinite(c.getValue() as number) ? `${c.getValue() as number} ${(c.getValue() as number) === 1 ? "person" : "people"}` : "—"}</span> },
+    { accessorKey: "users", header: "Assigned to", cell: (c) => { const count = c.getValue() as number; return Number.isFinite(count) ? <span className="tabular"><LocalizedNumber value={count} /> <LocalizedText value={count === 1 ? "person" : "people"} /></span> : <span>—</span>; } },
     { accessorKey: "permissions", header: "Permissions", cell: (c) => Number.isFinite(c.getValue() as number) ? num(c.getValue() as number) : <span className="text-muted-foreground">—</span> },
-    { accessorKey: "system", header: "Type", cell: (c) => <Badge tone={c.getValue() ? "brand" : "neutral"}>{c.getValue() ? "System" : "Custom"}</Badge> },
+    { accessorKey: "system", header: "Type", cell: (c) => <Badge tone={c.getValue() ? "brand" : "neutral"}><LocalizedText value={c.getValue() ? "System" : "Custom"} /></Badge> },
   ];
   return <DataTable columns={cols} data={data} rowHref={(r) => `/org/roles/${r.id}`} searchPlaceholder="Search roles…" />;
 }
@@ -52,8 +59,8 @@ export function StoresTable({ data }: { data: Store[] }) {
     { accessorKey: "code", header: "Code", cell: (c) => mono(c.getValue() as string) },
     { accessorKey: "name", header: "Store", cell: (c) => <span className="font-medium">{c.getValue() as string}</span> },
     { accessorKey: "city", header: "Address" },
-    { id: "manager", header: "Store manager", accessorFn: (r) => (r.managers ?? []).map((m) => m.name).join(", "), cell: (c) => { const v = c.getValue() as string; return v ? <span>{v}</span> : <Badge tone="warning">No manager assigned</Badge>; } },
-    { accessorKey: "registers", header: "Registers", cell: (c) => { const n = c.getValue() as number; return n > 0 ? num(n) : <Badge tone="warning">None: cannot sell</Badge>; } },
+    { id: "manager", header: "Store manager", accessorFn: (r) => (r.managers ?? []).map((m) => m.name).join(", "), cell: (c) => { const v = c.getValue() as string; return v ? <span>{v}</span> : <Badge tone="warning"><LocalizedText value={"No manager assigned"} /></Badge>; } },
+    { accessorKey: "registers", header: "Registers", cell: (c) => { const n = c.getValue() as number; return n > 0 ? num(n) : <Badge tone="warning"><LocalizedText value={"None: cannot sell"} /></Badge>; } },
     { accessorKey: "staff", header: "Staff", cell: (c) => num(c.getValue() as number) },
     { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
   ];
@@ -72,6 +79,7 @@ export function ProductsTable({ data, categories, brands, stores, selectedStoreI
   customFieldDefinitions?: ConfiguredField[];
   coreFields?: string[];
 }) {
+  const t = useTranslate();
   const [category, setCategory] = useState("");
   const [brand, setBrand] = useState("");
   const [productTypeName, setProductTypeName] = useState("");
@@ -91,15 +99,15 @@ export function ProductsTable({ data, categories, brands, stores, selectedStoreI
     ...(visibleCore.includes("price") ? [{ accessorKey: "priceMinor", header: "Price", cell: (c) => <Money minor={c.getValue() as number} /> } as ColumnDef<Product, unknown>] : []),
     ...(visibleCore.includes("cost") ? [{ accessorKey: "costMinor", header: "Cost", cell: (c) => <Money minor={c.getValue() as number} /> } as ColumnDef<Product, unknown>] : []),
     ...(visibleCore.includes("uom") ? [{ accessorKey: "uomCode", header: "Unit", cell: (c) => (c.getValue() as string) || "—" } as ColumnDef<Product, unknown>] : []),
-    ...(visibleCore.includes("openPrice") ? [{ accessorKey: "openPrice", header: "Open price", cell: (c) => c.getValue() ? "Allowed" : "Fixed" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("openPrice") ? [{ accessorKey: "openPrice", header: "Open price", cell: (c) => <LocalizedText value={c.getValue() ? "Allowed" : "Fixed"} /> } as ColumnDef<Product, unknown>] : []),
     ...(visibleCore.includes("floorPrice") ? [{ accessorKey: "floorPriceCents", header: "Minimum price", cell: (c) => <Money minor={c.getValue() as number} /> } as ColumnDef<Product, unknown>] : []),
-    ...(visibleCore.includes("includesTax") ? [{ accessorKey: "includesTax", header: "Price includes tax", cell: (c) => c.getValue() ? "Yes" : "No" } as ColumnDef<Product, unknown>] : []),
+    ...(visibleCore.includes("includesTax") ? [{ accessorKey: "includesTax", header: "Price includes tax", cell: (c) => <LocalizedText value={c.getValue() ? "Yes" : "No"} /> } as ColumnDef<Product, unknown>] : []),
     ...customFieldDefinitions.filter((field) => field.active && field.showInList).map((field): ColumnDef<Product, unknown> => ({ id: `custom-${field.key}`, header: field.label, accessorFn: (row) => row.customFields?.[field.key] ?? "—" })),
     ...(selectedStoreId ? [{ accessorKey: "stock", header: "Stock", cell: (c) => num(c.getValue() as number) } as ColumnDef<Product, unknown>] : []),
-    ...(selectedStoreId ? [{ accessorKey: "inStore", header: "In store", cell: (c) => c.getValue() ? <StatusBadge status="ACTIVE" /> : <span className="text-xs text-muted-foreground">Not sold here</span> } as ColumnDef<Product, unknown>] : []),
+    ...(selectedStoreId ? [{ accessorKey: "inStore", header: "In store", cell: (c) => c.getValue() ? <StatusBadge status="ACTIVE" /> : <span className="text-xs text-muted-foreground"><LocalizedText value={"Not sold here"} /></span> } as ColumnDef<Product, unknown>] : []),
     ...(visibleCore.includes("status") ? [{ accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> } as ColumnDef<Product, unknown>] : []),
   ];
-  const toolbar = <div className="flex flex-wrap items-center gap-2" aria-label="Product filters">
+  const toolbar = <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("Product filters")}>
     <FilterBar filters={[
       ...(visibleCore.includes("category") ? [{ key: "category", label: "Category", allLabel: "All categories", value: category, onChange: setCategory, options: categories.map((item) => ({ value: item.id, label: item.name })) }] : []),
       ...(visibleCore.includes("productType") ? [{ key: "type", label: "Product version", allLabel: "All versions", value: productTypeName, onChange: setProductTypeName, options: productTypes.map((item) => ({ value: item.name, label: item.name })) }] : []),
@@ -107,7 +115,7 @@ export function ProductsTable({ data, categories, brands, stores, selectedStoreI
       ...(selectedStoreId ? [{ key: "store", label: "Store assignment", allLabel: "All products", value: storeAssignment, onChange: (value: string) => setStoreAssignment(value as "" | "IN_STORE" | "NOT_IN_STORE"), options: [{ value: "IN_STORE", label: "In this store" }, { value: "NOT_IN_STORE", label: "Not in this store" }] }] : []),
       ...(visibleCore.includes("status") ? [{ key: "status", label: "Status", allLabel: "All statuses", value: status, onChange: setStatus, options: ["ACTIVE", "DRAFT", "SEASONAL", "DISCONTINUED", "BLOCKED"].map((item) => ({ value: item, label: item.charAt(0) + item.slice(1).toLowerCase() })) }] : []),
     ]} />
-    <form action="/org/catalog/products" method="get" className="flex items-center gap-1.5 text-xs text-muted-foreground"><label htmlFor="stock-store">Stock in</label><NativeSelect id="stock-store" className="h-8 w-auto text-sm" aria-label="Stock store" name="storeId" value={selectedStoreId ?? ""} disabled={stores.length === 0} onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="" disabled>Select store</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} ({store.code})</option>)}</NativeSelect></form>
+    <form action="/org/catalog/products" method="get" className="flex items-center gap-1.5 text-xs text-muted-foreground"><label htmlFor="stock-store"><LocalizedText value={"Stock in"} /></label><NativeSelect id="stock-store" className="h-8 w-auto text-sm" aria-label="Stock store" name="storeId" value={selectedStoreId ?? ""} disabled={stores.length === 0} onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="" disabled><LocalizedText value={"Select store"} /></option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name} ({store.code})</option>)}</NativeSelect></form>
   </div>;
   const initialVisibility = Object.fromEntries(["description", "productTypeName", "attributes", "brand", "barcode", "costMinor", "uomCode", "openPrice", "floorPriceCents", "includesTax"].map((key) => [key, false]));
   return <DataTable columns={cols} data={filtered} rowHref={(r) => `/org/catalog/products/${r.productId ?? r.id}`} toolbar={toolbar} initialVisibility={initialVisibility} searchPlaceholder="Search product name, SKU or barcode…" />;
@@ -157,7 +165,7 @@ export function SalesTable({ data, storeId }: { data: Sale[]; storeId: string })
     { accessorKey: "tender", header: "Tender" },
     { accessorKey: "totalMinor", header: "Total", cell: (c) => <Money minor={c.getValue() as number} /> },
     { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
-    { id: "invoice", header: "", cell: (c) => <a className="text-xs font-medium underline" href={`/api/proxy/pos/v1/sales/${c.row.original.id}/invoice.pdf?storeId=${encodeURIComponent(storeId)}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>PDF</a> },
+    { id: "invoice", header: "", cell: (c) => <a className="text-xs font-medium underline" href={`/api/proxy/pos/v1/sales/${c.row.original.id}/invoice.pdf?storeId=${encodeURIComponent(storeId)}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><LocalizedText value={"PDF"} /></a> },
   ];
   return <DataTable columns={cols} data={data} rowHref={(r) => `/s/${storeId}/sales/${r.id}`} searchPlaceholder="Search receipt or cashier…" />;
 }
@@ -201,7 +209,7 @@ export function LedgerTable({ data }: { data: Led[] }) {
   const cols: Row<Led> = [
     { accessorKey: "at", header: "When", cell: (c) => when(c.getValue() as string) },
     { accessorKey: "name", header: "Product", cell: (c) => <span className="font-medium">{c.getValue() as string}</span> },
-    { accessorKey: "type", header: "Type", cell: (c) => <Badge>{c.getValue() as string}</Badge> },
+    { accessorKey: "type", header: "Type", cell: (c) => { const value = (c.getValue() as string).replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); return <Badge><LocalizedText value={value} /></Badge>; } },
     { accessorKey: "qty", header: "Qty", cell: (c) => { const v = c.getValue() as number; return <span className={`tabular font-medium ${v < 0 ? "text-danger" : "text-success"}`}>{v > 0 ? `+${v}` : v}</span>; } },
     { accessorKey: "ref", header: "Reference" },
   ];
@@ -226,7 +234,7 @@ type Appr = M.ApprovalRow;
 export function ApprovalsTable({ data, storeId }: { data: Appr[]; storeId: string }) {
   const cols: Row<Appr> = [
     { accessorKey: "at", header: "When", cell: (c) => when(c.getValue() as string) },
-    { accessorKey: "type", header: "Type", cell: (c) => <Badge>{(c.getValue() as string).replaceAll("_", " ")}</Badge> },
+    { accessorKey: "type", header: "Type", cell: (c) => { const value = (c.getValue() as string).replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); return <Badge><LocalizedText value={value} /></Badge>; } },
     { accessorKey: "requestedBy", header: "Requested by" },
     { accessorKey: "detail", header: "Requested action", cell: (c) => { const row = c.row.original; const payload = row.payload && Object.keys(row.payload).length ? ` · ${Object.entries(row.payload).map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`).join(" · ")}` : ""; return <span>{row.detail}{payload}</span>; } },
     { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
@@ -281,7 +289,7 @@ function AuditDetail({ value }: { value: string }) {
   });
   return (
     <details className="min-w-32 max-w-[28rem]">
-      <summary className="min-h-9 cursor-pointer content-center text-sm font-semibold text-primary marker:text-muted-foreground hover:underline">View details</summary>
+      <summary className="min-h-9 cursor-pointer content-center text-sm font-semibold text-primary marker:text-muted-foreground hover:underline"><LocalizedText value={"View details"} /></summary>
       <dl className="mt-2 grid gap-x-4 gap-y-1.5 rounded-lg bg-muted/70 p-3 text-sm sm:grid-cols-[minmax(6rem,auto)_minmax(0,1fr)]">
         {fields.map(([label, detail], index) => <div key={`${label}-${index}`} className="contents">
           <dt className="font-medium text-muted-foreground">{label}</dt>

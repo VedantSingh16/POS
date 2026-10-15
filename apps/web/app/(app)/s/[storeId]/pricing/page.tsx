@@ -1,10 +1,12 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { PageHeader } from "@/components/app/page-header";
 import { OffersAndRules } from "@/features/pricing/offers-and-rules";
 import { api, soft } from "@/features/api";
 import { hasPermission } from "@/lib/permissions";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "Offers & price rules" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Offers & price rules") }; }
 export default async function StoreOffers({ params }: PageProps<"/s/[storeId]/pricing">) {
   const { storeId } = await params;
   const me = await requirePermission("pricing.view", storeId);
@@ -21,7 +23,7 @@ export default async function StoreOffers({ params }: PageProps<"/s/[storeId]/pr
   const products = catalogue.filter((item) => item.assigned && item.status === "ACTIVE").map((item) => ({ id: item.variantId, name: `${item.name} · ${item.sku}` }));
   return <>
     <PageHeader title="Offers & price rules" description="Manage this store’s coupons, automatic offers, price rules, and discount reasons." crumbs={[{ label: "Store", href: `/s/${storeId}` }, { label: store?.name ?? "Store" }, { label: "Offers & price rules" }]} />
-    {problems.length > 0 && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">Some store pricing settings could not be loaded: {problems[0]}</p>}
+    {problems.length > 0 && <p role="alert" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning"><LocalizedText value={"Some store pricing settings could not be loaded: "} />{problems[0]}</p>}
     <OffersAndRules storeId={storeId} canManage={canManage} rules={rules} reasons={reasons} promotions={promotions} categories={lookups.categories} brands={lookups.brands} products={products} />
   </>;
 }

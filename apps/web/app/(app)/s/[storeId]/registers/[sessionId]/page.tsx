@@ -1,3 +1,4 @@
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { requirePermission } from "@/lib/server/session";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/app/page-header";
@@ -14,9 +15,9 @@ export default async function RegisterSession({ params }: PageProps<"/s/[storeId
     <>
       <PageHeader title={`${r.name} session`} crumbs={[{ label: "Registers", href: `/s/${storeId}/registers` }, { label: r.name }]} backHref={`/s/${storeId}/registers`} backLabel="Back to registers" />
       <Card><CardContent className="grid gap-4 sm:grid-cols-4">
-        <div><p className="text-xs text-muted-foreground">Status</p><StatusBadge status={r.status} /></div>
-        <div><p className="text-xs text-muted-foreground">Cashier</p><p>{r.cashier}</p></div>
-        <div><p className="text-xs text-muted-foreground">Expected cash</p><Money minor={r.expectedMinor} /></div>
+        <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Status"} /></p><StatusBadge status={r.status} /></div>
+        <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Cashier"} /></p><p>{r.cashier}</p></div>
+        <div><p className="text-xs text-muted-foreground"><LocalizedText value={"Expected cash"} /></p><Money minor={r.expectedMinor} /></div>
       </CardContent></Card>
     </>
   );

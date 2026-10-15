@@ -1,3 +1,4 @@
+import { isLocale } from '@pos/shared/locale';
 import { STORE_READ_ONLY_PERMISSION_CODES } from '@pos/shared/permissions';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service.js';
@@ -42,6 +43,7 @@ export class AuthorizationService {
       organizationId: user.organizationId,
       email: user.email,
       displayName: `${user.firstName} ${user.lastName}`.trim(),
+      preferredLocale: isLocale(user.preferredLocale) ? user.preferredLocale : 'en',
       status: user.status,
       defaultStoreId: user.defaultStoreId,
       storeIds: user.stores.map((store) => store.storeId),

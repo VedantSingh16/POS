@@ -1,5 +1,5 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Field } from "@/components/form/field";
 import type { ProductTypeRow } from "@/features/api";
@@ -32,17 +32,17 @@ export function ProductTypeFields({ idPrefix, types, typeId, onTypeChange, value
   return <>
     {showType && <Field label="Product setup rule (optional)" htmlFor={`${idPrefix}-type`}>
       <NativeSelect id={`${idPrefix}-type`} value={typeId} onChange={(event) => { onTypeChange(event.target.value); onValuesChange({}); }}>
-        <option value="">No setup rule</option>
-        {active.map((item) => <option key={item.id} value={item.id}>{item.name}{item.status === "DISABLED" ? " (switched off)" : ""}</option>)}
+        <option value=""><LocalizedText value={"No setup rule"} /></option>
+        {active.map((item) => <option key={item.id} value={item.id}>{item.name}<LocalizedText value={item.status === "DISABLED" ? " (switched off)" : ""} /></option>)}
       </NativeSelect>
     </Field>}
-    {type && (showType || showAttributes) && <p className="-mt-2 text-xs text-muted-foreground">{type.description || "Set by your organisation."} {type.config.requireBarcode ? "Every variant needs a barcode. " : ""}{type.config.requireCategory ? "A category is required. " : ""}{type.config.requireBrand ? "A brand is required." : ""}</p>}
+    {type && (showType || showAttributes) && <p className="-mt-2 text-xs text-muted-foreground">{type.description || "Set by your organisation."} <LocalizedText value={type.config.requireBarcode ? "Every variant needs a barcode. " : ""} /><LocalizedText value={type.config.requireCategory ? "A category is required. " : ""} /><LocalizedText value={type.config.requireBrand ? "A brand is required." : ""} /></p>}
     {showAttributes && type?.config.attributes.map((attribute) => {
       const id = `${idPrefix}-attr-${attribute.key}`;
       const label = `${attribute.label}${attribute.required ? " *" : ""}`;
       const value = values[attribute.key];
       if (attribute.kind === "YESNO") return <label key={attribute.key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value === true} onChange={(event) => set(attribute.key, event.target.checked)} /> {attribute.label}</label>;
-      if (attribute.kind === "SELECT") return <Field key={attribute.key} label={label} htmlFor={id}><NativeSelect id={id} value={String(value ?? "")} onChange={(event) => set(attribute.key, event.target.value)}><option value="">Choose…</option>{attribute.options.map((option) => <option key={option} value={option}>{option}</option>)}</NativeSelect></Field>;
+      if (attribute.kind === "SELECT") return <Field key={attribute.key} label={label} htmlFor={id}><NativeSelect id={id} value={String(value ?? "")} onChange={(event) => set(attribute.key, event.target.value)}><option value=""><LocalizedText value={"Choose…"} /></option>{attribute.options.map((option) => <option key={option} value={option}>{option}</option>)}</NativeSelect></Field>;
       return <Field key={attribute.key} label={label} htmlFor={id}><Input id={id} type={attribute.kind === "NUMBER" ? "number" : attribute.kind === "DATE" ? "date" : "text"} value={String(value ?? "")} onChange={(event) => set(attribute.key, attribute.kind === "NUMBER" && event.target.value !== "" ? Number(event.target.value) : event.target.value)} /></Field>;
     })}
   </>;

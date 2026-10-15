@@ -1,3 +1,5 @@
+import type { Locale } from '@pos/shared/locale';
+
 export type PermissionGrant = {
   permissionCode: string;
   effect: 'ALLOW' | 'REQUIRE_APPROVAL' | 'DENY';
@@ -11,6 +13,7 @@ export type UserContext = {
   organizationId: string;
   email: string;
   displayName: string;
+  preferredLocale: Locale;
   status: string;
   defaultStoreId: string | null;
   storeIds: string[];

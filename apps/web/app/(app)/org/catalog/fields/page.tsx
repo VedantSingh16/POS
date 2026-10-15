@@ -1,10 +1,11 @@
+import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/app/page-header";
 import { FieldConfigurationEditor } from "@/features/settings/field-configuration-editor";
 import { api } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 
-export const metadata = { title: "Product fields" };
+export async function generateMetadata() { return { title: await getLocalizedPageTitle("Product fields") }; }
 
 export default async function Page() {
   await requirePermission("org.settings.manage");

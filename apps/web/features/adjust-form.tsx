@@ -1,9 +1,10 @@
 "use client";
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -40,12 +41,12 @@ export function AdjustStockForm({ items, locations, storeId }: { items: Item[]; 
   return (
     <Card className="max-w-xl"><CardContent>
       <form className="grid gap-4" onSubmit={handleSubmit(onValid)} noValidate>
-        <Field label="SKU" htmlFor="a-sku" error={errors.sku?.message}><NativeSelect id="a-sku" {...register("sku")}><option value="">Choose SKU…</option>{items.map((item) => <option key={item.id} value={item.sku}>{item.sku} — {item.name}</option>)}</NativeSelect></Field>
+        <Field label="SKU" htmlFor="a-sku" error={errors.sku?.message}><NativeSelect id="a-sku" {...register("sku")}><option value=""><LocalizedText value={"Choose SKU…"} /></option>{items.map((item) => <option key={item.id} value={item.sku}>{item.sku} — {item.name}</option>)}</NativeSelect></Field>
         <Field label="Quantity change" htmlFor="a-qty" hint="Use a negative number to remove stock." error={errors.quantity?.message}><Input id="a-qty" type="number" {...register("quantity")} /></Field>
-        <Field label="Reason" htmlFor="a-reason"><NativeSelect id="a-reason" {...register("reason")}><option value="COUNT">Stock count</option><option value="DAMAGE">Damage</option><option value="RECEIPT">Goods received</option><option value="OTHER">Other</option></NativeSelect></Field>
+        <Field label="Reason" htmlFor="a-reason"><NativeSelect id="a-reason" {...register("reason")}><option value="COUNT"><LocalizedText value={"Stock count"} /></option><option value="DAMAGE"><LocalizedText value={"Damage"} /></option><option value="RECEIPT"><LocalizedText value={"Goods received"} /></option><option value="OTHER"><LocalizedText value={"Other"} /></option></NativeSelect></Field>
         <div className="flex justify-end gap-2">
-          <ConfirmDialog trigger={<Button type="button" variant="outline">Clear</Button>} title="Clear the form?" description="Entered values will be discarded." confirmLabel="Clear" destructive onConfirm={() => reset()} />
-          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Record adjustment"}</Button>
+          <ConfirmDialog trigger={<Button type="button" variant="outline"><LocalizedText value={"Clear"} /></Button>} title="Clear the form?" description="Entered values will be discarded." confirmLabel="Clear" destructive onConfirm={() => reset()} />
+          <Button type="submit" disabled={busy}><LocalizedText value={busy ? "Saving…" : "Record adjustment"} /></Button>
         </div>
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       </form>

@@ -1,7 +1,7 @@
 "use client";
-
+import { LocalizedText } from "@/components/i18n/localized-text";
 import * as React from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,10 +46,10 @@ export function OpeningStockWizard({ storeId }: { storeId: string }) {
   }
 
   return <Card className="max-w-3xl"><CardContent className="grid gap-4 p-5">
-    <div><h2 className="font-semibold">Opening stock CSV</h2><p className="text-sm text-muted-foreground">Columns: sku, quantity, optional status (SELLABLE or DAMAGED), and unitCostCents.</p></div>
+    <div><h2 className="font-semibold"><LocalizedText value={"Opening stock CSV"} /></h2><p className="text-sm text-muted-foreground"><LocalizedText value={"Columns: sku, quantity, optional status (SELLABLE or DAMAGED), and unitCostCents."} /></p></div>
     <Textarea value={csv} onChange={(event) => setCsv(event.target.value)} rows={10} aria-label="Opening stock CSV" className="font-mono text-xs" />
-    <div className="flex gap-2"><Button onClick={() => void preview()} disabled={busy}>Validate CSV</Button><Button variant="outline" onClick={() => void commit()} disabled={busy || !rows.length || !!errors.length}>Commit {rows.length ? `${rows.length} rows` : "import"}</Button></div>
-    {!!errors.length && <div role="alert" className="grid gap-1 rounded-md bg-danger-soft p-3 text-sm text-danger">{errors.map((error, index) => <p key={`${error.row}-${error.field}-${index}`}>Row {error.row || "—"}, {error.field}: {error.message}</p>)}</div>}
-    {!!rows.length && !errors.length && <p className="text-sm text-success">{rows.length} rows are ready to commit.</p>}
+    <div className="flex gap-2"><Button onClick={() => void preview()} disabled={busy}><LocalizedText value={"Validate CSV"} /></Button><Button variant="outline" onClick={() => void commit()} disabled={busy || !rows.length || !!errors.length}><LocalizedText value={"Commit "} />{rows.length ? `${rows.length} rows` : "import"}</Button></div>
+    {!!errors.length && <div role="alert" className="grid gap-1 rounded-md bg-danger-soft p-3 text-sm text-danger">{errors.map((error, index) => <p key={`${error.row}-${error.field}-${index}`}><LocalizedText value={"Row "} />{error.row || "—"}, {error.field}: {error.message}</p>)}</div>}
+    {!!rows.length && !errors.length && <p className="text-sm text-success">{rows.length} <LocalizedText value={"rows are ready to commit."} /></p>}
   </CardContent></Card>;
 }
