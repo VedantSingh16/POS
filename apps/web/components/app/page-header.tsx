@@ -44,9 +44,9 @@ export function PageHeader({ title, description, actions, crumbs, backHref, back
         {backHref && <Link href={backHref} className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="size-4" aria-hidden />{backLabel ?? "Back"}</Link>}
         {crumbs && <Breadcrumbs items={crumbs} />}
         <div className="flex items-center gap-2">
-          <h1 className="max-w-4xl font-display text-[clamp(1.875rem,2.3vw,2.25rem)] font-bold leading-[1.1] tracking-[-0.045em] text-foreground">{title}</h1>
+          <h1 className="max-w-4xl font-display text-[clamp(1.875rem,2.3vw,2.25rem)] font-medium leading-[1.1] tracking-[-0.045em] text-foreground">{title}</h1>
         </div>
-        {description && <p className="mt-2.5 max-w-3xl text-base leading-relaxed text-muted-foreground">{description}</p>}
+        {description && <p className="mt-2.5 max-w-3xl text-[15px] leading-[1.55] text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex w-full flex-wrap items-center gap-2 pb-0.5 sm:w-auto">{actions}</div>}
     </header>

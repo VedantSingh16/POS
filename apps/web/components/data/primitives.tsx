@@ -22,7 +22,7 @@ export function KpiTile({ label, value, hint, icon: Icon, tone = "neutral" }: { 
   return (
     <div className="flex min-h-[5.25rem] items-start justify-between gap-3 border-l-0 px-0 py-2 sm:border-l sm:border-border sm:pl-4 sm:first:border-l-0 sm:first:pl-0">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <p className="text-sm font-normal text-muted-foreground">{label}</p>
         <p className={cn("tabular mt-1 truncate text-2xl font-semibold tracking-tight", tone === "danger" && "text-danger", tone === "warning" && "text-warning")}>{value}</p>
         {hint && <p className="mt-1 text-sm text-muted-foreground">{hint}</p>}
       </div>

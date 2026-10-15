@@ -34,7 +34,7 @@ function ContextCard() {
   return (
     <div className="mx-3 mt-3 rounded-xl border border-sidebar-border-soft bg-sidebar-surface p-3.5 text-sidebar-foreground">
       <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted">{mode === "org" ? "Organisation" : "Store workspace"}</p>
-      <p className="mt-1.5 flex items-center gap-2 truncate text-lg font-semibold tracking-tight">
+      <p className="mt-1.5 flex items-center gap-2 truncate text-lg font-medium tracking-tight">
         {mode === "org" ? <Building2 className="size-[18px] shrink-0 text-sidebar-primary" /> : <StoreIcon className="size-[18px] shrink-0 text-sidebar-primary" />}
         <span className="truncate">{mode === "org" ? orgName : store?.name ?? "Store"}</span>
       </p>
@@ -63,19 +63,19 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           if (!group.title) {
             const href = resolveHref(firstItem.href, storeId);
             return <li key={group.id}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined}
-              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
+              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
               <firstItem.icon className="size-5 shrink-0" /><span className="truncate">{firstItem.label}</span>
             </Link></li>;
           }
 
           return <li key={group.id} className="pt-2">
-            <h2 className="flex min-h-10 items-center px-2.5 text-sm font-semibold uppercase tracking-[0.1em] text-sidebar-muted">{group.title}</h2>
+            <h2 className="flex min-h-9 items-center rounded-md bg-sidebar-heading-bg px-2.5 text-[14px] font-medium uppercase tracking-[0.08em] text-sidebar-heading-foreground">{group.title}</h2>
             <ul className="ml-1 grid gap-1 pb-2 pl-1 pt-1">
               {group.items.map((item) => {
                 const href = resolveHref(item.href, storeId);
                 const itemActive = isNavItemActive(pathname, item, storeId);
                 return <li key={item.href}><Link href={href} onClick={onNavigate} aria-current={itemActive ? "page" : undefined}
-                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
+                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-2 before:left-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
                   <item.icon className="size-[18px] shrink-0" /><span className="truncate">{item.label}</span>
                 </Link></li>;
               })}

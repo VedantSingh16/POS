@@ -35,7 +35,7 @@ const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const AUTH_CARD = "rounded-[24px] border-auth-outline bg-auth-surface shadow-sm ring-1 ring-auth-outline";
 const AUTH_INPUT = "h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink placeholder:text-auth-muted focus-visible:border-auth-primary focus-visible:ring-auth-primary/20";
 const AUTH_SELECT = "h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink focus-visible:border-auth-primary focus-visible:ring-3 focus-visible:ring-auth-primary/20";
-const AUTH_LABEL = "grid content-start gap-2 text-sm font-semibold text-auth-ink";
+const AUTH_LABEL = "grid content-start gap-2 text-sm font-medium text-auth-ink";
 const AUTH_PRIMARY_BUTTON = "h-12 rounded-[14px] bg-auth-primary px-5 text-base font-bold text-auth-on-primary shadow-sm hover:bg-auth-primary-hover";
 
 export function OnboardingStep({ currentStep, initialData, organization, admin, complete }: Props) {
@@ -122,24 +122,24 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary">Catalogue</h2>
         <div className="grid gap-2">
-          <Link href="/org/catalog/products" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-semibold text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Add your first product <ArrowRight /></Link>
-          <Link href="/org/catalog/import" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-semibold text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Import a product CSV <ArrowRight /></Link>
+          <Link href="/org/catalog/products" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Add your first product <ArrowRight /></Link>
+          <Link href="/org/catalog/import" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Import a product CSV <ArrowRight /></Link>
         </div>
       </section>
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary">Checkout</h2>
         <div className="grid gap-2">
-          <Link href="/org/catalog/tax" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-semibold text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Configure tax groups <ArrowRight /></Link>
-          <Link href="/org/settings/billing" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-semibold text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Review payments and receipts <ArrowRight /></Link>
+          <Link href="/org/catalog/tax" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Configure tax groups <ArrowRight /></Link>
+          <Link href="/org/settings/billing" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Review payments and receipts <ArrowRight /></Link>
         </div>
       </section>
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary">People</h2>
-        <Link href="/org/users" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-semibold text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Invite staff and assign roles <ArrowRight /></Link>
+        <Link href="/org/users" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Invite staff and assign roles <ArrowRight /></Link>
       </section>
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary">Devices</h2>
-        <Link href="/org/stores" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-semibold text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Manage registers and devices <ArrowRight /></Link>
+        <Link href="/org/stores" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-left font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}>Manage registers and devices <ArrowRight /></Link>
       </section>
     </CardContent></Card>
     <p className="text-sm leading-6 text-auth-muted">These settings are available from your dashboard whenever you need them. Configure products and tax groups before processing those sales.</p>

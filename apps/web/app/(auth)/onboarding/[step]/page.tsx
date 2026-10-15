@@ -38,37 +38,48 @@ export default async function Onboarding({ params }: PageProps<"/onboarding/[ste
   const done = (position: number) => complete || completed.includes(position);
   const progress = Math.round(((index + 1) / STEPS.length) * 100);
   return (
-    <div className="min-h-svh bg-auth-canvas text-auth-ink lg:grid lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <aside className="hidden flex-col px-8 py-8 lg:flex xl:px-10">
+    <div className="min-h-svh bg-auth-canvas text-auth-ink lg:grid lg:grid-cols-[19rem_minmax(0,1fr)]">
+      <aside className="hidden flex-col border-r border-auth-outline bg-auth-primary/[0.025] px-7 py-8 lg:flex xl:px-8">
         <AuthBrand />
-        <div className="mt-16">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-auth-primary">Workspace setup</p>
-          <h2 className="mt-3 break-words font-sans text-[22px] font-semibold leading-tight tracking-tight text-auth-ink">{organization.name}</h2>
-          <p className="mt-8 text-xs font-bold uppercase tracking-[0.18em] text-auth-muted">Setup roadmap</p>
-          <ol aria-label="Setup roadmap" className="relative mt-5 grid gap-5 before:absolute before:inset-y-[18px] before:left-[17px] before:w-px before:bg-auth-border before:content-['']">
+        <div className="mt-12">
+          <div className="rounded-xl border border-auth-outline bg-auth-surface px-4 py-3.5 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-auth-muted">Workspace setup</p>
+            <h2 className="mt-1.5 break-words font-sans text-[19px] font-medium leading-snug tracking-tight text-auth-ink">{organization.name}</h2>
+          </div>
+          <div className="mt-8 flex items-center justify-between gap-3 px-1">
+            <p className="text-[13px] font-medium uppercase tracking-[0.1em] text-auth-ink">Setup steps</p>
+            <span className="rounded-full bg-auth-primary/10 px-2.5 py-1 text-xs font-medium text-auth-primary">{index + 1} of {STEPS.length}</span>
+          </div>
+          <ol aria-label="Setup steps" className="mt-3 grid gap-1.5">
             {STEPS.map((item, position) => {
               const active = position === index;
               const finished = !active && (position < index || done(position));
               return (
-                <li key={item.slug} aria-current={active ? "step" : undefined} className="relative grid grid-cols-[36px_minmax(0,1fr)] items-start gap-3">
+                <li key={item.slug} aria-current={active ? "step" : undefined} className={cn("grid grid-cols-[32px_minmax(0,1fr)] items-center gap-3 rounded-xl border border-transparent px-3 py-3", active && "border-auth-primary/15 bg-auth-surface shadow-sm")}>
                   <span className={cn(
-                    "relative z-10 grid size-9 place-items-center rounded-full border text-sm font-semibold transition-colors",
-                    active && "border-2 border-auth-primary bg-auth-surface text-auth-primary ring-4 ring-auth-primary/10",
-                    finished && "border-auth-primary bg-auth-primary text-auth-on-primary",
+                    "grid size-8 place-items-center rounded-full border text-sm font-medium transition-colors",
+                    active && "border-auth-primary bg-auth-primary text-auth-on-primary ring-4 ring-auth-primary/10",
+                    finished && "border-auth-primary/25 bg-auth-primary/10 text-auth-primary",
                     !active && !finished && "border-auth-border bg-auth-surface text-auth-muted",
                   )}>
-                    {finished ? <Check aria-hidden="true" className="size-4" strokeWidth={2.5} /> : position + 1}
+                    {finished ? <Check aria-hidden="true" className="size-4" strokeWidth={2.25} /> : position + 1}
                   </span>
-                  <span className="grid gap-1 pt-0.5">
-                    <span className={cn("text-sm font-semibold", active ? "text-auth-ink" : finished ? "text-auth-ink" : "text-auth-muted")}>{item.label}</span>
-                    <span className="text-xs leading-5 text-auth-muted">{item.summary}</span>
+                  <span className="grid gap-0.5">
+                    <span className={cn("text-[14px] leading-snug", active || finished ? "font-medium text-auth-ink" : "font-normal text-auth-muted")}>{item.label}</span>
+                    <span className="text-[13px] leading-[1.45] text-auth-muted">{item.summary}</span>
                   </span>
                 </li>
               );
             })}
           </ol>
         </div>
-        <p className="mt-auto flex items-center gap-2 pt-10 text-xs text-auth-muted"><CheckCircle2 aria-hidden="true" className="size-4 text-auth-primary" />Progress is saved when you continue.</p>
+        <div className="mt-auto pt-8">
+          <div className="flex items-center justify-between text-xs font-medium text-auth-muted"><span>Setup progress</span><span>{progress}%</span></div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-auth-border/60" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+            <div className="h-full rounded-full bg-auth-primary transition-[width]" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="mt-3 flex items-center gap-2 text-xs text-auth-muted"><CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-auth-primary" />Progress is saved when you continue.</p>
+        </div>
       </aside>
       <div className="min-w-0">
         <header className="px-5 pt-5 sm:px-8 lg:hidden">
@@ -83,8 +94,8 @@ export default async function Onboarding({ params }: PageProps<"/onboarding/[ste
         <main className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-col justify-center px-5 py-8 sm:px-8 lg:min-h-svh lg:px-12 lg:py-12 xl:px-16">
           <div className="mx-auto w-full max-w-5xl">
             <p className="mb-2 hidden text-xs font-bold uppercase tracking-[0.18em] text-auth-primary lg:mb-3 lg:block">Step {index + 1} of {STEPS.length}</p>
-            <h1 className="font-display text-[clamp(2rem,3vw,2.7rem)] font-bold leading-[1.08] tracking-[-0.06em] text-auth-ink">{current.label}</h1>
-            <p className="mb-6 mt-2 max-w-2xl text-base leading-[1.6] text-auth-muted sm:mb-8 sm:text-[17px]">{current.text}</p>
+            <h1 className="font-display text-[clamp(1.875rem,2.3vw,2.25rem)] font-medium leading-[1.1] tracking-[-0.045em] text-auth-ink">{current.label}</h1>
+            <p className="mb-6 mt-2 max-w-2xl text-[15px] leading-[1.55] text-auth-muted sm:mb-8">{current.text}</p>
             <OnboardingStep currentStep={index} initialData={initialData} organization={organization} admin={{ email: me.user.email }} complete={complete} />
           </div>
         </main>
