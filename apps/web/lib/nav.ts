@@ -32,9 +32,17 @@ export function groupNavItems(items: NavItem[]): NavGroup[] {
   return groups;
 }
 
-/** Returns the collapsible group containing the current destination, including nested setup routes. */
-export function findActiveNavGroup(pathname: string, groups: NavGroup[], storeId: string) {
-  return groups.find((group) => group.title && group.items.some((item) => isNavItemActive(pathname, item, storeId))) ?? null;
+/** Grouped navigation starts open; this set tracks only groups the user collapsed. */
+export function isNavGroupOpen(groupId: string, collapsedGroupIds: ReadonlySet<string>) {
+  return !collapsedGroupIds.has(groupId);
+}
+
+/** Toggle one navigation group while preserving the user's state for the others. */
+export function toggleNavGroup(groupId: string, collapsedGroupIds: ReadonlySet<string>) {
+  const next = new Set(collapsedGroupIds);
+  if (next.has(groupId)) next.delete(groupId);
+  else next.add(groupId);
+  return next;
 }
 
 /**

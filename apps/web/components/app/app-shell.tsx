@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { findActiveNavGroup, groupNavItems, isNavItemActive, navMode, resolveHref, visibleNav, type NavMode } from "@/lib/nav";
+import { groupNavItems, isNavGroupOpen, isNavItemActive, navMode, resolveHref, toggleNavGroup, visibleNav, type NavMode } from "@/lib/nav";
 import { hasOrgScope, isOrganisationReadOnlyStoreView } from "@/lib/permissions";
 import { useMe } from "@/components/app/session-context";
 import { IdleLock, UserMenu } from "@/components/app/user-menu";
@@ -55,9 +55,7 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
   const me = useMe();
   const sections = visibleNav(me, storeId, mode);
   const groups = sections.flatMap((section) => groupNavItems(section.items).map((group) => ({ ...group, id: `${section.id}-${group.id}` })));
-  const activeGroup = findActiveNavGroup(pathname, groups, storeId);
-  const activeGroupId = activeGroup?.id ?? null;
-  const [expandedGroupId, setExpandedGroupId] = React.useState<string | null>(null);
+  const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<Set<string>>(() => new Set());
 
   return (
     <nav aria-label={mode === "org" ? "Organisation navigation" : "Store navigation"} className="sidebar-scroll flex-1 overflow-y-auto px-2.5 py-4">
@@ -75,15 +73,15 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
             </Link></li>;
           }
 
-          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={() => { setExpandedGroupId(group.id); onExpand?.(); }}
+          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={() => { setCollapsedGroupIds((current) => { const next = new Set(current); next.delete(group.id); return next; }); onExpand?.(); }}
             className={cn("relative flex h-12 w-full items-center justify-center rounded-lg text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent text-sidebar-foreground")}>
             <firstItem.icon className="size-5" />
           </button></li>;
 
-          const open = activeGroupId === group.id || expandedGroupId === group.id;
+          const open = isNavGroupOpen(group.id, collapsedGroupIds);
           const listId = `nav-${group.id.replace(/[^a-z0-9-]/gi, "-")}`;
           return <li key={group.id} className="pt-1">
-            <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => { if (activeGroupId !== group.id) setExpandedGroupId(open ? null : group.id); }}
+            <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setCollapsedGroupIds((current) => toggleNavGroup(group.id, current))}
               className={cn("flex min-h-11 w-full items-center justify-between rounded-lg px-2.5 text-left text-sm font-semibold uppercase tracking-[0.1em] text-sidebar-muted transition-colors hover:bg-sidebar-overlay hover:text-sidebar-foreground", active && "text-sidebar-primary")}>
               <span className="truncate">{group.title}</span><ChevronDown aria-hidden className={cn("size-4 shrink-0 transition-transform", !open && "-rotate-90")} />
             </button>
