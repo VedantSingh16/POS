@@ -17,6 +17,7 @@ import { useMe } from "@/components/app/session-context";
 import { clientApi } from "@/features/client-api";
 import { useRouter } from "next/navigation";
 import { ConfigurableFieldValues, type ConfiguredField } from "@/features/settings/configurable-field-values";
+import { BrandMark } from "@/components/brand/brand-mark";
 
 type PosProduct = Product & { variantId?: string; barcodes?: string[]; brand?: string; includesTax?: boolean; customFields?: Record<string, string | number | boolean> };
 /** `enteredPriceCents` is only used for open-price items, where the cashier types the price. */
@@ -431,7 +432,7 @@ export function PosScreen({ storeId, storeName, cashier, products: productsIn, c
     <div className="flex h-dvh min-h-[480px] flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-card px-3 sm:px-4">
         {canExit ? <Button variant="ghost" size="sm" aria-label="Exit point of sale" asChild><Link href={`/s/${storeId}`}><ArrowLeft /><span className="hidden sm:inline">Exit</span></Link></Button> : null}
-        <span className="grid size-7 shrink-0 place-items-center rounded-sm bg-primary text-xs font-bold text-primary-foreground">D</span><span className="hidden text-sm font-semibold sm:inline">DeltCRM POS</span><span className="h-5 border-l" /><span className="max-w-36 truncate text-sm font-medium">{storeName}</span>
+        <BrandMark size="compact" className="rounded-[8px]" /><span className="hidden items-center gap-1.5 sm:inline-flex"><span className="font-display text-sm font-bold tracking-[-0.04em]">DeltCRM</span><span className="rounded-[4px] bg-primary/10 px-1 py-0.5 text-[8px] font-bold leading-none tracking-[0.1em] text-primary">POS</span></span><span className="h-5 border-l" /><span className="max-w-36 truncate text-sm font-medium">{storeName}</span>
         <span className="hidden text-sm text-muted-foreground md:block">Point of sale</span>
         <div className="ml-auto flex items-center gap-2"><span className="hidden text-sm text-muted-foreground sm:inline">{cashier}</span><IdleLock /><UserMenu /></div>
         <span className="hidden text-xs text-muted-foreground xl:block"><kbd className="rounded border bg-muted px-1">/</kbd> scan · <kbd className="rounded border bg-muted px-1">F12</kbd> pay</span>

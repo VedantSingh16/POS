@@ -1,14 +1,15 @@
 import { notFound, redirect } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, CheckCircle2 } from "lucide-react";
 import { OnboardingStep } from "@/features/onboarding/onboarding-step";
 import { api } from "@/features/api";
 import { requirePermission } from "@/lib/server/session";
 import { cn } from "@/lib/utils";
+import { AuthBrand } from "@/features/auth/auth-brand";
 
 const STEPS = [
-  { slug: "organization", label: "Organisation", text: "Set your business name, country, currency and tax profile." },
-  { slug: "store", label: "First store", text: "Add the location where you’ll start selling." },
-  { slug: "optional", label: "Optional setup", text: "Add products, review checkout, invite your team or configure devices." },
+  { slug: "organization", label: "Organisation", summary: "Business details", text: "Set your business name, country, currency and tax profile." },
+  { slug: "store", label: "First store", summary: "Location details", text: "Add the location where you’ll start selling." },
+  { slug: "optional", label: "Next steps", summary: "Products, team and checkout", text: "Add products, review checkout, invite your team or configure devices." },
 ];
 const LEGACY_OPTIONAL_STEPS = new Set(["managers", "roles", "tax-receipts", "review", "finish"]);
 
@@ -35,27 +36,58 @@ export default async function Onboarding({ params }: PageProps<"/onboarding/[ste
   const current = STEPS[index]!;
   const completed = Array.isArray(onboarding.completedSteps) ? onboarding.completedSteps : [];
   const done = (position: number) => complete || completed.includes(position);
+  const progress = Math.round(((index + 1) / STEPS.length) * 100);
   return (
-    <div className="grid min-h-screen lg:grid-cols-[18.5rem_1fr]">
-      <aside className="hidden flex-col border-r bg-card/50 p-7 lg:flex">
-        <div className="mb-7 flex items-center gap-2 font-semibold tracking-tight"><span className="grid size-6 place-items-center rounded-md bg-sidebar text-xs font-bold text-sidebar-primary">D</span>DeltCRM POS</div>
-        <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Set up {organization.name}</p>
-        <ol aria-label="Setup progress" className="grid">
-          {STEPS.map((item, position) => <li key={item.slug} aria-current={position === index ? "step" : undefined} className={cn("flex items-center gap-3 py-2 text-sm", position === index ? "font-semibold" : "text-muted-foreground")}>
-            <span className={cn("grid size-6 place-items-center rounded-full text-xs font-semibold", position === index ? "border-2 border-primary text-primary" : done(position) ? "bg-primary text-primary-foreground" : "border text-muted-foreground")}>{done(position) && position !== index ? <Check className="size-3.5" /> : position < 2 ? position + 1 : "·"}</span>
-            <span>{item.label}{position < 2 && <span className="ml-1 text-xs font-normal text-muted-foreground">Required</span>}</span>
-          </li>)}
-        </ol>
-        <div className="mt-auto rounded-lg border bg-card p-3 text-xs text-muted-foreground"><p className="mb-0.5 text-sm font-medium text-foreground">Your progress is saved</p>You can leave and return to the step you were completing.</div>
-      </aside>
-      <div className="flex min-w-0 flex-col px-5 py-8 sm:px-14">
-        <div className="w-full max-w-2xl">
-          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">{index < 2 ? `Required setup · Step ${index + 1} of 2` : "You can skip this section"}</p>
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-secondary lg:hidden" role="progressbar" aria-valuemin={1} aria-valuemax={2} aria-valuenow={Math.min(index + 1, 2)}><div className="h-full bg-primary" style={{ width: `${(Math.min(index + 1, 2) / 2) * 100}%` }} /></div>
-          <h1 className="mt-1.5 text-2xl font-semibold">{current.label}</h1>
-          <p className="mb-6 mt-1 max-w-xl text-sm text-muted-foreground">{current.text}</p>
-          <OnboardingStep currentStep={index} initialData={initialData} organization={organization} admin={{ email: me.user.email }} complete={complete} />
+    <div className="min-h-svh bg-auth-canvas text-auth-ink lg:grid lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <aside className="hidden flex-col px-8 py-8 lg:flex xl:px-10">
+        <AuthBrand />
+        <div className="mt-16">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-auth-primary">Workspace setup</p>
+          <h2 className="mt-3 break-words font-display text-[22px] font-bold leading-tight tracking-[-0.045em] text-auth-ink">{organization.name}</h2>
+          <p className="mt-8 text-xs font-bold uppercase tracking-[0.18em] text-auth-muted">Setup roadmap</p>
+          <ol aria-label="Setup roadmap" className="relative mt-5 grid gap-5 before:absolute before:inset-y-[18px] before:left-[17px] before:w-px before:bg-auth-border before:content-['']">
+            {STEPS.map((item, position) => {
+              const active = position === index;
+              const finished = !active && (position < index || done(position));
+              return (
+                <li key={item.slug} aria-current={active ? "step" : undefined} className="relative grid grid-cols-[36px_minmax(0,1fr)] items-start gap-3">
+                  <span className={cn(
+                    "relative z-10 grid size-9 place-items-center rounded-full border text-sm font-semibold transition-colors",
+                    active && "border-2 border-auth-primary bg-auth-surface text-auth-primary ring-4 ring-auth-primary/10",
+                    finished && "border-auth-primary bg-auth-primary text-auth-on-primary",
+                    !active && !finished && "border-auth-border bg-auth-surface text-auth-muted",
+                  )}>
+                    {finished ? <Check aria-hidden="true" className="size-4" strokeWidth={2.5} /> : position + 1}
+                  </span>
+                  <span className="grid gap-1 pt-0.5">
+                    <span className={cn("text-sm font-semibold", active ? "text-auth-ink" : finished ? "text-auth-ink" : "text-auth-muted")}>{item.label}</span>
+                    <span className="text-xs leading-5 text-auth-muted">{item.summary}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
         </div>
+        <p className="mt-auto flex items-center gap-2 pt-10 text-xs text-auth-muted"><CheckCircle2 aria-hidden="true" className="size-4 text-auth-primary" />Progress is saved when you continue.</p>
+      </aside>
+      <div className="min-w-0">
+        <header className="px-5 pt-5 sm:px-8 lg:hidden">
+          <AuthBrand />
+          <div className="mt-6 flex items-center justify-between text-xs font-semibold text-auth-muted">
+            <span>Step {index + 1} of {STEPS.length}</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-auth-border/60" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={index + 1}>
+            <div className="h-full rounded-full bg-auth-primary transition-[width]" style={{ width: `${progress}%` }} />
+          </div>
+        </header>
+        <main className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-col justify-center px-5 py-8 sm:px-8 lg:min-h-svh lg:px-12 lg:py-12 xl:px-16">
+          <div className="mx-auto w-full max-w-5xl">
+            <p className="mb-2 hidden text-xs font-bold uppercase tracking-[0.18em] text-auth-primary lg:mb-3 lg:block">Step {index + 1} of {STEPS.length}</p>
+            <h1 className="font-display text-[clamp(2rem,3vw,2.7rem)] font-bold leading-[1.08] tracking-[-0.06em] text-auth-ink">{current.label}</h1>
+            <p className="mb-6 mt-2 max-w-2xl text-base leading-[1.6] text-auth-muted sm:mb-8 sm:text-[17px]">{current.text}</p>
+            <OnboardingStep currentStep={index} initialData={initialData} organization={organization} admin={{ email: me.user.email }} complete={complete} />
+          </div>
+        </main>
       </div>
     </div>
   );

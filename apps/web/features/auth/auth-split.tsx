@@ -1,33 +1,82 @@
 import type { ReactNode } from "react";
+import Image from "next/image";
+import { Globe2 } from "lucide-react";
+import { AuthBrand } from "@/features/auth/auth-brand";
 
-const LEVELS = [
-  { n: 1, title: "Organisation", text: "Owns the catalogue, tax groups, customers and team." },
-  { n: 2, title: "Stores", text: "Each store trades on its own registers, stock and staff." },
-  { n: 3, title: "Store operations", text: "Managers and cashiers only see the stores they are assigned to." },
-];
+function AuthLanguage() {
+  return (
+    <div aria-label="Language: English" className="flex items-center gap-2 text-sm font-medium text-auth-muted">
+      <Globe2 aria-hidden="true" className="size-4 text-auth-muted" strokeWidth={1.8} />
+      <span>English</span>
+    </div>
+  );
+}
 
-/** Shared frame for sign-in and registration: form on the left, the organisation → store hierarchy on the right. */
+/** Sign-in split layout with a subdued product image. */
 export function AuthSplit({ children }: { children: ReactNode }) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1fr_32rem]">
-      <div className="flex flex-col px-6 py-8 sm:px-14">
-        <div className="flex items-center gap-2 font-semibold tracking-tight">
-          <span className="grid size-6 place-items-center rounded-md bg-sidebar text-xs font-bold text-sidebar-primary">D</span>DeltCRM POS
+    <main className="relative isolate grid min-h-screen overflow-x-clip bg-auth-canvas text-auth-ink lg:grid-cols-[minmax(0,1.06fr)_minmax(440px,0.94fr)]">
+      <section className="relative flex min-h-[700px] flex-col px-6 pb-0 pt-7 sm:px-10 lg:min-h-screen lg:px-[clamp(40px,6.1vw,96px)] lg:py-8">
+        <div className="relative z-10">
+          <AuthBrand />
         </div>
-        <div className="flex flex-1 items-center justify-center py-10">{children}</div>
-        <p className="text-xs text-muted-foreground">Sessions are kept in a secure cookie. Never share your PIN.</p>
-      </div>
-      <aside className="hidden flex-col justify-center gap-7 bg-sidebar p-14 text-sidebar-foreground lg:flex">
-        <p className="max-w-sm text-2xl font-semibold leading-tight tracking-tight text-sidebar-foreground">One organisation. Many stores. Clear boundaries.</p>
-        <ol className="grid gap-5">
-          {LEVELS.map((l) => (
-            <li key={l.n} className="flex gap-3">
-              <span className="grid size-6 shrink-0 place-items-center rounded-md border border-sidebar-border text-xs font-semibold text-sidebar-primary">{l.n}</span>
-              <div><p className="font-medium text-sidebar-foreground">{l.title}</p><p className="text-sm text-sidebar-muted">{l.text}</p></div>
-            </li>
-          ))}
-        </ol>
-      </aside>
+
+        <div className="relative z-10 mt-14 max-w-[670px] sm:mt-16 lg:mt-[clamp(58px,8vh,100px)]">
+          <p className="mb-5 flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-auth-primary sm:text-xs">
+            <span aria-hidden="true" className="size-2 rounded-full bg-auth-primary" />
+            Multi-store point of sale
+          </p>
+          <h1 className="font-display text-[clamp(3.45rem,5.35vw,5.7rem)] font-extrabold leading-[0.98] tracking-[-0.075em] text-auth-ink">
+            Keep every store
+            <br />
+            <span className="text-auth-primary">in sync.</span>
+          </h1>
+          <p className="mt-5 max-w-[450px] text-[17px] leading-[1.6] text-auth-muted sm:text-[18px]">
+            Sales, stock and store teams, together in one place.
+          </p>
+        </div>
+
+        <div aria-hidden="true" className="auth-hero-visual pointer-events-none relative z-0 -mx-6 mt-auto h-[260px] sm:-mx-10 sm:h-[320px] lg:absolute lg:left-0 lg:right-[-160px] lg:bottom-0 lg:top-[37%] lg:mx-0 lg:mt-0 lg:h-auto">
+          <Image
+            src="/images/pos-auth-hero.png"
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1024px) 58vw, 100vw"
+            className="auth-hero-image object-cover object-[center_56%]"
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: "linear-gradient(180deg, var(--auth-canvas) 0%, rgba(var(--auth-canvas-rgb), .78) 20%, rgba(var(--auth-canvas-rgb), .42) 43%, rgba(var(--auth-canvas-rgb), .12) 68%, rgba(var(--auth-canvas-rgb), .04) 100%)",
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="relative z-10 flex min-h-[620px] items-center justify-center px-5 pb-12 pt-[92px] sm:px-8 lg:min-h-screen lg:px-10 lg:py-24">
+        <div className="absolute right-6 top-6 z-20 sm:right-10 sm:top-8"><AuthLanguage /></div>
+        <div className="w-full max-w-[37rem] rounded-[24px] bg-auth-surface/95 px-6 py-8 shadow-xl ring-1 ring-auth-outline backdrop-blur-sm sm:px-10 sm:py-11 lg:px-12 lg:py-12">
+          {children}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/** Quiet, centered registration layout with a wider card for a shorter form. */
+export function AuthCentered({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-svh overflow-x-clip bg-auth-canvas text-auth-ink">
+      <header className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-6 pt-7 sm:px-10 lg:px-12 lg:pt-8">
+        <AuthBrand />
+        <AuthLanguage />
+      </header>
+      <main className="mx-auto flex min-h-[calc(100svh-6.5rem)] w-full max-w-[1440px] items-center justify-center px-4 py-8 sm:px-8 sm:py-10">
+        <div className="w-full max-w-[58rem] rounded-[24px] bg-auth-surface/95 px-5 py-7 shadow-xl ring-1 ring-auth-outline backdrop-blur-sm sm:px-8 sm:py-9 lg:px-12 lg:py-10">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

@@ -147,7 +147,7 @@ function FieldEditor({ field, onChange, onRemove, allowScope, allowLevel, domain
   return <div className="flex items-start gap-2 border-b p-3 last:border-b-0">
     <details open={open} onToggle={(event) => toggleOpen(event.currentTarget.open)} className="min-w-0 flex-1" aria-label={`${field.label} field settings`}>
     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-muted/50"><span className="min-w-0"><b className="block truncate">{field.label || "New field"}</b><span className="text-xs text-muted-foreground">{field.type} · {field.active ? "Enabled" : "Disabled"}{field.required ? " · Required" : ""}{field.showOnReceipt ? " · On invoice" : ""}</span></span><span className="shrink-0 text-xs font-medium text-primary">{open ? "Close" : "Edit field"}</span></summary>
-    <fieldset disabled={!canEdit} className="contents">
+    <fieldset disabled={!canEdit} className="m-0 grid min-w-0 gap-3 border-0 p-0">
     <div className="grid gap-3 border-t p-3">
     <div className="grid gap-2 sm:grid-cols-2">
       <label className="grid gap-1 text-sm">Field key<Input value={field.key} disabled /></label>

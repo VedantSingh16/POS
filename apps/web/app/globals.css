@@ -5,23 +5,33 @@
    Density: --row-compact (back office) and --target-touch (POS, onboarding). */
 :root {
   color-scheme: light;
-  --background: oklch(0.975 0.008 150);
-  --foreground: oklch(0.23 0.018 164);
-  --card: oklch(1 0 0);
+  --background: var(--auth-canvas);
+  --foreground: var(--auth-ink);
+  --auth-canvas: #f7f5ef;
+  --auth-canvas-rgb: 247, 245, 239;
+  --auth-surface: #fffdf9;
+  --auth-border: #c1bdb6;
+  --auth-outline: rgb(98 90 78 / 10%);
+  --auth-ink: #111a24;
+  --auth-muted: #526171;
+  --auth-primary: #047857;
+  --auth-primary-hover: #065f46;
+  --auth-on-primary: #ffffff;
+  --card: var(--auth-surface);
   --card-foreground: var(--foreground);
-  --popover: oklch(1 0 0);
+  --popover: var(--auth-surface);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.43 0.09 164);
+  --primary: var(--auth-primary);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.009 150);
-  --secondary-foreground: oklch(0.3 0.018 164);
-  --muted: oklch(0.95 0.009 150);
-  --muted-foreground: oklch(0.49 0.022 164);
-  --accent: oklch(0.93 0.035 158);
-  --accent-foreground: oklch(0.31 0.07 164);
-  --border: oklch(0.9 0.014 155);
-  --input: oklch(0.85 0.016 155);
-  --ring: oklch(0.52 0.09 164);
+  --secondary: #eeeae2;
+  --secondary-foreground: var(--auth-ink);
+  --muted: #f0eee8;
+  --muted-foreground: var(--auth-muted);
+  --accent: #e5f2eb;
+  --accent-foreground: #07553e;
+  --border: #e3ddd3;
+  --input: var(--auth-border);
+  --ring: var(--auth-primary);
   --success: oklch(0.45 0.1 150);
   --success-soft: oklch(0.945 0.035 150);
   --warning: oklch(0.48 0.1 75);
@@ -30,13 +40,13 @@
   --danger-soft: oklch(0.95 0.03 30);
   --info: oklch(0.42 0.09 255);
   --info-soft: oklch(0.94 0.02 255);
-  --sidebar: oklch(0.962 0.018 153);
-  --sidebar-foreground: oklch(0.26 0.022 164);
-  --sidebar-muted: oklch(0.49 0.022 164);
-  --sidebar-accent: oklch(0.91 0.042 155);
-  --sidebar-border: oklch(0.89 0.02 153);
+  --sidebar: #f1efe8;
+  --sidebar-foreground: var(--auth-ink);
+  --sidebar-muted: #65716f;
+  --sidebar-accent: #e2efe7;
+  --sidebar-border: #e3ddd3;
   --sidebar-primary: var(--primary);
-  --radius: 0.35rem;
+  --radius: 0.65rem;
   --row-compact: 2rem;
   --target-touch: 2.75rem;
 }
@@ -75,6 +85,16 @@
 }
 
 @theme inline {
+  --font-display: var(--font-manrope), var(--font-geist-sans), system-ui, sans-serif;
+  --color-auth-canvas: var(--auth-canvas);
+  --color-auth-surface: var(--auth-surface);
+  --color-auth-border: var(--auth-border);
+  --color-auth-outline: var(--auth-outline);
+  --color-auth-ink: var(--auth-ink);
+  --color-auth-muted: var(--auth-muted);
+  --color-auth-primary: var(--auth-primary);
+  --color-auth-primary-hover: var(--auth-primary-hover);
+  --color-auth-on-primary: var(--auth-on-primary);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -109,8 +129,30 @@
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-sans: var(--font-manrope), var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
+}
+
+.auth-hero-visual {
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 78%, transparent 100%);
+}
+
+.auth-hero-image {
+  opacity: 0.58;
+  mix-blend-mode: multiply;
+  filter: saturate(0.82) contrast(0.94);
+}
+
+@media (max-width: 1023px) {
+  .auth-hero-visual {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .auth-hero-image {
+    opacity: 0.52;
+  }
 }
 
 @layer base {

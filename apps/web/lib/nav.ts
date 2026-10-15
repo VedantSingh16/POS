@@ -12,11 +12,23 @@ export type NavItem = {
   /** Permission code that gates visibility. The API enforces the same rule on every call. */
   permission?: string;
   keywords?: string[];
-  /** Heading shown above a run of related items in the sidebar. */
+  /** Collapsible area in the sidebar; related destinations stay together. */
   group?: string;
 };
 export type NavSection = { id: "org" | "store"; title: string; items: NavItem[] };
 export type NavMode = "org" | "store";
+export type NavGroup = { id: string; title?: string; items: NavItem[] };
+
+/** Groups adjacent navigation destinations without changing their route or permission rules. */
+export function groupNavItems(items: NavItem[]): NavGroup[] {
+  const groups: NavGroup[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (item.group && last?.title === item.group) last.items.push(item);
+    else groups.push({ id: item.group ? `${item.group}-${groups.length}` : item.href, title: item.group, items: [item] });
+  }
+  return groups;
+}
 
 /**
  * Two separate areas, never shown together:
@@ -29,17 +41,17 @@ export const NAV: NavSection[] = [
     title: "Organisation",
     items: [
       { label: "Overview", href: "/org", icon: LayoutDashboard },
-      { label: "Stores", href: "/org/stores", icon: Store, permission: "stores.view", group: "Stores & team", keywords: ["locations", "branches"] },
-      { label: "Team members", href: "/org/users", icon: Users, permission: "users.view", group: "Stores & team", keywords: ["users", "staff", "managers"] },
-      { label: "Stock transfers", href: "/org/transfers", icon: ArrowLeftRight, permission: "transfer.manage", group: "Stores & team", keywords: ["move stock", "transfer"] },
-      { label: "Distributions", href: "/org/distributions", icon: ArrowLeftRight, permission: "catalog.distribute", group: "Stores & team", keywords: ["push stock", "distribute", "allocation"] },
-      { label: "Roles & access", href: "/org/roles", icon: ShieldCheck, permission: "roles.view", group: "Stores & team", keywords: ["permissions"] },
-      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Product catalogue", keywords: ["products", "items"] },
-      { label: "Categories", href: "/org/catalog/categories", icon: FolderTree, permission: "catalog.view", group: "Product catalogue" },
-      { label: "Product types", href: "/org/catalog/types", icon: FolderTree, permission: "catalog.manage", group: "Product catalogue", keywords: ["version", "setup"] },
-      { label: "Product fields", href: "/org/catalog/fields", icon: FolderTree, permission: "org.settings.manage", group: "Product catalogue", keywords: ["attributes", "schema"] },
-      { label: "Customers", href: "/org/customers", icon: UserRound, permission: "customer.view", group: "Customers & insights" },
-      { label: "Reports & analytics", href: "/org/reports", icon: BarChart3, permission: "report.view", group: "Customers & insights", keywords: ["sales", "gst", "compare"] },
+      { label: "Stores", href: "/org/stores", icon: Store, permission: "stores.view", group: "Locations & stock", keywords: ["locations", "branches"] },
+      { label: "Stock transfers", href: "/org/transfers", icon: ArrowLeftRight, permission: "transfer.manage", group: "Locations & stock", keywords: ["move stock", "transfer"] },
+      { label: "Distributions", href: "/org/distributions", icon: ArrowLeftRight, permission: "catalog.distribute", group: "Locations & stock", keywords: ["push stock", "distribute", "allocation"] },
+      { label: "Team members", href: "/org/users", icon: Users, permission: "users.view", group: "People & access", keywords: ["users", "staff", "managers"] },
+      { label: "Roles & access", href: "/org/roles", icon: ShieldCheck, permission: "roles.view", group: "People & access", keywords: ["permissions"] },
+      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items"] },
+      { label: "Categories", href: "/org/catalog/categories", icon: FolderTree, permission: "catalog.view", group: "Catalogue" },
+      { label: "Product types", href: "/org/catalog/types", icon: FolderTree, permission: "catalog.manage", group: "Catalogue", keywords: ["version", "setup"] },
+      { label: "Product fields", href: "/org/catalog/fields", icon: FolderTree, permission: "org.settings.manage", group: "Catalogue", keywords: ["attributes", "schema"] },
+      { label: "Customers", href: "/org/customers", icon: UserRound, permission: "customer.view", group: "Customers & reports" },
+      { label: "Reports & analytics", href: "/org/reports", icon: BarChart3, permission: "report.view", group: "Customers & reports", keywords: ["sales", "gst", "compare"] },
       { label: "Organisation settings", href: "/org/settings/general", icon: Settings, permission: "org.settings.manage", group: "Administration" },
       { label: "Audit log", href: "/org/audit", icon: ScrollText, permission: "audit.view", group: "Administration" },
     ],
@@ -52,18 +64,18 @@ export const NAV: NavSection[] = [
       { label: "Point of sale", href: "/s/:storeId/pos", icon: ShoppingCart, permission: "sale.create", group: "Selling", keywords: ["checkout", "till", "register"] },
       { label: "Sales", href: "/s/:storeId/sales", icon: Receipt, permission: "sale.view", group: "Selling", keywords: ["receipts", "orders"] },
       { label: "Returns", href: "/s/:storeId/returns", icon: Undo2, permission: "refund.view", group: "Selling", keywords: ["refund"] },
+      { label: "Offers & price rules", href: "/s/:storeId/pricing", icon: Percent, permission: "pricing.view", group: "Selling", keywords: ["discounts", "coupons", "offers"] },
       { label: "Inventory", href: "/s/:storeId/inventory", icon: Boxes, permission: "inventory.view", group: "Stock", keywords: ["stock"] },
       { label: "Products", href: "/s/:storeId/products", icon: Package, permission: "catalog.view", group: "Stock", keywords: ["catalogue", "items"] },
       { label: "Categories", href: "/s/:storeId/categories", icon: FolderTree, permission: "catalog.view", group: "Stock" },
       { label: "Tax groups & charges", href: "/s/:storeId/settings/tax", icon: CircleDollarSign, permission: "tax.view", group: "Stock", keywords: ["gst", "service charge"] },
-      { label: "Offers & price rules", href: "/s/:storeId/pricing", icon: Percent, permission: "pricing.view", group: "Selling", keywords: ["discounts", "coupons", "offers"] },
       { label: "Registers", href: "/s/:storeId/registers", icon: Landmark, permission: "registers.view", group: "Tills & control", keywords: ["cash", "shift", "till"] },
       { label: "Approvals", href: "/s/:storeId/approvals", icon: CheckCheck, permission: "approval.manage", group: "Tills & control" },
       { label: "Alerts", href: "/s/:storeId/alerts", icon: Bell, permission: "report.view", group: "Tills & control" },
-      { label: "Staff", href: "/s/:storeId/staff", icon: Users, permission: "store.staff.view", group: "Store admin" },
-      { label: "Store reports", href: "/s/:storeId/reports", icon: BarChart3, permission: "report.view", group: "Store admin" },
-      { label: "Store settings", href: "/s/:storeId/settings/profile", icon: Settings, permission: "store.settings.view", group: "Store admin" },
-      { label: "Billing & checkout", href: "/s/:storeId/settings/billing", icon: Receipt, permission: "store.settings.view", group: "Store admin", keywords: ["billing", "checkout", "payment methods", "discounts", "receipt"] },
+      { label: "Staff", href: "/s/:storeId/staff", icon: Users, permission: "store.staff.view", group: "Team & reports" },
+      { label: "Store reports", href: "/s/:storeId/reports", icon: BarChart3, permission: "report.view", group: "Team & reports" },
+      { label: "Store settings", href: "/s/:storeId/settings/profile", icon: Settings, permission: "store.settings.view", group: "Settings" },
+      { label: "Billing & checkout", href: "/s/:storeId/settings/billing", icon: Receipt, permission: "store.settings.view", group: "Settings", keywords: ["billing", "checkout", "payment methods", "discounts", "receipt"] },
     ],
   },
 ];

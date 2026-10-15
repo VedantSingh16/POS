@@ -21,11 +21,11 @@ export default async function StoreBillingSettings({ params }: PageProps<"/s/[st
         <a href="#billing-behavior" className="group rounded-md border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="font-semibold">Billing behavior</span><span className="mt-1 block text-sm text-muted-foreground">Payment methods, discounts, held bills, register controls, and receipts.</span><span className="mt-3 block text-sm font-medium text-primary">Configure billing ↓</span></a>
         <a href="#checkout-fields" className="group rounded-md border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="font-semibold">Checkout fields</span><span className="mt-1 block text-sm text-muted-foreground">Choose cashier controls and add or remove information captured on bills.</span><span className="mt-3 block text-sm font-medium text-primary">Configure checkout fields ↓</span></a>
       </nav>
-      <Card id="billing-behavior" className="scroll-mt-4"><CardContent className="grid gap-4">
+      <Card id="billing-behavior" className="scroll-mt-24"><CardContent className="grid gap-4">
         <div><h2 className="font-semibold">Billing behavior</h2><p className="text-sm text-muted-foreground">Each store keeps its own complete configuration. Amounts use the organization currency, {data.currency ?? "OMR"}.</p></div>
         <BillingForm storeId={storeId} own={(data.billing ?? {}) as never} canEdit={canEdit} />
       </CardContent></Card>
-      <Card id="checkout-fields" className="scroll-mt-4"><CardContent className="grid gap-4"><StoreCheckoutFieldEditor storeId={storeId} initial={(data.checkoutFieldSettings ?? {}) as never} canEdit={canEdit} /></CardContent></Card>
+      <Card id="checkout-fields" className="scroll-mt-24"><CardContent className="grid gap-4"><StoreCheckoutFieldEditor storeId={storeId} initial={(data.checkoutFieldSettings ?? {}) as never} canEdit={canEdit} /></CardContent></Card>
     </div>
   </>;
 }

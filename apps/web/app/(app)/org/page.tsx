@@ -56,14 +56,14 @@ export default async function OrgOverview() {
   return (
     <>
       <PageHeader title="Organisation overview" description={`Organisation-wide view for ${org.name}. Open a store to see its own operations.`} crumbs={[{ label: "Organisation" }, { label: "Overview" }]} />
-      <div className="mb-5 grid grid-cols-2 rounded-md border-y bg-card px-4 py-3 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 rounded-2xl border border-border/80 bg-card px-4 py-4 shadow-[0_1px_3px_rgb(26_35_32/5%)] sm:grid-cols-4 sm:px-5">
         <KpiTile label="Active stores" value={`${activeStores.length} / ${org.maxStores}`} hint="Plan limit across the organisation" icon={Store} />
         <KpiTile label="Stores ready to sell" value={`${ready.length} / ${activeStores.length}`} hint="Register, product and tax setup ready" icon={CheckCircle2} tone={ready.length === activeStores.length && activeStores.length > 0 ? "success" : "warning"} />
         <KpiTile label="Active team members" value={users.filter((u) => u.status === "ACTIVE").length} hint={`${users.length} accounts in total`} icon={Users} />
         <KpiTile label="Needs attention" value={checklist.length - done} hint="Open setup items" icon={AlertTriangle} tone={checklist.length - done ? "warning" : "success"} />
       </div>
-      <Card className="mb-4">
-        <CardHeader><CardTitle>Your stores</CardTitle><Link href="/org/stores" className="text-xs text-primary hover:underline">Manage stores</Link></CardHeader>
+      <Card className="mb-6 overflow-hidden rounded-2xl border-border/80 shadow-[0_1px_3px_rgb(26_35_32/5%)]">
+        <CardHeader className="px-5 py-4"><CardTitle className="font-display text-base font-bold tracking-[-0.025em]">Your stores</CardTitle><Link href="/org/stores" className="text-sm font-semibold text-primary hover:underline">Manage stores</Link></CardHeader>
         <CardContent>
           {stores.length === 0 ? <p className="text-sm text-muted-foreground">No stores yet. <Link href="/org/stores" className="font-medium text-primary hover:underline">Create the first store</Link>.</p> : (
             <ul className="divide-y">
@@ -83,25 +83,28 @@ export default async function OrgOverview() {
           )}
         </CardContent>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader><CardTitle>Setup checklist · {done} of {checklist.length}</CardTitle><Link href="/onboarding/optional" className="text-xs text-primary hover:underline">Optional setup</Link></CardHeader>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]">
+        <Card className="overflow-hidden rounded-2xl border-border/80 shadow-[0_1px_3px_rgb(26_35_32/5%)]">
+          <CardHeader className="px-5 py-4"><CardTitle className="font-display text-base font-bold tracking-[-0.025em]">Setup progress <span className="ml-1 font-sans text-xs font-medium text-muted-foreground">{done} of {checklist.length}</span></CardTitle><Link href="/onboarding/optional" className="text-sm font-semibold text-primary hover:underline">Continue setup</Link></CardHeader>
           <CardContent>
-            <ul className="grid gap-2">
+            <ul className="grid gap-3">
               {checklist.map((c) => (
                 <li key={c.label}>
-                  <Link href={c.href} className="flex items-center gap-2 text-sm hover:underline">
-                    {c.done ? <CheckCircle2 className="size-4 text-success" /> : <Circle className="size-4 text-muted-foreground" />}
-                    <span className={c.done ? "text-muted-foreground line-through" : "font-medium"}>{c.label}</span>
+                  <Link href={c.href} className="group flex items-start gap-3 rounded-lg py-1 text-sm transition-colors hover:text-primary">
+                    {c.done ? <CheckCircle2 className="mt-0.5 size-[18px] shrink-0 text-success" /> : <Circle className="mt-0.5 size-[18px] shrink-0 text-muted-foreground" />}
+                    <span className={c.done ? "leading-5 text-muted-foreground" : "leading-5 font-semibold group-hover:underline"}>{c.label}</span>
                   </Link>
                 </li>
               ))}
             </ul>
           </CardContent>
         </Card>
-        <div className="lg:col-span-2">
-          <h2 className="mb-2 text-sm font-semibold">Recent organisation activity</h2>
-          <AuditTable data={audit.slice(0, 8)} />
+        <div className="min-w-0">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div><h2 className="font-display text-base font-bold tracking-[-0.025em]">Recent activity</h2><p className="mt-1 text-sm text-muted-foreground">A short view of changes across your organisation.</p></div>
+            <Link href="/org/audit" className="shrink-0 text-sm font-semibold text-primary hover:underline">View audit log</Link>
+          </div>
+          <AuditTable data={audit.slice(0, 4)} />
         </div>
       </div>
     </>

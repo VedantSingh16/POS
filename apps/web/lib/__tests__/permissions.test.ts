@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canAccessStore, hasOrgScope, hasPermission, isOrganisationReadOnlyStoreView, landingPath, safeNext, type Me } from "../permissions";
-import { navMode, visibleNav } from "../nav";
+import { groupNavItems, NAV, navMode, visibleNav } from "../nav";
 
 const A = "store-a";
 const B = "store-b";
@@ -80,6 +80,20 @@ describe("permissions", () => {
     // A store manager has no organisation area at all, in either mode.
     expect(labels(manager, A, "org")).toEqual([]);
     expect(labels(manager, A, "store")).toEqual(expect.arrayContaining(["Store reports", "Staff"]));
+  });
+  it("keeps related destinations together in a compact, ordered navigation", () => {
+    const orgGroups = groupNavItems(NAV.find((section) => section.id === "org")!.items);
+    const storeGroups = groupNavItems(NAV.find((section) => section.id === "store")!.items);
+    expect(orgGroups.map((group) => group.title ?? group.items[0]?.label)).toEqual([
+      "Overview", "Locations & stock", "People & access", "Catalogue", "Customers & reports", "Administration",
+    ]);
+    expect(storeGroups.map((group) => group.title ?? group.items[0]?.label)).toEqual([
+      "Store overview", "Selling", "Stock", "Tills & control", "Team & reports", "Settings",
+    ]);
+    expect(storeGroups.find((group) => group.title === "Selling")?.items.map((item) => item.label)).toEqual([
+      "Point of sale", "Sales", "Returns", "Offers & price rules",
+    ]);
+    expect(groupNavItems([NAV[0]!.items[0]!, NAV[1]!.items[0]!])).toHaveLength(2);
   });
   it("the URL decides the context", () => {
     expect(navMode("/org")).toBe("org");

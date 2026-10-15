@@ -1,3 +1,3 @@
 export default function AuthLayout({ children }: LayoutProps<"/">) {
-  return <main className="min-h-screen bg-background">{children}</main>;
+  return <div className="min-h-screen bg-auth-canvas text-auth-ink [color-scheme:light]">{children}</div>;
 }
