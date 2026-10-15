@@ -62,7 +62,7 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
             <DropdownMenuContent align="end">
               {table.getAllLeafColumns().filter((c) => c.getCanHide() && !(typeof c.columnDef.header === "string" && c.columnDef.header === "")).map((c) => (
                 <M.CheckboxItem key={c.id} checked={c.getIsVisible()} onCheckedChange={(v) => c.toggleVisibility(!!v)} onSelect={(e) => e.preventDefault()}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-[15px] outline-none data-[highlighted]:bg-accent">
+                  className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm outline-none data-[highlighted]:bg-accent">
                   <span className="grid size-4 shrink-0 place-items-center text-primary">{c.getIsVisible() ? "✓" : ""}</span>{typeof c.columnDef.header === "string" ? c.columnDef.header : c.id}
                 </M.CheckboxItem>
               ))}
@@ -108,7 +108,7 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
       )}
       {!loading && !error && rows.length === 0 && <EmptyState title={filter ? "No matches" : emptyTitle} description={filter ? "Try a different search term." : emptyDescription} />}
 
-      {total > 0 && <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-[15px] text-muted-foreground">
+      {total > 0 && <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground">
         <span className="tabular">{total} {total === 1 ? "row" : "rows"}</span>
         {table.getPageCount() > 1 && <div className="flex items-center gap-2">
           <span className="tabular mr-1">Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>

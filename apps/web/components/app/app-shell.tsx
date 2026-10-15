@@ -63,7 +63,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           if (!group.title) {
             const href = resolveHref(firstItem.href, storeId);
             return <li key={group.id}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined}
-              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[17px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
+              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
               <firstItem.icon className="size-5 shrink-0" /><span className="truncate">{firstItem.label}</span>
             </Link></li>;
           }
@@ -75,7 +75,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 const href = resolveHref(item.href, storeId);
                 const itemActive = isNavItemActive(pathname, item, storeId);
                 return <li key={item.href}><Link href={href} onClick={onNavigate} aria-current={itemActive ? "page" : undefined}
-                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[17px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
+                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
                   <item.icon className="size-[18px] shrink-0" /><span className="truncate">{item.label}</span>
                 </Link></li>;
               })}
@@ -91,7 +91,7 @@ function Brand({ home }: { home: string }) {
   return (
     <Link href={home} aria-label="DeltCRM POS home" className="flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
       <BrandMark size="compact" className="bg-sidebar-accent text-sidebar-primary ring-sidebar-border" />
-      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight">DeltCRM</span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-overlay px-2 py-1 text-[11px] font-bold leading-none tracking-[0.08em] text-sidebar-primary">POS</span></span>
+      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight">DeltCRM</span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-overlay px-2 py-1 text-xs font-bold leading-none tracking-[0.08em] text-sidebar-foreground">POS</span></span>
     </Link>
   );
 }
