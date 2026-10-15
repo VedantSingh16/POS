@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 export const Sheet = D.Root;
 export const SheetTrigger = D.Trigger;
 export const SheetClose = D.Close;
-export const SheetTitle = ({ className, ...p }: React.ComponentProps<typeof D.Title>) => <D.Title className={cn("text-base font-semibold", className)} {...p} />;
-export const SheetDescription = ({ className, ...p }: React.ComponentProps<typeof D.Description>) => <D.Description className={cn("text-sm text-muted-foreground", className)} {...p} />;
+export const SheetTitle = ({ className, ...p }: React.ComponentProps<typeof D.Title>) => <D.Title className={cn("text-lg font-semibold tracking-tight", className)} {...p} />;
+export const SheetDescription = ({ className, ...p }: React.ComponentProps<typeof D.Description>) => <D.Description className={cn("text-base leading-relaxed text-muted-foreground", className)} {...p} />;
 
 const SIZES = { md: "max-w-md", lg: "max-w-2xl", xl: "max-w-4xl" } as const;
 

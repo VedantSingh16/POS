@@ -9,7 +9,7 @@ export const TabsList = ({ className, ...p }: React.ComponentProps<typeof T.List
 );
 export const TabsTrigger = ({ className, ...p }: React.ComponentProps<typeof T.Trigger>) => (
   <T.Trigger
-    className={cn("-mb-px border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-foreground", className)}
+    className={cn("-mb-px border-b-2 border-transparent px-3 py-2.5 text-base font-medium text-muted-foreground hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-foreground", className)}
     {...p}
   />
 );

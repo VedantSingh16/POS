@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 export const DropdownMenu = M.Root;
 export const DropdownMenuTrigger = M.Trigger;
 export const DropdownMenuLabel = ({ className, ...p }: React.ComponentProps<typeof M.Label>) => (
-  <M.Label className={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", className)} {...p} />
+  <M.Label className={cn("px-2 py-1.5 text-sm font-semibold text-muted-foreground", className)} {...p} />
 );
 export const DropdownMenuSeparator = ({ className, ...p }: React.ComponentProps<typeof M.Separator>) => (
   <M.Separator className={cn("-mx-1 my-1 h-px bg-border", className)} {...p} />
@@ -24,7 +24,7 @@ export function DropdownMenuContent({ className, sideOffset = 6, ...props }: Rea
 }
 export const DropdownMenuItem = ({ className, ...p }: React.ComponentProps<typeof M.Item>) => (
   <M.Item
-    className={cn("flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 [&_svg]:size-4", className)}
+    className={cn("flex cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-[15px] outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50 [&_svg]:size-4", className)}
     {...p}
   />
 );

@@ -6,8 +6,8 @@ export function Field({ label, error, hint, htmlFor, children }: { label: string
     <div className="grid content-start gap-1.5">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
-      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {hint && !error && <p className="text-sm text-muted-foreground">{hint}</p>}
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     </div>
   );
 }

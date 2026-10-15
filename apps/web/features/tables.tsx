@@ -18,7 +18,7 @@ import type { ConfiguredField } from "@/features/settings/configurable-field-val
 
 type Row<T> = ColumnDef<T, unknown>[];
 const when = (v: string) => (v ? <span className="text-muted-foreground"><RelativeTime value={v} /></span> : <span className="text-muted-foreground">—</span>);
-const mono = (v: string) => <span className="font-mono text-xs">{v}</span>;
+const mono = (v: string) => <span className="font-mono text-[13px]">{v}</span>;
 const num = (v: number) => <span className="tabular">{formatNumber(v)}</span>;
 
 type User = M.UserRow;

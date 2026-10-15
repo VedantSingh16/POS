@@ -39,16 +39,16 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
 
 export function PageHeader({ title, description, actions, crumbs, backHref, backLabel }: { title: string; description?: string; actions?: React.ReactNode; crumbs?: Crumb[]; backHref?: string; backLabel?: string }) {
   return (
-    <header className="mb-8 flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+    <header className="mb-8 flex flex-wrap items-start justify-between gap-x-8 gap-y-5 sm:items-end">
       <div className="min-w-0">
         {backHref && <Link href={backHref} className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="size-4" aria-hidden />{backLabel ?? "Back"}</Link>}
         {crumbs && <Breadcrumbs items={crumbs} />}
         <div className="flex items-center gap-2">
-          <h1 className="max-w-4xl font-display text-3xl font-normal leading-tight tracking-tight text-foreground sm:text-4xl">{title}</h1>
+          <h1 className="max-w-4xl font-display text-[clamp(2rem,2.6vw,2.5rem)] font-bold leading-[1.08] tracking-[-0.055em] text-foreground">{title}</h1>
         </div>
-        {description && <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">{description}</p>}
+        {description && <p className="mt-3 max-w-3xl text-base leading-[1.6] text-muted-foreground sm:text-lg">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2 pb-0.5">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap items-center gap-2 pb-0.5 sm:w-auto">{actions}</div>}
     </header>
   );
 }

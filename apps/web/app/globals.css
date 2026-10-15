@@ -40,15 +40,20 @@
   --danger-soft: oklch(0.95 0.03 30);
   --info: oklch(0.42 0.09 255);
   --info-soft: oklch(0.94 0.02 255);
-  --sidebar: #e8f1ea;
-  --sidebar-foreground: #1d3026;
-  --sidebar-muted: #53685c;
-  --sidebar-accent: #d5e9da;
-  --sidebar-border: #c9d9cc;
-  --sidebar-primary: var(--primary);
+  /* The navigation rail uses the same emerald hue as the auth actions, with
+     enough depth to feel calm across a full-height surface. */
+  --sidebar: #07543f;
+  --sidebar-foreground: #f7fbf8;
+  --sidebar-muted: #c6d9d0;
+  --sidebar-accent: #0a6b50;
+  --sidebar-border: #347b63;
+  --sidebar-primary: #a7f3d0;
+  --sidebar-overlay: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent);
+  --sidebar-surface: color-mix(in srgb, var(--sidebar-foreground) 5%, transparent);
+  --sidebar-border-soft: color-mix(in srgb, var(--sidebar-foreground) 18%, transparent);
   --radius: 0.75rem;
-  --table-row-height: 2.75rem;
-  --target-touch: 2.75rem;
+  --table-row-height: 3rem;
+  --target-touch: 3rem;
 }
 
 .dark {
@@ -76,16 +81,21 @@
   --danger-soft: oklch(0.31 0.06 28);
   --info: oklch(0.76 0.1 250);
   --info-soft: oklch(0.3 0.04 250);
-  --sidebar: oklch(0.22 0.025 160);
-  --sidebar-foreground: oklch(0.94 0.015 155);
-  --sidebar-muted: oklch(0.76 0.025 155);
-  --sidebar-accent: oklch(0.31 0.04 158);
-  --sidebar-border: oklch(0.36 0.035 158);
-  --sidebar-primary: oklch(0.78 0.12 158);
+  --sidebar: #092f25;
+  --sidebar-foreground: #f4faf6;
+  --sidebar-muted: #c1d5cc;
+  --sidebar-accent: #124b39;
+  --sidebar-border: #2a614d;
+  --sidebar-primary: #a7f3d0;
+  --sidebar-overlay: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent);
+  --sidebar-surface: color-mix(in srgb, var(--sidebar-foreground) 5%, transparent);
+  --sidebar-border-soft: color-mix(in srgb, var(--sidebar-foreground) 18%, transparent);
 }
 
 @theme inline {
-  --font-display: Georgia, "Times New Roman", serif;
+  --font-display: var(--font-geist-sans), system-ui, sans-serif;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
   --color-auth-canvas: var(--auth-canvas);
   --color-auth-surface: var(--auth-surface);
   --color-auth-border: var(--auth-border);
@@ -126,6 +136,9 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-overlay: var(--sidebar-overlay);
+  --color-sidebar-surface: var(--sidebar-surface);
+  --color-sidebar-border-soft: var(--sidebar-border-soft);
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
@@ -161,8 +174,8 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-geist-sans), system-ui, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: 16px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
   h1, h2, h3 { letter-spacing: -0.02em; }

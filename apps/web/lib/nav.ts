@@ -32,6 +32,11 @@ export function groupNavItems(items: NavItem[]): NavGroup[] {
   return groups;
 }
 
+/** Returns the collapsible group containing the current destination, including nested setup routes. */
+export function findActiveNavGroup(pathname: string, groups: NavGroup[], storeId: string) {
+  return groups.find((group) => group.title && group.items.some((item) => isNavItemActive(pathname, item, storeId))) ?? null;
+}
+
 /**
  * Two separate areas, never shown together:
  *  - org   → organisation administration (stores, people, catalogue, organisation-wide reports)

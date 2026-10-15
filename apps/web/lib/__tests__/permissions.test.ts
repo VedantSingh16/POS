@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canAccessStore, hasOrgScope, hasPermission, isOrganisationReadOnlyStoreView, landingPath, safeNext, type Me } from "../permissions";
-import { groupNavItems, isNavItemActive, NAV, navMode, visibleNav } from "../nav";
+import { findActiveNavGroup, groupNavItems, isNavItemActive, NAV, navMode, visibleNav } from "../nav";
 
 const A = "store-a";
 const B = "store-b";
@@ -113,6 +113,15 @@ describe("permissions", () => {
     expect(isNavItemActive(`/s/${A}/brands`, storeItems.find((item) => item.label === "Brands")!, A)).toBe(true);
     expect(isNavItemActive(`/s/${A}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(true);
     expect(isNavItemActive(`/s/${B}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(false);
+  });
+  it("opens the current navigation group for nested routes", () => {
+    const orgGroups = groupNavItems(NAV.find((section) => section.id === "org")!.items).map((group) => ({ ...group, id: `org-${group.id}` }));
+    const storeGroups = groupNavItems(NAV.find((section) => section.id === "store")!.items).map((group) => ({ ...group, id: `store-${group.id}` }));
+
+    expect(findActiveNavGroup("/org/catalog/products", orgGroups, A)?.title).toBe("Catalogue");
+    expect(findActiveNavGroup("/org/catalog/fields", orgGroups, A)?.title).toBe("Catalogue");
+    expect(findActiveNavGroup(`/s/${A}/inventory/ledger`, storeGroups, A)?.title).toBe("Stock");
+    expect(findActiveNavGroup("/org", orgGroups, A)).toBeNull();
   });
   it("the URL decides the context", () => {
     expect(navMode("/org")).toBe("org");

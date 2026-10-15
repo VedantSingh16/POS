@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { groupNavItems, isNavItemActive, navMode, resolveHref, visibleNav, type NavMode } from "@/lib/nav";
+import { findActiveNavGroup, groupNavItems, isNavItemActive, navMode, resolveHref, visibleNav, type NavMode } from "@/lib/nav";
 import { hasOrgScope, isOrganisationReadOnlyStoreView } from "@/lib/permissions";
 import { useMe } from "@/components/app/session-context";
 import { IdleLock, UserMenu } from "@/components/app/user-menu";
@@ -35,15 +35,15 @@ function ContextCard({ collapsed }: { collapsed: boolean }) {
     return <div className="mx-2 mt-3 grid h-10 place-items-center rounded-xl border border-sidebar-border bg-sidebar-accent/70 text-sidebar-foreground" title={mode === "org" ? `Organisation: ${orgName}` : `Store: ${store?.name ?? ""}`}>{mode === "org" ? <Building2 className="size-4" /> : <StoreIcon className="size-4" />}</div>;
   }
   return (
-    <div className="mx-3 mt-3 rounded-xl border border-sidebar-border/80 bg-sidebar-accent/45 p-3 text-sidebar-foreground">
-      <p className="text-xs font-semibold text-sidebar-muted">{mode === "org" ? "Organisation" : "Store workspace"}</p>
-      <p className="mt-1.5 flex items-center gap-2 truncate text-base font-semibold tracking-tight">
-        {mode === "org" ? <Building2 className="size-4 shrink-0 text-sidebar-primary" /> : <StoreIcon className="size-4 shrink-0 text-sidebar-primary" />}
+    <div className="mx-3 mt-3 rounded-xl border border-sidebar-border-soft bg-sidebar-surface p-3.5 text-sidebar-foreground">
+      <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted">{mode === "org" ? "Organisation" : "Store workspace"}</p>
+      <p className="mt-1.5 flex items-center gap-2 truncate text-lg font-semibold tracking-tight">
+        {mode === "org" ? <Building2 className="size-[18px] shrink-0 text-sidebar-primary" /> : <StoreIcon className="size-[18px] shrink-0 text-sidebar-primary" />}
         <span className="truncate">{mode === "org" ? orgName : store?.name ?? "Store"}</span>
       </p>
-      {mode === "store" && store && <p className="ml-6 mt-1 text-sm text-sidebar-muted">{store.code}</p>}
+      {mode === "store" && store && <p className="ml-6 mt-1 text-[15px] text-sidebar-muted">{store.code}</p>}
       {mode === "store" && canLeaveToOrg && (
-        <Link href="/org" className="mt-3 flex min-h-10 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-sidebar-primary hover:bg-sidebar-accent"><ArrowLeft className="size-4" /> Back to organisation</Link>
+        <Link href="/org" className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[15px] font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-overlay"><ArrowLeft className="size-4" /> Back to organisation</Link>
       )}
     </div>
   );
@@ -55,14 +55,13 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
   const me = useMe();
   const sections = visibleNav(me, storeId, mode);
   const groups = sections.flatMap((section) => groupNavItems(section.items).map((group) => ({ ...group, id: `${section.id}-${group.id}` })));
-  const activeGroup = groups.find((group) => group.title && group.items.some((item) => isNavItemActive(pathname, item, storeId)));
+  const activeGroup = findActiveNavGroup(pathname, groups, storeId);
   const activeGroupId = activeGroup?.id ?? null;
-  const [manualGroup, setManualGroup] = React.useState<{ pathname: string; id: string | null } | null>(null);
-  const openGroupId = manualGroup?.pathname === pathname ? manualGroup.id : activeGroupId;
+  const [expandedGroupId, setExpandedGroupId] = React.useState<string | null>(null);
 
   return (
     <nav aria-label={mode === "org" ? "Organisation navigation" : "Store navigation"} className="sidebar-scroll flex-1 overflow-y-auto px-2.5 py-4">
-      {sections.length === 0 && !collapsed && <p className="px-2 text-xs text-sidebar-muted">No pages are available to your account in this area.</p>}
+      {sections.length === 0 && !collapsed && <p className="px-2 text-sm text-sidebar-muted">No pages are available to your account in this area.</p>}
       <ul className="space-y-1">
         {groups.map((group) => {
           const active = group.items.some((item) => isNavItemActive(pathname, item, storeId));
@@ -71,30 +70,30 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
           if (!group.title) {
             const href = resolveHref(firstItem.href, storeId);
             return <li key={group.id}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined}
-              className={cn("relative flex h-11 items-center gap-3 rounded-lg px-3 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/75", active && "bg-sidebar-accent font-semibold text-sidebar-primary before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary", collapsed && "justify-center px-0")}>
-              <firstItem.icon className="size-[18px] shrink-0" />{!collapsed && <span className="truncate">{firstItem.label}</span>}{collapsed && <span className="sr-only">{firstItem.label}</span>}
+              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[17px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary", collapsed && "justify-center px-0")}>
+              <firstItem.icon className="size-5 shrink-0" />{!collapsed && <span className="truncate">{firstItem.label}</span>}{collapsed && <span className="sr-only">{firstItem.label}</span>}
             </Link></li>;
           }
 
-          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={() => { setManualGroup({ pathname, id: group.id }); onExpand?.(); }}
-            className={cn("relative flex h-11 w-full items-center justify-center rounded-lg text-sidebar-foreground transition-colors hover:bg-sidebar-accent", active && "bg-sidebar-accent text-sidebar-primary")}>
-            <firstItem.icon className="size-[18px]" />
+          if (collapsed) return <li key={group.id}><button type="button" title={`${group.title} · expand sidebar`} aria-label={`Expand sidebar to open ${group.title}`} onClick={() => { setExpandedGroupId(group.id); onExpand?.(); }}
+            className={cn("relative flex h-12 w-full items-center justify-center rounded-lg text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent text-sidebar-foreground")}>
+            <firstItem.icon className="size-5" />
           </button></li>;
 
-          const open = openGroupId === group.id;
+          const open = activeGroupId === group.id || expandedGroupId === group.id;
           const listId = `nav-${group.id.replace(/[^a-z0-9-]/gi, "-")}`;
           return <li key={group.id} className="pt-1">
-            <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setManualGroup({ pathname, id: open ? null : group.id })}
-              className={cn("flex min-h-10 w-full items-center justify-between rounded-lg px-2.5 text-left text-xs font-semibold text-sidebar-muted transition-colors hover:bg-sidebar-accent/55 hover:text-sidebar-foreground", active && "text-sidebar-primary")}>
+            <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => { if (activeGroupId !== group.id) setExpandedGroupId(open ? null : group.id); }}
+              className={cn("flex min-h-11 w-full items-center justify-between rounded-lg px-2.5 text-left text-sm font-semibold uppercase tracking-[0.1em] text-sidebar-muted transition-colors hover:bg-sidebar-overlay hover:text-sidebar-foreground", active && "text-sidebar-primary")}>
               <span className="truncate">{group.title}</span><ChevronDown aria-hidden className={cn("size-4 shrink-0 transition-transform", !open && "-rotate-90")} />
             </button>
-            <ul id={listId} aria-hidden={!open} hidden={!open} className={cn("ml-2 grid gap-0.5 border-l border-sidebar-border pb-1 pl-2 pt-1", !open && "hidden")}>
+            <ul id={listId} aria-hidden={!open} hidden={!open} className={cn("ml-2 grid gap-1 border-l border-sidebar-border pb-1 pl-2 pt-1", !open && "hidden")}>
               {group.items.map((item) => {
                 const href = resolveHref(item.href, storeId);
                 const itemActive = isNavItemActive(pathname, item, storeId);
                 return <li key={item.href}><Link href={href} onClick={onNavigate} aria-current={itemActive ? "page" : undefined}
-                  className={cn("relative flex h-11 items-center gap-3 rounded-lg px-3 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent/75", itemActive && "bg-sidebar-accent font-semibold text-sidebar-primary before:absolute before:inset-y-2 before:left-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
-                  <item.icon className="size-4 shrink-0" /><span className="truncate">{item.label}</span>
+                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[17px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:inset-y-2 before:left-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
+                  <item.icon className="size-[18px] shrink-0" /><span className="truncate">{item.label}</span>
                 </Link></li>;
               })}
             </ul>
@@ -107,9 +106,9 @@ function SidebarNav({ collapsed, onNavigate, onExpand }: { collapsed: boolean; o
 
 function Brand({ collapsed, home }: { collapsed: boolean; home: string }) {
   return (
-    <Link href={home} aria-label="DeltCRM POS home" className={cn("flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border/80 px-5 text-sidebar-foreground", collapsed && "justify-center px-0")}>
-      <BrandMark size="compact" />
-      {!collapsed && <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight">DeltCRM</span><span className="rounded-md border border-sidebar-border bg-sidebar-accent px-2 py-1 text-[10px] font-bold leading-none tracking-[0.08em] text-sidebar-primary">POS</span></span>}
+    <Link href={home} aria-label="DeltCRM POS home" className={cn("flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground", collapsed && "justify-center px-0")}>
+      <BrandMark size="compact" className="bg-sidebar-accent text-sidebar-primary ring-sidebar-border" />
+      {!collapsed && <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight">DeltCRM</span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-overlay px-2 py-1 text-[11px] font-bold leading-none tracking-[0.08em] text-sidebar-primary">POS</span></span>}
     </Link>
   );
 }
@@ -154,20 +153,20 @@ function CommandMenu({ open, setOpen }: { open: boolean; setOpen: (v: boolean) =
   const storeName = stores.find((s) => s.id === storeId)?.name ?? "Store";
   const canOpenStores = hasOrgScope(me) || stores.length > 1;
   const run = (href: string) => { setOpen(false); router.push(href); };
-  const heading = "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-muted-foreground";
+  const heading = "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-sm [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-muted-foreground";
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="top-24 max-w-xl translate-y-0 gap-0 overflow-hidden p-0">
         <DialogTitle className="sr-only">Command menu</DialogTitle>
         <Command label="Command menu" className="flex flex-col">
-          <Command.Input autoFocus placeholder="Go to a page or open a store…" className="h-12 border-b bg-transparent px-4 text-sm outline-none" />
+          <Command.Input autoFocus placeholder="Go to a page or open a store…" className="h-12 border-b bg-transparent px-4 text-base outline-none" />
           <Command.List className="max-h-80 overflow-y-auto p-2">
-            <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">No results.</Command.Empty>
+            <Command.Empty className="px-3 py-6 text-center text-base text-muted-foreground">No results.</Command.Empty>
             {nav.map((section) => (
               <Command.Group key={section.id} heading={section.id === "org" ? `Organisation · ${orgName}` : `Store · ${storeName}`} className={heading}>
                 {section.items.map((item) => (
                   <Command.Item key={item.href} value={`${section.title} ${item.label} ${item.keywords?.join(" ") ?? ""}`} onSelect={() => run(resolveHref(item.href, storeId))}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm data-[selected=true]:bg-accent"><item.icon className="size-4" />{item.label}</Command.Item>
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2.5 text-base data-[selected=true]:bg-accent"><item.icon className="size-4" />{item.label}</Command.Item>
                 ))}
               </Command.Group>
             ))}
@@ -175,7 +174,7 @@ function CommandMenu({ open, setOpen }: { open: boolean; setOpen: (v: boolean) =
               <Command.Group heading="Open a store" className={heading}>
                 {stores.map((s) => (
                   <Command.Item key={s.id} value={`open store ${s.name} ${s.code}`} onSelect={() => run(`/s/${s.id}`)}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm data-[selected=true]:bg-accent"><StoreIcon className="size-4" />{s.name}<span className="ml-auto text-xs text-muted-foreground">{s.code}</span></Command.Item>
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2.5 text-base data-[selected=true]:bg-accent"><StoreIcon className="size-4" />{s.name}<span className="ml-auto text-sm text-muted-foreground">{s.code}</span></Command.Item>
                 ))}
               </Command.Group>
             )}
@@ -219,8 +218,8 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
       ) : (
         <span className="flex items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-foreground"><StoreIcon className="size-3.5" />{store?.name ?? "Store"}<span className="font-normal opacity-70">· {store?.code}</span></span>
       )}
-      <Button variant="outline" className="ml-auto hidden h-11 w-64 justify-between text-sm text-muted-foreground sm:inline-flex" onClick={() => setPaletteOpen(true)}>
-        <span className="flex items-center gap-2"><Search /> Search…</span><kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs">Ctrl K</kbd>
+      <Button variant="outline" className="ml-auto hidden h-11 w-64 justify-between text-base text-muted-foreground sm:inline-flex" onClick={() => setPaletteOpen(true)}>
+        <span className="flex items-center gap-2"><Search /> Search…</span><kbd className="rounded border bg-muted px-1.5 py-0.5 text-sm">Ctrl K</kbd>
       </Button>
       <Button variant="ghost" size="icon" className="ml-auto sm:hidden" onClick={() => setPaletteOpen(true)} aria-label="Open command menu"><Search /></Button>
       <ThemeToggle />
@@ -270,7 +269,7 @@ export function AppShell({ stores, orgName, defaultStoreId, home, children }: { 
           <ContextCard collapsed={collapsed} />
           <SidebarNav collapsed={collapsed} onExpand={() => setCollapsed(false)} />
           <button onClick={() => setCollapsed((v) => !v)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="m-3 flex h-10 items-center justify-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground">
+            className="m-3 flex h-11 items-center justify-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-overlay hover:text-sidebar-foreground">
             {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           </button>
         </aside>
