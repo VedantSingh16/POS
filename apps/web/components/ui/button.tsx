@@ -17,7 +17,7 @@ const buttonVariants = cva(
         success: "bg-success text-white hover:bg-success/90",
       },
       size: {
-        sm: "h-10 px-3.5 text-sm",
+        sm: "h-11 px-4 text-sm",
         default: "h-11 px-4",
         touch: "h-12 px-5",
         icon: "size-10",

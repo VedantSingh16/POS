@@ -58,7 +58,7 @@ export default async function StoreProducts({ params }: PageProps<"/s/[storeId]/
           <PendingVerificationList storeId={storeId} items={pending} taxGroups={taxOptions.map((t) => ({ id: t.id, name: t.name, rate: t.ratePercent }))} canReview={canVerify} />
         </section>
       )}
-      <StoreProductsTable storeId={storeId} data={rows} productTypes={productTypes} displayFieldDefinitions={displayFields} coreFields={storeSettings.effectiveProductCoreFields ?? []} />
+      <StoreProductsTable storeId={storeId} data={rows} productTypes={productTypes} displayFieldDefinitions={displayFields} coreFields={storeSettings.effectiveProductCoreFields} />
     </>
   );
 }

@@ -49,7 +49,7 @@ export function DataTable<T>({ columns, data, rowHref, searchPlaceholder = "Sear
   const total = table.getFilteredRowModel().rows.length;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
       <div className="flex flex-wrap items-center gap-2.5 border-b border-border p-3 sm:p-4">
         <div className="relative min-w-48 flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute start-3 top-3.5 size-4 text-muted-foreground" />

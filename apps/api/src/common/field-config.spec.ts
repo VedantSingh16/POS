@@ -16,6 +16,7 @@ describe('configurable field definitions', () => {
     });
     expect(config.fields.map((item) => item.key)).toEqual(['material', 'size']);
     expect(config.coreFields).toEqual(['category', 'name', 'sku', 'price']);
+    expect(config.coreFields).not.toContain('brand');
   });
 
   it('rejects malformed definitions and unsupported store controls', () => {

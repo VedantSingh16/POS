@@ -23,10 +23,10 @@ export function StoreStaffTable({ data, storeId, roleOptions = [], canManage = f
 }
 
 export type StoreProduct = { id: string; sku: string; barcode: string; name: string; category: string; brand: string; priceMinor: number; taxLabel: string; storeTaxGroupId: string | null; stock: number; status: string; productTypeId?: string | null; productTypeName?: string; customFields?: Record<string, string | number | boolean> };
-export function StoreProductsTable({ data, storeId, productTypes = [], displayFieldDefinitions = [], coreFields = [] }: { data: StoreProduct[]; storeId: string; productTypes?: { id: string; name: string }[]; displayFieldDefinitions?: import("@/features/settings/configurable-field-values").ConfiguredField[]; coreFields?: string[] }) {
+export function StoreProductsTable({ data, storeId, productTypes = [], displayFieldDefinitions = [], coreFields }: { data: StoreProduct[]; storeId: string; productTypes?: { id: string; name: string }[]; displayFieldDefinitions?: import("@/features/settings/configurable-field-values").ConfiguredField[]; coreFields?: string[] }) {
   const [productTypeId, setProductTypeId] = useState("");
   const filtered = useMemo(() => productTypeId ? data.filter((product) => product.productTypeId === productTypeId) : data, [data, productTypeId]);
-  const visibleCore = coreFields.length ? coreFields : ["sku", "category", "brand", "price", "status"];
+  const visibleCore = coreFields ?? ["sku", "category", "brand", "price", "status"];
   const columns: ColumnDef<StoreProduct, unknown>[] = [
     ...(visibleCore.includes("sku") ? [{ accessorKey: "sku", header: "SKU" } as ColumnDef<StoreProduct, unknown>] : []),
     { accessorKey: "barcode", header: "Barcodes" },

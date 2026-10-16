@@ -22,8 +22,8 @@ export function SettingsSectionNav({ items }: { items: SettingsSectionLink[] }) 
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-11 shrink-0 items-center rounded-lg border-s-2 border-transparent px-3.5 py-2.5 text-sm font-normal text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground",
-              active && "border-s-primary bg-accent font-medium text-accent-foreground",
+              "flex min-h-12 shrink-0 items-center rounded-xl border-s-2 border-transparent px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground",
+              active && "border-s-primary bg-accent font-semibold text-accent-foreground",
             )}
           >
             <LocalizedText value={item.label} />

@@ -26,7 +26,7 @@ export function KpiTile({ label, value, hint, icon: Icon, tone = "neutral" }: { 
     <div className="flex min-h-[5.25rem] items-start justify-between gap-3 border-s-0 px-0 py-2 sm:border-s sm:border-border sm:ps-4 sm:first:border-s-0 sm:first:ps-0">
       <div className="min-w-0">
         <p className="text-sm font-normal text-muted-foreground"><LocalizedText value={label} /></p>
-        <p className={cn("tabular mt-1 truncate text-2xl font-semibold tracking-tight", tone === "danger" && "text-danger", tone === "warning" && "text-warning")}>{value}</p>
+        <p className={cn("tabular mt-1 truncate text-[2rem] font-bold tracking-tight", tone === "danger" && "text-danger", tone === "warning" && "text-warning")}>{value}</p>
         {hint && <p className="mt-1 text-sm text-muted-foreground"><LocalizedText value={hint} /></p>}
       </div>
       {Icon && (
@@ -39,7 +39,7 @@ export function KpiTile({ label, value, hint, icon: Icon, tone = "neutral" }: { 
 export function EmptyState({ title, description, icon: Icon = Inbox, action }: { title: string; description?: string; icon?: LucideIcon; action?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2.5 px-6 py-12 text-center">
-      <span className="grid size-10 place-items-center rounded-lg bg-muted text-muted-foreground"><Icon className="size-[18px]" /></span>
+      <span className="grid size-11 place-items-center rounded-xl bg-accent text-accent-foreground"><Icon className="size-5" /></span>
       <p className="text-base font-semibold"><LocalizedText value={title} /></p>
       {description && <p className="max-w-sm text-sm text-muted-foreground"><LocalizedText value={description} /></p>}
       {action}

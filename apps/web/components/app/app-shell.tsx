@@ -35,15 +35,15 @@ function ContextCard() {
   const store = stores.find((s) => s.id === storeId);
   const canLeaveToOrg = hasOrgScope(me);
   return (
-    <div className="mx-3 mt-3 rounded-xl border border-sidebar-border-soft bg-sidebar-surface p-3.5 text-sidebar-foreground">
-      <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted"><LocalizedText value={mode === "org" ? "Organisation" : "Store workspace"} /></p>
-      <p className="mt-1.5 flex items-center gap-2 truncate text-lg font-medium tracking-tight">
+    <div className="mx-3 mt-3 border-b border-sidebar-border-soft px-2 pb-4 text-sidebar-foreground">
+      <p className="text-sm font-medium text-sidebar-muted"><LocalizedText value={mode === "org" ? "Organisation" : "Store workspace"} /></p>
+      <p className="mt-1 flex items-center gap-2 truncate text-base font-semibold">
         {mode === "org" ? <Building2 className="size-[18px] shrink-0 text-sidebar-primary" /> : <StoreIcon className="size-[18px] shrink-0 text-sidebar-primary" />}
         <span className="truncate">{mode === "org" ? orgName : store?.name ?? <LocalizedText value={"Store"} />}</span>
       </p>
-      {mode === "store" && store && <p className="ms-6 mt-1 text-[15px] text-sidebar-muted">{store.code}</p>}
+      {mode === "store" && store && <p className="ms-6 mt-0.5 text-xs text-sidebar-muted">{store.code}</p>}
       {mode === "store" && canLeaveToOrg && (
-        <Link href="/org" className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[15px] font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-overlay"><ArrowLeft className="size-4 rtl:rotate-180" /> <LocalizedText value={"Back to organisation"} /></Link>
+        <Link href="/org" className="mt-2 flex min-h-11 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay"><ArrowLeft className="size-4 rtl:rotate-180" /> <LocalizedText value={"Back to organisation"} /></Link>
       )}
     </div>
   );
@@ -57,9 +57,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const sections = visibleNav(me, storeId, mode);
   const groups = sections.flatMap((section) => groupNavItems(section.items).map((group) => ({ ...group, id: `${section.id}-${group.id}` })));
   return (
-    <nav aria-label={t(mode === "org" ? "Organisation navigation" : "Store navigation")} className="sidebar-scroll flex-1 overflow-y-auto px-2.5 py-4">
+    <nav aria-label={t(mode === "org" ? "Organisation navigation" : "Store navigation")} className="sidebar-scroll flex-1 overflow-y-auto px-3 py-3">
       {sections.length === 0 && <p className="px-2 text-sm text-sidebar-muted"><LocalizedText value={"No pages are available to your account in this area."} /></p>}
-      <ul className="space-y-1">
+      <ul className="space-y-1.5">
         {groups.map((group) => {
           const active = group.items.some((item) => isNavItemActive(pathname, item, storeId));
           const firstItem = group.items[0];
@@ -67,20 +67,20 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           if (!group.title) {
             const href = resolveHref(firstItem.href, storeId);
             return <li key={group.id}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined}
-              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-2 before:start-0 before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
-              <firstItem.icon className="size-5 shrink-0" /><span className="truncate"><LocalizedText value={firstItem.label} /></span>
+              className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", active && "bg-sidebar-accent font-semibold text-sidebar-active")}>
+              <firstItem.icon className={cn("size-[19px] shrink-0", active ? "text-sidebar-active" : "text-sidebar-muted")} /><span className="truncate"><LocalizedText value={firstItem.label} /></span>
             </Link></li>;
           }
 
-          return <li key={group.id} className="pt-2">
-            <h2 className="flex min-h-9 items-center rounded-md bg-sidebar-heading-bg px-2.5 text-[14px] font-medium uppercase tracking-[0.08em] text-sidebar-heading-foreground"><LocalizedText value={group.title} /></h2>
-            <ul className="ms-1 grid gap-1 pb-2 ps-1 pt-1">
+          return <li key={group.id} className="pt-4">
+            <h2 className="flex min-h-8 items-center px-3 text-sm font-semibold text-sidebar-heading-foreground"><LocalizedText value={group.title} /></h2>
+            <ul className="grid gap-1 pb-1 pt-1">
               {group.items.map((item) => {
                 const href = resolveHref(item.href, storeId);
                 const itemActive = isNavItemActive(pathname, item, storeId);
                 return <li key={item.href}><Link href={href} onClick={onNavigate} aria-current={itemActive ? "page" : undefined}
-                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-[15px] font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-medium text-sidebar-foreground before:absolute before:inset-y-2 before:start-[-0.55rem] before:w-[3px] before:rounded-full before:bg-sidebar-primary")}>
-                  <item.icon className="size-[18px] shrink-0" /><span className="truncate"><LocalizedText value={item.label} /></span>
+                  className={cn("relative flex h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-overlay", itemActive && "bg-sidebar-accent font-semibold text-sidebar-active")}>
+                  <item.icon className={cn("size-[19px] shrink-0", itemActive ? "text-sidebar-active" : "text-sidebar-muted")} /><span className="truncate"><LocalizedText value={item.label} /></span>
                 </Link></li>;
               })}
             </ul>
@@ -95,8 +95,8 @@ function Brand({ home }: { home: string }) {
   const t = useTranslate();
   return (
     <Link href={home} aria-label={t("DeltCRM POS home")} className="flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
-      <BrandMark size="compact" className="bg-sidebar-accent text-sidebar-primary ring-sidebar-border" />
-      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight"><LocalizedText value={"DeltCRM"} /></span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-overlay px-2 py-1 text-xs font-bold leading-none tracking-[0.08em] text-sidebar-foreground"><LocalizedText value={"POS"} /></span></span>
+      <BrandMark size="compact" className="bg-transparent text-sidebar-foreground shadow-none ring-0" />
+      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight"><LocalizedText value={"DeltCRM"} /></span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-surface px-1.5 py-0.5 text-xs font-bold leading-none tracking-[0.06em] text-sidebar-foreground"><LocalizedText value={"POS"} /></span></span>
     </Link>
   );
 }
@@ -202,7 +202,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
       <span className="hidden h-5 w-px bg-border sm:block" />
       {mode === "org" ? (
         <>
-          <span className="hidden rounded-lg border border-primary/20 bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground md:inline"><LocalizedText value={"Organisation-wide"} /></span>
+          <span className="hidden px-2 py-2 text-sm font-semibold text-foreground md:inline"><LocalizedText value={"Organisation-wide"} /></span>
           {canPickStore && <StoreSwitcher />}
         </>
       ) : canPickStore ? (
@@ -255,8 +255,8 @@ export function AppShell({ stores, orgName, defaultStoreId, home, children }: { 
   return (
     <ShellContext.Provider value={{ stores, storeId, orgName, mode, setPaletteOpen }}>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:start-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2"><LocalizedText value={"Skip to content"} /></a>
-      <div className="flex min-h-dvh">
-        <aside className="sticky top-0 hidden h-dvh w-[17rem] shrink-0 flex-col border-e border-sidebar-border bg-sidebar lg:flex rtl:border-e-0 rtl:border-s">
+      <div className="app-ui flex min-h-dvh">
+        <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-e border-sidebar-border bg-sidebar lg:flex rtl:border-e-0 rtl:border-s">
           <Brand home={home} />
           <ContextCard />
           <SidebarNav />
@@ -273,7 +273,7 @@ export function AppShell({ stores, orgName, defaultStoreId, home, children }: { 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onMenu={() => setMobileOpen(true)} />
           {mode === "store" && hasOrgScope(me) && <StoreContextBanner />}
-          <main id="main" className="mx-auto w-full max-w-[1680px] flex-1 p-5 sm:p-6 xl:p-8">{children}</main>
+          <main id="main" className="mx-auto w-full max-w-[1680px] flex-1 p-5 sm:p-7 xl:p-10">{children}</main>
         </div>
       </div>
       <CommandMenu open={paletteOpen} setOpen={setPaletteOpen} />

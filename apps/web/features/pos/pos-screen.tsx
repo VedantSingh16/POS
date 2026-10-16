@@ -435,7 +435,7 @@ export function PosScreen({ storeId, storeName, cashier, products: productsIn, c
   const needsRegister = !sessionId;
 
   return (
-    <div className="flex h-dvh min-h-[480px] flex-col bg-background">
+    <div className="app-ui flex h-dvh min-h-[480px] flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-card px-3 sm:px-4">
         {canExit ? <Button variant="ghost" size="sm" aria-label="Exit point of sale" asChild><Link href={`/s/${storeId}`}><ArrowLeft className="rtl:rotate-180" /><span className="hidden sm:inline"><LocalizedText value={"Exit"} /></span></Link></Button> : null}
         <BrandMark size="compact" className="rounded-[8px]" /><span className="hidden items-center gap-1.5 sm:inline-flex"><span className="font-sans text-sm font-bold tracking-tight"><LocalizedText value={"DeltCRM"} /></span><span className="rounded-[4px] bg-primary/10 px-1 py-0.5 text-[8px] font-bold leading-none tracking-[0.1em] text-primary"><LocalizedText value={"POS"} /></span></span><span className="h-5 border-s" /><span className="max-w-36 truncate text-sm font-medium">{storeName}</span>

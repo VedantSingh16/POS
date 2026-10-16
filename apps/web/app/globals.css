@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* DeltCRM POS: paper work surfaces, a distinct green navigation rail, and deep green for active work.
+/* DeltCRM POS: cream work areas, white surfaces, and a clear Delt green navigation rail.
    muted semantic status colours. Every component reads these tokens; do not hardcode colours in components.
    Table rows and touch controls share a 44px minimum for consistent scanning and input. */
 :root {
@@ -40,18 +40,18 @@
   --danger-soft: oklch(0.95 0.03 30);
   --info: oklch(0.42 0.09 255);
   --info-soft: oklch(0.94 0.02 255);
-  /* Keep the navigation rail on the same brand green as the sign-in action. */
-  --sidebar: var(--auth-primary);
-  --sidebar-foreground: var(--auth-on-primary);
-  --sidebar-muted: #eef9f3;
-  --sidebar-heading-bg: color-mix(in srgb, var(--sidebar-foreground) 88%, var(--sidebar));
-  --sidebar-heading-foreground: var(--auth-ink);
-  --sidebar-accent: var(--auth-primary-hover);
-  --sidebar-border: color-mix(in srgb, var(--auth-on-primary) 24%, var(--sidebar));
-  --sidebar-primary: #c6f3dc;
-  --sidebar-overlay: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
-  --sidebar-surface: color-mix(in srgb, var(--sidebar-foreground) 5%, transparent);
-  --sidebar-border-soft: color-mix(in srgb, var(--sidebar-foreground) 18%, transparent);
+  --sidebar: #047857;
+  --sidebar-foreground: #fffdf9;
+  --sidebar-muted: #c8ead9;
+  --sidebar-heading-bg: transparent;
+  --sidebar-heading-foreground: #c8ead9;
+  --sidebar-accent: #fffdf9;
+  --sidebar-border: rgb(255 253 249 / 18%);
+  --sidebar-primary: #c8ead9;
+  --sidebar-active: #07553e;
+  --sidebar-overlay: rgb(255 253 249 / 9%);
+  --sidebar-surface: rgb(255 253 249 / 7%);
+  --sidebar-border-soft: rgb(255 253 249 / 18%);
   --radius: 0.75rem;
   --table-row-height: 3rem;
   --target-touch: 3rem;
@@ -82,11 +82,22 @@
   --danger-soft: oklch(0.31 0.06 28);
   --info: oklch(0.76 0.1 250);
   --info-soft: oklch(0.3 0.04 250);
-  /* Navigation deliberately stays on the auth brand green in either theme. */
+  --sidebar: oklch(0.43 0.12 164);
+  --sidebar-foreground: oklch(0.99 0.004 90);
+  --sidebar-muted: oklch(0.88 0.04 160);
+  --sidebar-heading-bg: transparent;
+  --sidebar-heading-foreground: oklch(0.88 0.04 160);
+  --sidebar-accent: oklch(0.99 0.004 90);
+  --sidebar-border: rgb(255 253 249 / 20%);
+  --sidebar-primary: oklch(0.88 0.04 160);
+  --sidebar-active: oklch(0.3 0.08 164);
+  --sidebar-overlay: rgb(255 253 249 / 9%);
+  --sidebar-surface: rgb(255 253 249 / 7%);
+  --sidebar-border-soft: rgb(255 253 249 / 18%);
 }
 
 @theme inline {
-  --font-display: var(--font-geist-sans), system-ui, sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --color-auth-canvas: var(--auth-canvas);
@@ -131,13 +142,14 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-overlay: var(--sidebar-overlay);
   --color-sidebar-surface: var(--sidebar-surface);
   --color-sidebar-border-soft: var(--sidebar-border-soft);
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
-  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -168,7 +180,7 @@
   body {
     background: var(--background);
     color: var(--foreground);
-    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 16px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
@@ -213,4 +225,51 @@ html[dir="rtl"] .auth-hero-visual {
 
 html[dir="rtl"] .sidebar-scroll {
   direction: rtl;
+}
+
+/* Apply the product typography only to signed-in work surfaces. Auth and onboarding
+   continue to use their existing styles from the sign-in and registration pages. */
+.app-ui {
+  font-family: var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.app-ui .font-sans,
+.app-ui .font-display {
+  font-family: var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.app-ui .text-sm {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.app-ui .text-xs {
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.app-ui .text-\[11px\] { font-size: 0.8125rem; line-height: 1.4; }
+.app-ui .text-\[10px\] { font-size: 0.75rem; line-height: 1.35; }
+.app-ui .text-\[8px\] { font-size: 0.6875rem; line-height: 1.3; }
+
+.app-ui main h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+html[lang="ar"] .app-ui,
+html[lang="ar"] .app-ui .font-sans,
+html[lang="ar"] .app-ui .font-display {
+  font-family: "Noto Sans Arabic", "Noto Naskh Arabic", Tahoma, Arial, sans-serif;
+  letter-spacing: normal;
+}
+
+html[lang="ar"] .app-ui main h1,
+html[lang="ar"] .app-ui main h2,
+html[lang="ar"] .app-ui main h3 {
+  letter-spacing: normal;
 }
