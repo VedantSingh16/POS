@@ -1,0 +1,36 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-16T20:15:00Z"},
+  "title": "DeltCRM POS UI Redesign",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 1000, "title": "1 · Organisation overview", "expand": "fill"},
+    "Stores.dc.html": {"x": 1960, "y": 0, "w": 1440, "h": 820, "title": "2 · Stores", "expand": "fill"},
+    "StockMovement.dc.html": {"x": 0, "y": 1300, "w": 1440, "h": 860, "title": "3 · Stock movement (transfers + distributions)", "expand": "fill"},
+    "Team.dc.html": {"x": 1960, "y": 1300, "w": 1440, "h": 820, "title": "4 · Team members", "expand": "fill"},
+    "Products.dc.html": {"x": 0, "y": 2400, "w": 1440, "h": 860, "title": "5 · Products (empty state)", "expand": "fill"},
+    "CatalogueSetup.dc.html": {"x": 1960, "y": 2400, "w": 1440, "h": 860, "title": "6 · Catalogue setup", "expand": "fill"},
+    "Settings.dc.html": {"x": 0, "y": 3500, "w": 1440, "h": 1240, "title": "7 · Organisation settings", "expand": "fill"},
+    "Login.dc.html": {"x": 1960, "y": 3500, "w": 1440, "h": 900, "title": "8 · Sign in", "expand": "fill"},
+    "Register.dc.html": {"x": 0, "y": 4980, "w": 1440, "h": 1000, "title": "9 · Create organisation", "expand": "fill"},
+    "Pos.dc.html": {"x": 1960, "y": 4980, "w": 1440, "h": 900, "title": "10 · Point of sale", "expand": "fill"},
+    "PosPay.dc.html": {"x": 1960, "y": 6120, "w": 560, "h": 780, "title": "11 · Take payment dialog"}
+  },
+  "order": ["Main.dc.html", "Stores.dc.html", "StockMovement.dc.html", "Team.dc.html", "Products.dc.html", "CatalogueSetup.dc.html", "Settings.dc.html", "Login.dc.html", "Register.dc.html", "Pos.dc.html", "PosPay.dc.html"],
+  "notes": {
+    "title": {"x": 0, "y": -340, "text": "DeltCRM POS: proposed UI/UX fixes", "kind": "title1", "maxW": 3860},
+    "n1": {"x": 1500, "y": 0, "w": 380, "fill": "green", "text": "Overview fixes\n• One 'Finish setting up' banner with progress + Continue setup (replaces checklist + duplicate KPI)\n• 'Ready to sell' says WHY a store isn't ready\n• Store row shows readiness + Open store\n• Activity written as sentences\n• Compact sidebar: 36px rows, deep green, bright green kept for actions\n• Org name lives only in sidebar; language + theme moved to account menu\n• Title 28px, one-line description"},
+    "n2": {"x": 3460, "y": 0, "w": 380, "fill": "green", "text": "Stores fixes\n• New Readiness column (no more 'Active' vs 'Needs setup' contradiction)\n• Explicit Open store action + row chevron\n• Manager shown with initials\n• Search/Columns toolbar hidden under 8 rows\n• Plan slots shown in footer\n• No redundant breadcrumb on top-level pages"},
+    "n3": {"x": 1500, "y": 1300, "w": 380, "fill": "green", "text": "Stock movement fixes\n• Transfers + Distributions merged into one page with two tabs and clear names\n• Disabled action now explains itself\n• Empty state shows requirements with what you have\n• Offers the next useful action instead of a dead end"},
+    "n4": {"x": 3460, "y": 1300, "w": 380, "fill": "green", "text": "Team fixes\n• 'Organisation-wide' is neutral, not amber warning\n• Roles as chips, avatar + email in one cell\n• Row actions menu\n• Nudge to invite the first cashier"},
+    "n5": {"x": 1500, "y": 2400, "w": 380, "fill": "green", "text": "Products fixes\n• Empty state with primary + import actions (no empty column headers)\n• 'Catalogue setup' button removed (already in sidebar)\n• Optional setup links shown in context\n• Naming matches nav: Products everywhere"},
+    "n6": {"x": 3460, "y": 2400, "w": 380, "fill": "green", "text": "Catalogue setup fixes\n• One balanced list instead of lopsided 2 columns\n• Each row shows its status\n• 'Product setup rules' renamed 'Product types'\n• Recommended order numbered"},
+    "n7": {"x": 1500, "y": 3500, "w": 380, "fill": "green", "text": "Settings fixes\n• Horizontal section tabs free up width\n• GST as option cards with explanation inside; GSTIN only when Registered\n• Styled selects instead of OS dropdowns\n• Sticky save bar appears only with unsaved changes"},
+    "n8": {"x": 3460, "y": 3500, "w": 380, "fill": "green", "text": "Sign-in fixes\n• Same tokens, radius and font as the app\n• Crisp product preview instead of washed-out photo\n• Headline tracking relaxed\n• Language as a compact select"},
+    "n9": {"x": 1500, "y": 4980, "w": 380, "fill": "green", "text": "Create organisation fixes\n• URL field shows deltcrm.app/ prefix and fills from the name\n• Show/hide password\n• Live length check instead of a static hint\n• Sections clearly numbered"},
+    "n10": {"x": 3460, "y": 4980, "w": 380, "fill": "green", "text": "POS fixes\n• Customer, discount and coupon moved into the cart (out of the pay dialog)\n• Quantity is typeable, not only +/-\n• Shortcut hints always visible\n• Clear register/shift status in header"},
+    "n11": {"x": 2600, "y": 6120, "w": 380, "fill": "green", "text": "Take payment fixes\n• Only what is needed to get paid: amount, method, cash received\n• Quick-cash buttons (Exact, 100, 200, 500, 2000)\n• Change to return shown large\n• Split payment is a link, not always-on fields"}
+  },
+  "designSystems": []
+}

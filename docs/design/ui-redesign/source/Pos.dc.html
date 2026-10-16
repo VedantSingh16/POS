@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Point of sale</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F5EF}
+a{color:#047857}a:hover{color:#065F46}
+.app{font-family:Manrope,system-ui,sans-serif;color:#14201B;font-size:14px;line-height:1.5}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 14px;border-radius:8px;font:600 14px Manrope,system-ui,sans-serif;border:1px solid transparent;cursor:pointer;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+.bp{background:#047857;color:#fff}.bp:hover{background:#065F46;color:#fff}
+.bo{background:#fff;color:#14201B;border-color:#D9D3C7}.bo:hover{background:#F2EFE8;color:#14201B}
+.bg{background:transparent;color:#14201B}.bg:hover{background:#F2EFE8}
+kbd{font:700 11px Manrope,system-ui,sans-serif;border:1px solid #D9D3C7;border-bottom-width:2px;border-radius:4px;padding:0 5px;background:#fff;color:#2C3A34}
+.cat{height:34px;padding:0 14px;border-radius:99px;border:1px solid #D9D3C7;background:#fff;font:600 13px Manrope,system-ui,sans-serif;color:#14201B;cursor:pointer}
+.cat.on{background:#14201B;border-color:#14201B;color:#fff}
+.tile{display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-height:112px;padding:14px;border:1px solid #E6E1D7;border-radius:10px;background:#fff;text-align:left;font:inherit;color:#14201B;cursor:pointer}
+.tile:hover{border-color:#047857;background:#F7FBF9}
+.qty{display:flex;align-items:center;border:1px solid #D9D3C7;border-radius:8px;overflow:hidden;height:34px}
+.qty button{width:32px;height:100%;border:0;background:#fff;color:#14201B;cursor:pointer;display:grid;place-items:center}
+.qty button:hover{background:#F2EFE8}
+.qty input{width:40px;height:100%;border:0;border-left:1px solid #E6E1D7;border-right:1px solid #E6E1D7;text-align:center;font:700 14px Manrope,system-ui,sans-serif;color:#14201B}
+.link{border:0;background:transparent;color:#047857;font:700 13px Manrope,system-ui,sans-serif;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:6px}
+.muted{color:#5B6660}
+.tab{font-variant-numeric:tabular-nums}
+</style>
+</helmet>
+<div class="app" style="min-height: 900px; display: flex; flex-direction: column; background: #F7F5EF">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 56px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #E6E1D7; box-sizing: border-box">
+<a class="btn bg" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"></path></svg>Exit</a>
+<span style="width: 1px; height: 24px; background: #E6E1D7"></span>
+<span style="font-weight: 800">JaiHind 1</span>
+<span class="muted">Register 1 · Vedant Singh</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 99px; background: #E3F2EA; color: #166B47; font-size: 12px; font-weight: 700"><span style="width: 6px; height: 6px; border-radius: 99px; background: currentColor"></span>Register open</span>
+<span style="flex: 1"></span>
+<span style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px" class="muted"><span><kbd>/</kbd> Search</span><span><kbd>F4</kbd> Hold</span><span><kbd>F8</kbd> Customer</span><span><kbd>F12</kbd> Pay</span></span>
+</header>
+<div style="flex: 1; display: flex; flex-wrap: wrap; min-height: 0">
+<section style="flex: 999 1 560px; min-width: 0; padding: 16px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box">
+<div style="position: relative">
+<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="position: absolute; left: 16px; top: 17px; width: 20px; height: 20px; color: #5B6660"><path d="M3 5v14M7 5v14M11 5v14M16 5v14M21 5v14"></path></svg>
+<label for="pos-search" style="position: absolute; left: -9999px">Scan a barcode or search products</label>
+<input id="pos-search" placeholder="Scan a barcode, or type a product name or SKU" style="width: 100%; box-sizing: border-box; height: 54px; border: 2px solid #047857; border-radius: 10px; padding: 0 16px 0 48px; font: 600 16px Manrope, system-ui, sans-serif; background: #fff; color: #14201B; box-shadow: 0 0 0 4px rgba(4,120,87,.12)">
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button class="cat on" type="button">Quick keys</button><button class="cat" type="button">All items</button><button class="cat" type="button">[Category]</button><button class="cat" type="button">[Category]</button><button class="cat" type="button">[Category]</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px" class="muted">[n] in stock</span></span></button>
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px" class="muted">[n] in stock</span></span></button>
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px; color: #7A4A00; font-weight: 700">Low: [n] left</span></span></button>
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px" class="muted">[n] in stock</span></span></button>
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px" class="muted">[n] in stock</span></span></button>
+<button class="tile" type="button" disabled style="opacity: .55; cursor: not-allowed"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px; font-weight: 700">Out of stock</span></span></button>
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px" class="muted">[n] in stock</span></span></button>
+<button class="tile" type="button"><span style="font-weight: 700">[Product name]</span><span style="display: flex; justify-content: space-between; align-items: flex-end"><span class="tab" style="font-weight: 800">₹[price]</span><span style="font-size: 12px" class="muted">[n] in stock</span></span></button>
+</div>
+</section>
+<aside aria-label="Cart" style="flex: 1 1 400px; max-width: 460px; box-sizing: border-box; background: #fff; border-left: 1px solid #E6E1D7; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #EFEBE3">
+<h2 style="margin: 0; font-size: 16px; font-weight: 800">Cart <span class="muted" style="font-weight: 600">· 3 items</span></h2>
+<div style="display: flex; gap: 4px"><button class="btn bg" type="button" style="height: 32px; padding: 0 10px; font-size: 13px">Held sales</button><button class="btn bo" type="button" style="height: 32px; padding: 0 10px; font-size: 13px">Hold <kbd>F4</kbd></button></div>
+</div>
+<div style="padding: 12px 18px; border-bottom: 1px solid #EFEBE3">
+<button type="button" style="width: 100%; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 12px; border: 1px dashed #CFC8BB; border-radius: 8px; background: #FBFAF7; font: 600 14px Manrope, system-ui, sans-serif; color: #5B6660; cursor: pointer"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"></path></svg>Add customer: search by phone or name<kbd style="margin-left: auto">F8</kbd></button>
+</div>
+<ul style="list-style: none; margin: 0; padding: 0; flex: 1">
+<li style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #EFEBE3"><div style="flex: 1; min-width: 0"><p style="margin: 0; font-weight: 700">[Product name]</p><p style="margin: 0; font-size: 12px" class="muted">₹[price] each · GST [x]%</p></div><div class="qty"><button type="button" aria-label="Decrease quantity"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg></button><input value="2" aria-label="Quantity" inputmode="numeric"><button type="button" aria-label="Increase quantity"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button></div><span class="tab" style="width: 72px; text-align: right; font-weight: 700">₹[amt]</span></li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #EFEBE3"><div style="flex: 1; min-width: 0"><p style="margin: 0; font-weight: 700">[Product name]</p><p style="margin: 0; font-size: 12px" class="muted">₹[price] each · GST [x]%</p></div><div class="qty"><button type="button" aria-label="Decrease quantity"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg></button><input value="1" aria-label="Quantity" inputmode="numeric"><button type="button" aria-label="Increase quantity"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button></div><span class="tab" style="width: 72px; text-align: right; font-weight: 700">₹[amt]</span></li>
+</ul>
+<div style="padding: 12px 18px; display: flex; gap: 18px; border-top: 1px solid #EFEBE3">
+<button class="link" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5 5 19M7 7h.01M17 17h.01"></path></svg>Add discount</button>
+<button class="link" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01"></path></svg>Apply coupon</button>
+<button class="link" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"></path></svg>Bill note</button>
+</div>
+<div style="padding: 14px 18px 18px; background: #FBFAF7; border-top: 1px solid #EFEBE3; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between" class="muted"><span>Subtotal</span><span class="tab">₹[subtotal]</span></div>
+<div style="display: flex; justify-content: space-between" class="muted"><span>GST</span><span class="tab">₹[tax]</span></div>
+<div style="display: flex; justify-content: space-between; font-size: 20px; font-weight: 800; margin-top: 4px"><span>Total</span><span class="tab">₹[total]</span></div>
+<a class="btn bp" href="PosPay.dc.html" style="height: 56px; font-size: 17px; font-weight: 800; margin-top: 8px; justify-content: space-between; padding: 0 20px"><span>Pay ₹[total]</span><kbd style="background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.35)">F12</kbd></a>
+</div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

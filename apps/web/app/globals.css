@@ -40,7 +40,7 @@
   --danger-soft: oklch(0.95 0.03 30);
   --info: oklch(0.42 0.09 255);
   --info-soft: oklch(0.94 0.02 255);
-  --sidebar: #047857;
+  --sidebar: #065F46;
   --sidebar-foreground: #fffdf9;
   --sidebar-muted: #c8ead9;
   --sidebar-heading-bg: transparent;
@@ -82,7 +82,7 @@
   --danger-soft: oklch(0.31 0.06 28);
   --info: oklch(0.76 0.1 250);
   --info-soft: oklch(0.3 0.04 250);
-  --sidebar: oklch(0.43 0.12 164);
+  --sidebar: #064E3B;
   --sidebar-foreground: oklch(0.99 0.004 90);
   --sidebar-muted: oklch(0.88 0.04 160);
   --sidebar-heading-bg: transparent;

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Organisation settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F5EF}
+a{color:#047857}a:hover{color:#065F46}
+.app{font-family:Manrope,system-ui,sans-serif;color:#14201B;font-size:14px;line-height:1.5}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.side{flex:1 1 232px;box-sizing:border-box;background:#0E3B2E;color:#E9F3EE;display:flex;flex-direction:column;gap:2px;padding:14px 12px 16px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:#fff;text-decoration:none}
+.brand:hover{color:#fff}
+.logo{width:30px;height:30px;border-radius:8px;background:#fff;color:#0E3B2E;display:grid;place-items:center}
+.tag{font-size:10px;font-weight:800;letter-spacing:.08em;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.12);color:#CFE6DA}
+.org{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 10px;margin-bottom:8px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font:inherit;text-align:left}
+.ni{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:8px;color:#D5E7DE;text-decoration:none;font-size:14px;font-weight:500}
+.ni:hover{background:rgba(255,255,255,.08);color:#fff}
+.ni.on{background:#fff;color:#0E3B2E;font-weight:700}
+.gh{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9CC3B2;padding:14px 10px 4px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 8px 0;margin-top:12px;border-top:1px solid rgba(255,255,255,.14);font-size:13px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-height:60px;padding:10px 36px;box-sizing:border-box;background:#fff;border-bottom:1px solid #E6E1D7}
+.search{flex:0 1 380px;margin-left:auto;display:flex;align-items:center;gap:8px;height:38px;padding:0 10px 0 12px;border-radius:8px;border:1px solid #D9D3C7;background:#FBFAF7;color:#5B6660;font:inherit;cursor:pointer}
+.search kbd{margin-left:auto;font:600 12px Manrope,system-ui,sans-serif;border:1px solid #D9D3C7;border-radius:5px;padding:1px 6px;background:#fff}
+.icb{width:38px;height:38px;border-radius:8px;border:0;background:transparent;color:#2C3A34;display:grid;place-items:center;cursor:pointer}
+.icb:hover{background:#F2EFE8}
+.btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:8px;font:600 14px Manrope,system-ui,sans-serif;border:1px solid transparent;cursor:pointer;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+.bp{background:#047857;color:#fff}.bp:hover{background:#065F46;color:#fff}
+.bo{background:#fff;color:#14201B;border-color:#D9D3C7}.bo:hover{background:#F2EFE8;color:#14201B}
+.card{background:#fff;border:1px solid #E6E1D7;border-radius:12px}
+.tab{display:inline-flex;align-items:center;height:42px;padding:0 2px;margin-bottom:-1px;border-bottom:2px solid transparent;color:#5B6660;font-weight:600;text-decoration:none}
+.tab.on{color:#14201B;border-bottom-color:#047857}
+.lbl{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+.hint{display:block;font-size:12px;color:#5B6660;margin-top:5px}
+.inp{display:block;width:100%;box-sizing:border-box;height:40px;border:1px solid #CFC8BB;border-radius:8px;padding:0 12px;background:#fff;font:500 14px Manrope,system-ui,sans-serif;color:#14201B}
+.inp:focus{outline:none;border-color:#047857;box-shadow:0 0 0 3px rgba(4,120,87,.18)}
+textarea.inp{height:76px;padding:10px 12px;resize:vertical}
+.selw{position:relative}
+.selw select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:pointer}
+.selw svg{position:absolute;right:12px;top:12px;pointer-events:none;color:#5B6660}
+.rc{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid #DDD7CC;border-radius:10px;background:#fff;cursor:pointer;flex:1 1 220px}
+.rc input{margin:3px 0 0;accent-color:#047857;width:16px;height:16px}
+.rc.on{border-color:#047857;background:#F3FAF6;box-shadow:0 0 0 1px #047857}
+.muted{color:#5B6660}
+.av{width:28px;height:28px;border-radius:999px;background:#DCEFE5;color:#065F46;display:inline-grid;place-items:center;font-size:11px;font-weight:800;flex:none}
+.h1{margin:0;font-size:28px;line-height:1.2;font-weight:800;letter-spacing:-0.02em}
+.sub{margin:4px 0 0;color:#5B6660;font-size:14px}
+.sect{margin:0;font-size:16px;font-weight:800}
+</style>
+</helmet>
+<div class="app" style="display: flex; flex-wrap: wrap; min-height: 1240px; background: #F7F5EF">
+<nav aria-label="Organisation navigation" class="side">
+<a href="Main.dc.html" class="brand"><span class="logo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg></span><span style="font-weight: 800; font-size: 16px">DeltCRM</span><span class="tag">POS</span></a>
+<button class="org" type="button"><span style="display: flex; flex-direction: column"><span style="font-size: 11px; color: #9CC3B2; font-weight: 600">Organisation</span><span style="font-weight: 700">Jai Hind</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<a class="ni" href="Main.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>Overview</a>
+<div class="gh">Locations &amp; stock</div>
+<a class="ni" href="Stores.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg>Stores</a>
+<a class="ni" href="StockMovement.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h15l-3-3M20 17H5l3 3"></path></svg>Stock movement</a>
+<div class="gh">People</div>
+<a class="ni" href="Team.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"></path></svg>Team members</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg>Roles &amp; access</a>
+<div class="gh">Catalogue</div>
+<a class="ni" href="Products.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"></path></svg>Products</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 14h6v6h-6zM7 10v4a3 3 0 0 0 3 3h4"></path></svg>Categories</a>
+<a class="ni" href="CatalogueSetup.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4"></path></svg>Catalogue setup</a>
+<div class="gh">Customers &amp; insights</div>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"></path></svg>Customers</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V5M16 20v-6M3 20h18"></path></svg>Reports</a>
+<div class="gh">Administration</div>
+<a class="ni on" href="#" aria-current="page"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg>Settings</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h10v16H5V8zM9 4v4H5M9 12h6M9 16h6"></path></svg>Audit log</a>
+<div style="flex: 1"></div>
+<div class="me"><span class="av">VS</span><span style="display: flex; flex-direction: column; line-height: 1.3"><span style="font-weight: 700; color: #fff">Vedant Singh</span><span style="color: #9CC3B2; font-size: 12px">Organisation administrator</span></span></div>
+</nav>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header class="top">
+<button class="btn bo" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg>Go to store<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="opacity: .55"><path d="M6 9l6 6 6-6"></path></svg></button>
+<button class="search" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14M20 20l-4-4"></path></svg>Search pages, products, customers<kbd>Ctrl K</kbd></button>
+<button class="icb" type="button" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="width: 18px; height: 18px"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"></path></svg></button>
+<button class="icb" type="button" aria-label="Account menu: language, theme, sign out"><span class="av">VS</span></button>
+</header>
+<div style="padding: 28px 36px 0; max-width: 1040px; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; flex: 1">
+<div><h1 class="h1">Organisation settings</h1><p class="sub">Your business details, tax profile, approvals and security.</p></div>
+<nav aria-label="Settings sections" style="display: flex; flex-wrap: wrap; gap: 24px; border-bottom: 1px solid #E6E1D7">
+<a class="tab on" href="#" aria-current="page">General</a>
+<a class="tab" href="#">Tax profile</a>
+<a class="tab" href="#">Approvals</a>
+<a class="tab" href="#">Security</a>
+</nav>
+<form class="card" style="padding: 24px; display: flex; flex-direction: column; gap: 28px">
+<section style="display: flex; flex-direction: column; gap: 16px">
+<div><h2 class="sect">Organisation profile</h2><p style="margin: 2px 0 0; font-size: 13px" class="muted">Printed on receipts and tax invoices.</p></div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px">
+<div><label class="lbl" for="s-name">Organisation name</label><input id="s-name" class="inp" value="Jai Hind"></div>
+<div><label class="lbl" for="s-country">Country or region</label><div class="selw"><select id="s-country" class="inp"><option>India</option></select><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></div></div>
+<div><label class="lbl" for="s-legal">Legal name</label><input id="s-legal" class="inp" placeholder="As registered, e.g. Jai Hind Traders Pvt Ltd"></div>
+<div><label class="lbl" for="s-trade">Trade name <span class="muted" style="font-weight: 500">(optional)</span></label><input id="s-trade" class="inp" placeholder="Name customers see, if different"></div>
+</div>
+</section>
+<section style="display: flex; flex-direction: column; gap: 14px; padding-top: 24px; border-top: 1px solid #EFEBE3">
+<div><h2 class="sect">GST registration</h2><p style="margin: 2px 0 0; font-size: 13px" class="muted">Decides whether invoices show GST and whether products need a tax group.</p></div>
+<fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px">
+<legend style="position: absolute; left: -9999px">GST registration status</legend>
+<label class="rc"><input type="radio" name="gst"><span><span style="display: block; font-weight: 700">Registered</span><span style="display: block; font-size: 13px" class="muted">Enter your GSTIN. Each product needs a tax group before it can be sold.</span></span></label>
+<label class="rc on"><input type="radio" name="gst" checked><span><span style="display: block; font-weight: 700">Not registered</span><span style="display: block; font-size: 13px" class="muted">Invoices are issued without GST. You can change this later.</span></span></label>
+<label class="rc"><input type="radio" name="gst"><span><span style="display: block; font-weight: 700">Not sure yet</span><span style="display: block; font-size: 13px; color: #7A4A00">Sales stay paused until you choose.</span></span></label>
+</fieldset>
+</section>
+<section style="display: flex; flex-direction: column; gap: 16px; padding-top: 24px; border-top: 1px solid #EFEBE3">
+<div><h2 class="sect">Location &amp; business</h2></div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px">
+<div style="grid-column: 1 / -1"><label class="lbl" for="s-addr">Registered address</label><textarea id="s-addr" class="inp" placeholder="Street, city, state, PIN code"></textarea></div>
+<div><label class="lbl" for="s-tz">Time zone</label><div class="selw"><select id="s-tz" class="inp"><option>India Standard Time (Asia/Kolkata, UTC+05:30)</option></select><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></div><span class="hint">Used for “today” on reports and receipts.</span></div>
+<div><label class="lbl" for="s-type">Business type</label><div class="selw"><select id="s-type" class="inp"><option>Retail</option></select><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></div></div>
+</div>
+</section>
+</form>
+<div style="flex: 1"></div>
+<div style="position: sticky; bottom: 0; margin: 0 -36px; padding: 14px 36px; background: #14201B; color: #fff; display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #F4C77B"><path d="M12 8v4M12 16h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18"></path></svg>
+<span style="font-weight: 600">You have unsaved changes</span>
+<span style="flex: 1"></span>
+<button class="btn" type="button" style="background: transparent; color: #fff; border-color: rgba(255,255,255,.3)">Discard</button>
+<button class="btn bp" type="button">Save changes</button>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F5EF}
+a{color:#047857}a:hover{color:#065F46}
+.app{font-family:Manrope,system-ui,sans-serif;color:#14201B;font-size:14px;line-height:1.5}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.lbl{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+.inp{display:block;width:100%;box-sizing:border-box;height:44px;border:1px solid #CFC8BB;border-radius:8px;padding:0 12px 0 38px;background:#fff;font:500 15px Manrope,system-ui,sans-serif;color:#14201B}
+.inp:focus{outline:none;border-color:#047857;box-shadow:0 0 0 3px rgba(4,120,87,.18)}
+.fw{position:relative}
+.fw > svg{position:absolute;left:12px;top:14px;color:#5B6660}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 16px;border-radius:8px;font:700 15px Manrope,system-ui,sans-serif;border:1px solid transparent;cursor:pointer;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+.bp{background:#047857;color:#fff}.bp:hover{background:#065F46;color:#fff}
+.eye{position:absolute;right:4px;top:4px;height:36px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:#2C3A34;font:600 13px Manrope,system-ui,sans-serif;cursor:pointer}
+.eye:hover{background:#F2EFE8}
+.bar{height:8px;border-radius:99px;background:rgba(255,255,255,.14)}
+.muted{color:#5B6660}
+</style>
+</helmet>
+<div class="app" style="display: flex; flex-wrap: wrap; min-height: 900px; background: #F7F5EF">
+<section style="flex: 1 1 520px; box-sizing: border-box; background: #0E3B2E; color: #fff; padding: 40px 56px; display: flex; flex-direction: column; gap: 40px; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 10px"><span style="width: 34px; height: 34px; border-radius: 9px; background: #fff; color: #0E3B2E; display: grid; place-items: center"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="width: 18px; height: 18px"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg></span><span style="font-weight: 800; font-size: 18px">DeltCRM</span><span style="font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,.14); color: #CFE6DA">POS</span></div>
+<div style="max-width: 520px">
+<h1 style="margin: 0; font-size: 52px; line-height: 1.05; font-weight: 800; letter-spacing: -0.03em">Keep every store <span style="color: #8FE0BC">in sync.</span></h1>
+<p style="margin: 16px 0 0; font-size: 17px; color: #CFE6DA; max-width: 420px">Sales, stock and store teams, together in one place.</p>
+</div>
+<div aria-hidden="true" style="margin-top: auto; margin-right: -120px; background: #F7F5EF; border-radius: 14px 0 0 0; padding: 0; display: flex; min-height: 320px; box-shadow: 0 30px 60px rgba(0,0,0,.25)">
+<div style="width: 120px; background: #0B3226; border-radius: 14px 0 0 0; padding: 18px 12px; display: flex; flex-direction: column; gap: 10px"><div class="bar" style="width: 70%; background: rgba(255,255,255,.35)"></div><div style="height: 10px"></div><div class="bar" style="background: #fff; height: 20px; border-radius: 6px"></div><div class="bar"></div><div class="bar" style="width: 80%"></div><div class="bar" style="width: 60%"></div><div class="bar" style="width: 75%"></div></div>
+<div style="flex: 1; padding: 22px; display: flex; flex-direction: column; gap: 14px">
+<div style="height: 14px; width: 140px; border-radius: 4px; background: #14201B"></div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<div style="background: #fff; border: 1px solid #E6E1D7; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px"><div style="height: 6px; width: 50%; background: #D9D3C7; border-radius: 3px"></div><div style="height: 14px; width: 70%; background: #14201B; border-radius: 3px"></div></div>
+<div style="background: #fff; border: 1px solid #E6E1D7; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px"><div style="height: 6px; width: 50%; background: #D9D3C7; border-radius: 3px"></div><div style="height: 14px; width: 55%; background: #14201B; border-radius: 3px"></div></div>
+<div style="background: #fff; border: 1px solid #E6E1D7; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px"><div style="height: 6px; width: 50%; background: #D9D3C7; border-radius: 3px"></div><div style="height: 14px; width: 40%; background: #047857; border-radius: 3px"></div></div>
+</div>
+<div style="background: #fff; border: 1px solid #E6E1D7; border-radius: 8px; padding: 14px; display: flex; align-items: flex-end; gap: 8px; height: 110px; box-sizing: border-box">
+<div style="flex: 1; height: 30%; background: #CDE8DA; border-radius: 3px"></div><div style="flex: 1; height: 55%; background: #CDE8DA; border-radius: 3px"></div><div style="flex: 1; height: 40%; background: #CDE8DA; border-radius: 3px"></div><div style="flex: 1; height: 80%; background: #047857; border-radius: 3px"></div><div style="flex: 1; height: 65%; background: #CDE8DA; border-radius: 3px"></div><div style="flex: 1; height: 45%; background: #CDE8DA; border-radius: 3px"></div><div style="flex: 1; height: 70%; background: #CDE8DA; border-radius: 3px"></div>
+</div>
+</div>
+</div>
+</section>
+<section style="flex: 1 1 480px; box-sizing: border-box; padding: 32px 48px; display: flex; flex-direction: column">
+<div style="display: flex; justify-content: flex-end">
+<label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600" class="muted"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg><span style="position: absolute; left: -9999px">Language</span><select style="border: 1px solid #D9D3C7; border-radius: 8px; height: 34px; padding: 0 8px; font: 600 13px Manrope, system-ui, sans-serif; background: #fff; color: #14201B"><option>English</option><option>العربية</option></select></label>
+</div>
+<div style="flex: 1; display: flex; align-items: center; justify-content: center">
+<form style="width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 18px">
+<div><h2 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.02em">Sign in</h2><p style="margin: 4px 0 0" class="muted">Use your work email to open your organisation.</p></div>
+<div><label class="lbl" for="l-email">Email address</label><div class="fw"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v12H3zM3 7l9 6 9-6"></path></svg><input id="l-email" class="inp" type="email" placeholder="you@company.com" autocomplete="email"></div></div>
+<div>
+<div style="display: flex; justify-content: space-between; align-items: baseline"><label class="lbl" for="l-pw">Password</label><a href="#" style="font-size: 13px; font-weight: 700; text-decoration: none">Forgot password?</a></div>
+<div class="fw"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4"></path></svg><input id="l-pw" class="inp" type="password" placeholder="Enter your password" autocomplete="current-password" style="padding-right: 64px"><button class="eye" type="button" aria-label="Show password">Show</button></div>
+</div>
+<button class="btn bp" type="submit" style="width: 100%">Sign in</button>
+<p style="margin: 6px 0 0; text-align: center; padding-top: 18px; border-top: 1px solid #E6E1D7" class="muted">New to DeltCRM? <a href="Register.dc.html" style="font-weight: 700">Create your organisation</a></p>
+</form>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

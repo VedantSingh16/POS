@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Catalogue setup</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F7F5EF}
+a{color:#047857}a:hover{color:#065F46}
+.app{font-family:Manrope,system-ui,sans-serif;color:#14201B;font-size:14px;line-height:1.5}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.side{flex:1 1 232px;box-sizing:border-box;background:#0E3B2E;color:#E9F3EE;display:flex;flex-direction:column;gap:2px;padding:14px 12px 16px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:#fff;text-decoration:none}
+.brand:hover{color:#fff}
+.logo{width:30px;height:30px;border-radius:8px;background:#fff;color:#0E3B2E;display:grid;place-items:center}
+.tag{font-size:10px;font-weight:800;letter-spacing:.08em;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.12);color:#CFE6DA}
+.org{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 10px;margin-bottom:8px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font:inherit;text-align:left}
+.ni{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:8px;color:#D5E7DE;text-decoration:none;font-size:14px;font-weight:500}
+.ni:hover{background:rgba(255,255,255,.08);color:#fff}
+.ni.on{background:#fff;color:#0E3B2E;font-weight:700}
+.gh{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9CC3B2;padding:14px 10px 4px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 8px 0;margin-top:12px;border-top:1px solid rgba(255,255,255,.14);font-size:13px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-height:60px;padding:10px 36px;box-sizing:border-box;background:#fff;border-bottom:1px solid #E6E1D7}
+.search{flex:0 1 380px;margin-left:auto;display:flex;align-items:center;gap:8px;height:38px;padding:0 10px 0 12px;border-radius:8px;border:1px solid #D9D3C7;background:#FBFAF7;color:#5B6660;font:inherit;cursor:pointer}
+.search kbd{margin-left:auto;font:600 12px Manrope,system-ui,sans-serif;border:1px solid #D9D3C7;border-radius:5px;padding:1px 6px;background:#fff}
+.icb{width:38px;height:38px;border-radius:8px;border:0;background:transparent;color:#2C3A34;display:grid;place-items:center;cursor:pointer}
+.icb:hover{background:#F2EFE8}
+.btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:8px;font:600 14px Manrope,system-ui,sans-serif;border:1px solid transparent;cursor:pointer;text-decoration:none;white-space:nowrap;box-sizing:border-box}
+.bo{background:#fff;color:#14201B;border-color:#D9D3C7}.bo:hover{background:#F2EFE8;color:#14201B}
+.badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.dot::before{content:"";width:6px;height:6px;border-radius:99px;background:currentColor}
+.bs{background:#E3F2EA;color:#166B47}.bw{background:#FBEFD9;color:#7A4A00}.bn{background:#EFECE6;color:#3E4852}
+.card{background:#fff;border:1px solid #E6E1D7;border-radius:12px}
+.row{display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid #EFEBE3;text-decoration:none;color:#14201B}
+.row:hover{background:#FBFAF7;color:#14201B}
+.num{width:26px;height:26px;border-radius:99px;background:#F2EFE8;color:#47515B;display:grid;place-items:center;font-size:12px;font-weight:800;flex:none}
+.oi{width:38px;height:38px;border-radius:10px;background:#E3F2EA;color:#065F46;display:grid;place-items:center;flex:none}
+.muted{color:#5B6660}
+.av{width:28px;height:28px;border-radius:999px;background:#DCEFE5;color:#065F46;display:inline-grid;place-items:center;font-size:11px;font-weight:800;flex:none}
+.h1{margin:0;font-size:28px;line-height:1.2;font-weight:800;letter-spacing:-0.02em}
+.sub{margin:4px 0 0;color:#5B6660;font-size:14px}
+</style>
+</helmet>
+<div class="app" style="display: flex; flex-wrap: wrap; min-height: 860px; background: #F7F5EF">
+<nav aria-label="Organisation navigation" class="side">
+<a href="Main.dc.html" class="brand"><span class="logo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg></span><span style="font-weight: 800; font-size: 16px">DeltCRM</span><span class="tag">POS</span></a>
+<button class="org" type="button"><span style="display: flex; flex-direction: column"><span style="font-size: 11px; color: #9CC3B2; font-weight: 600">Organisation</span><span style="font-weight: 700">Jai Hind</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+<a class="ni" href="Main.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>Overview</a>
+<div class="gh">Locations &amp; stock</div>
+<a class="ni" href="Stores.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg>Stores</a>
+<a class="ni" href="StockMovement.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h15l-3-3M20 17H5l3 3"></path></svg>Stock movement</a>
+<div class="gh">People</div>
+<a class="ni" href="Team.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"></path></svg>Team members</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg>Roles &amp; access</a>
+<div class="gh">Catalogue</div>
+<a class="ni" href="Products.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"></path></svg>Products</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 14h6v6h-6zM7 10v4a3 3 0 0 0 3 3h4"></path></svg>Categories</a>
+<a class="ni on" href="#" aria-current="page"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4"></path></svg>Catalogue setup</a>
+<div class="gh">Customers &amp; insights</div>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"></path></svg>Customers</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V5M16 20v-6M3 20h18"></path></svg>Reports</a>
+<div class="gh">Administration</div>
+<a class="ni" href="Settings.dc.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg>Settings</a>
+<a class="ni" href="#"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h10v16H5V8zM9 4v4H5M9 12h6M9 16h6"></path></svg>Audit log</a>
+<div style="flex: 1"></div>
+<div class="me"><span class="av">VS</span><span style="display: flex; flex-direction: column; line-height: 1.3"><span style="font-weight: 700; color: #fff">Vedant Singh</span><span style="color: #9CC3B2; font-size: 12px">Organisation administrator</span></span></div>
+</nav>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header class="top">
+<button class="btn bo" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M3 9h18M4 9v11h16V9M9 20v-6h6v6"></path></svg>Go to store<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="opacity: .55"><path d="M6 9l6 6 6-6"></path></svg></button>
+<button class="search" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14M20 20l-4-4"></path></svg>Search pages, products, customers<kbd>Ctrl K</kbd></button>
+<button class="icb" type="button" aria-label="Notifications"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="width: 18px; height: 18px"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"></path></svg></button>
+<button class="icb" type="button" aria-label="Account menu: language, theme, sign out"><span class="av">VS</span></button>
+</header>
+<div style="padding: 28px 36px 48px; max-width: 960px; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px">
+<div>
+<h1 class="h1">Catalogue setup</h1>
+<p class="sub">Set the shared product structure once. Every store uses it. Work top to bottom.</p>
+</div>
+<section class="card" style="overflow: hidden">
+<a class="row" href="#"><span class="num">1</span><span class="oi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"></path></svg></span><span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 700">Product types</span><span style="display: block; font-size: 13px" class="muted">Which details and checks each kind of product needs, e.g. size for clothing, expiry for food</span></span><span class="badge bw dot">Not set up</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #8A938E"><path d="M9 6l6 6-6 6"></path></svg></a>
+<a class="row" href="#"><span class="num">2</span><span class="oi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5v14M8 5v14M12 5v14M17 5v14M20 5v14"></path></svg></span><span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 700">Product fields</span><span style="display: block; font-size: 13px" class="muted">Barcode, description, price and your own custom fields</span></span><span class="badge bn">Default fields</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #8A938E"><path d="M9 6l6 6-6 6"></path></svg></a>
+<a class="row" href="#"><span class="num">3</span><span class="oi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 14h6v6h-6zM7 10v4a3 3 0 0 0 3 3h4"></path></svg></span><span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 700">Categories</span><span style="display: block; font-size: 13px" class="muted">Group products for browsing at the till and in reports</span></span><span class="badge bw dot">None yet</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #8A938E"><path d="M9 6l6 6-6 6"></path></svg></a>
+<a class="row" href="#"><span class="num">4</span><span class="oi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01"></path></svg></span><span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 700">Brands</span><span style="display: block; font-size: 13px" class="muted">The shared brand list used by every store</span></span><span class="badge bn">Optional</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #8A938E"><path d="M9 6l6 6-6 6"></path></svg></a>
+<a class="row" href="#" style="border-bottom: 0"><span class="num">5</span><span class="oi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17 17 3l4 4L7 21H3zM14 6l4 4M10 10l2 2M7 13l2 2"></path></svg></span><span style="flex: 1; min-width: 0"><span style="display: block; font-weight: 700">Units</span><span style="display: block; font-size: 13px" class="muted">How quantities are labelled on stock and bills (pcs, kg, litre)</span></span><span class="badge bs dot">Defaults ready</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #8A938E"><path d="M9 6l6 6-6 6"></path></svg></a>
+</section>
+<p style="margin: 0; font-size: 13px" class="muted">Done here? <a href="Products.dc.html" style="font-weight: 700">Add your first product</a></p>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
