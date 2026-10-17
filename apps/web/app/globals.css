@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* DeltCRM POS: cream work areas, white surfaces, and a clear Delt green navigation rail.
+/* DeltPOS: cream work areas, white surfaces, and a clear Delt green navigation rail.
    muted semantic status colours. Every component reads these tokens; do not hardcode colours in components.
    Table rows and touch controls share a 44px minimum for consistent scanning and input. */
 :root {

@@ -24,14 +24,16 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function KpiTile({ label, value, hint, icon: Icon, tone = "neutral" }: { label: string; value: React.ReactNode; hint?: string; icon?: LucideIcon; tone?: Tone }) {
   return (
-    <div className="flex min-h-[5.25rem] items-start justify-between gap-3 border-s-0 px-0 py-2 sm:border-s sm:border-border sm:ps-4 sm:first:border-s-0 sm:first:ps-0">
-      <div className="min-w-0">
+    <div className="flex min-h-[5.25rem] items-start gap-3 border-s-0 px-2 py-2 sm:border-s sm:border-border sm:ps-4 sm:pe-3 sm:first:border-s-0 sm:first:ps-3">
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-normal text-muted-foreground"><LocalizedText value={label} /></p>
         <p className={cn("tabular mt-1 truncate text-[2rem] font-bold tracking-tight", tone === "danger" && "text-danger", tone === "warning" && "text-warning")}>{value}</p>
         {hint && <p className="mt-1 text-sm text-muted-foreground"><LocalizedText value={hint} /></p>}
       </div>
       {Icon && (
-        <Icon className={cn("mt-1 hidden size-4 shrink-0 sm:block", tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-muted-foreground")} aria-hidden />
+        <span className="mt-0.5 hidden shrink-0 rounded-md bg-muted/60 p-1.5 sm:block">
+          <Icon className={cn("size-4", tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-muted-foreground")} aria-hidden />
+        </span>
       )}
     </div>
   );

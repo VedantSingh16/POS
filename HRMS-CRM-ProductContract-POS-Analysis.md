@@ -129,7 +129,7 @@ A customer signs in once; if POS is entitled for their tenant, `/en/app/pos` (or
   "productKey": "POS",
   "manifestVersion": "0.1.0",
   "minimumContractVersion": "2.1.0",
-  "displayName": "DeltCRM POS",
+  "displayName": "DeltPOS",
   "audience": "pos-api",
   "routes": { "webPath": "/{locale}/app/pos", "apiPrefix": "/api/pos/v1" },
   "navigation": { "key": "pos", "labelKey": "products.pos.name", "iconKey": "store",

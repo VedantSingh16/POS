@@ -1,7 +1,7 @@
 {
   "name": "POS",
   "version": "1.0.0",
-  "description": "DeltCRM POS monorepo",
+  "description": "DeltPOS monorepo",
   "main": "index.js",
   "scripts": {
     "build": "turbo run build",

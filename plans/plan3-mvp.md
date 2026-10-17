@@ -80,7 +80,7 @@ Unlisted features stay out: offline selling, payment-terminal integration, purch
 
 | # | Decision | Default used in this plan | What changes if you pick otherwise |
 |---|---|---|---|
-| D1 | Identity: native POS login vs Platform tokens | **Native login for the MVP**, behind an `AuthProvider` seam so Platform JWKS tokens can be added later without touching guards. | If the pilot must run inside the DeltCRM platform, Plan 2 Phase 1 moves in before Phase 3, adding about 1–2 weeks. |
+| D1 | Identity: native POS login vs Platform tokens | **Native login for the MVP**, behind an `AuthProvider` seam so Platform JWKS tokens can be added later without touching guards. | If the pilot must run inside the DeltPOS platform, Plan 2 Phase 1 moves in before Phase 3, adding about 1–2 weeks. |
 | D2 | Business type | **General retail.** No tables, KOT or tips. | Hospitality would add 12.12 and table and course flows. |
 | D3 | Tax | **India GST.** GSTIN on organisation and store, HSN/SAC on product, CGST+SGST split on intra-state invoices. IGST later. | Another jurisdiction changes Phase 4 and the invoice template. |
 | D4 | Tenders | Cash, card and UPI are **recorded** with an optional reference. Split tender is supported. No terminal integration. | — |

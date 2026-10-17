@@ -100,7 +100,7 @@ Create `product/manifest.v2.json` in the POS repo (not in Product_Contract — i
   "productKey": "POS",
   "manifestVersion": "0.1.0",
   "minimumContractVersion": "<resolved from Step 2>",
-  "displayName": "DeltCRM POS",
+  "displayName": "DeltPOS",
   "description": "Point of sale, inventory, registers, and receipts",
   "audience": "pos-api",
   "routes": { "webPath": "/{locale}/app/pos", "apiPrefix": "/api/pos/v1" },

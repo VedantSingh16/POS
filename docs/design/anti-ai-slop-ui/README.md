@@ -1,6 +1,6 @@
 # Anti-AI-slop design resources
 
-These are static design and accessibility references used for the DeltCRM POS redesign. No executable skill, script, package, or runtime dependency was installed.
+These are static design and accessibility references used for the DeltPOS redesign. No executable skill, script, package, or runtime dependency was installed.
 Retrieved and reviewed on 2026-10-14.
 
 ## Anthropic — Frontend Design
@@ -18,4 +18,4 @@ Retrieved and reviewed on 2026-10-14.
 - Use: keyboard operation and focus, form behavior, navigation and feedback, responsive layout, accessibility, and interface quality checks.
 - Review: read the complete guideline and license before copying. It is plain Markdown guidance with no scripts or dependencies.
 
-The project-specific design brief remains authoritative for DeltCRM's brand, workflows, permissions, and data rules. These resources guide quality and do not override product requirements.
+The project-specific design brief remains authoritative for DeltPOS's brand, workflows, permissions, and data rules. These resources guide quality and do not override product requirements.

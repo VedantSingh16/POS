@@ -99,10 +99,17 @@ function productRows(products: any[]): ProductRow[] {
 function userRow(user: any, storeNames: Map<string, string>) {
   const assignments: { name: string; scopeType: string; scopeId: string | null }[] = user.roles ?? [];
   const role = assignments.length ? [...new Set(assignments.map((a) => a.name))].join(", ") : "No role";
-  const scope = assignments.length
-    ? [...new Set(assignments.map((a) => (a.scopeType === "STORE" ? storeNames.get(a.scopeId ?? "") ?? "A store" : "Organisation-wide")))].join(", ")
-    : "No access";
-  return { id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role, scope, status: user.status, lastLogin: user.lastLoginAt ?? "" };
+  const storeAssignments = [...new Set(assignments.filter((a) => a.scopeType === "STORE").map((a) => storeNames.get(a.scopeId ?? "") ?? "A store"))];
+  const hasOrganisationScope = assignments.some((a) => a.scopeType !== "STORE");
+  const scopeDetails = hasOrganisationScope ? "All stores" : storeAssignments.join(", ");
+  const scope = assignments.length === 0
+    ? "No access"
+    : hasOrganisationScope
+      ? "All stores"
+      : storeAssignments.length === 1
+        ? storeAssignments[0]
+        : `${storeAssignments.length} stores`;
+  return { id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role, scope, scopeDetails, status: user.status, lastLogin: user.lastLoginAt ?? "" };
 }
 
 /** Counts from the API can be missing on older servers; never let that surface as NaN in the UI. */

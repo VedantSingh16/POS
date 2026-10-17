@@ -94,9 +94,9 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 function Brand({ home }: { home: string }) {
   const t = useTranslate();
   return (
-    <Link href={home} aria-label={t("DeltCRM POS home")} className="flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
+    <Link href={home} aria-label={t("DeltPOS home")} className="flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
       <BrandMark size="compact" className="bg-transparent text-sidebar-foreground shadow-none ring-0" />
-      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight"><LocalizedText value={"DeltCRM"} /></span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-surface px-1.5 py-0.5 text-xs font-bold leading-none tracking-[0.06em] text-sidebar-foreground"><LocalizedText value={"POS"} /></span></span>
+      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight"><LocalizedText value={"DeltPOS"} /></span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-surface px-1.5 py-0.5 text-xs font-bold leading-none tracking-[0.06em] text-sidebar-foreground"><LocalizedText value={"POS"} /></span></span>
     </Link>
   );
 }

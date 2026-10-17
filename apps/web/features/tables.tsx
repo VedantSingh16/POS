@@ -34,7 +34,12 @@ export function UsersTable({ data }: { data: User[] }) {
     { accessorKey: "name", header: "Name", cell: (c) => <Link href={`/org/users/${c.row.original.id}`} className="font-medium hover:underline">{c.getValue() as string}</Link> },
     { accessorKey: "email", header: "Email" },
     { accessorKey: "role", header: "Role" },
-    { accessorKey: "scope", header: "Works in", cell: (c) => { const v = c.getValue() as string; return v.includes("Organisation-wide") ? <Badge tone="warning"><LocalizedText value={v} /></Badge> : <span>{v}</span>; } },
+    { accessorKey: "scope", header: "Works in", cell: (c) => {
+      const row = c.row.original;
+      const v = c.getValue() as string;
+      const content = <span className="block max-w-[14rem] truncate" title={row.scopeDetails ?? v}><LocalizedText value={v} /></span>;
+      return v === "All stores" ? <Badge tone="warning" className="max-w-[14rem] truncate">{content}</Badge> : content;
+    } },
     { accessorKey: "status", header: "Status", cell: (c) => <StatusBadge status={c.getValue() as string} /> },
     { accessorKey: "lastLogin", header: "Last sign-in", cell: (c) => when(c.getValue() as string) },
   ];

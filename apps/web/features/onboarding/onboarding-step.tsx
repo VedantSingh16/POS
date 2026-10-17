@@ -181,7 +181,7 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
     <Card className={AUTH_CARD}><CardContent className="grid gap-x-5 gap-y-5 p-5 sm:grid-cols-2 sm:p-7 lg:p-8">
       {field("Store name", storeState.name, (value) => setStore("name", value), { autoComplete: "organization" })}
       <div className={AUTH_LABEL}><span><LocalizedText value={"Country"} /></span><p className="flex h-12 items-center rounded-[14px] border border-auth-border bg-auth-canvas px-4 text-base font-normal text-auth-muted">{marketByCode(orgState.countryCode)?.name ?? "Same as organisation"}</p></div>
-      {field("Store address", storeState.address, (value) => setStore("address", value), { autoComplete: "street-address" })}
+      {field("Address", storeState.address, (value) => setStore("address", value), { autoComplete: "street-address" })}
       {field("City / town", storeState.city, (value) => setStore("city", value), { autoComplete: "address-level-2" })}
       {field("State / region", storeState.region, (value) => setStore("region", value), { autoComplete: "address-level-1" })}
       {field("Postal code", storeState.postalCode, (value) => setStore("postalCode", value), { autoComplete: "postal-code" })}

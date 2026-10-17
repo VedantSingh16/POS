@@ -1,4 +1,4 @@
-# DeltCRM POS design direction
+# DeltPOS design direction
 
 ## Task and audience
 The store overview answers “what needs attention before the next sale?” Cashiers need a reliable scan-to-payment path; inventory operators need quick stock search, status, and adjustment links; administrators need to distinguish organisation-owned settings from store changes.
@@ -17,4 +17,4 @@ The store overview answers “what needs attention before the next sale?” Cash
 - Are focus, keyboard operation, narrow-screen behavior, and empty states preserved?
 - Are accent, radius, shadow, and motion used only when they clarify hierarchy or a state?
 
-The supplied reference images inform the practical density, light navigation, clear scan area, and fixed cart arrangement. DeltCRM keeps its own name, green palette, and existing product behavior.
+The supplied reference images inform the practical density, light navigation, clear scan area, and fixed cart arrangement. DeltPOS keeps its own name, green palette, and existing product behavior.

@@ -3,7 +3,7 @@
   "productKey": "POS",
   "manifestVersion": "0.1.0",
   "minimumContractVersion": "2.2.0",
-  "displayName": "DeltCRM POS",
+  "displayName": "DeltPOS",
   "description": "Point of sale, inventory, registers, and receipts",
   "audience": "pos-api",
   "routes": {

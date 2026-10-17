@@ -1,4 +1,4 @@
-# DeltCRM POS MVP
+# DeltPOS MVP
 
 This repository contains the Plan 3 POS MVP: a NestJS/Prisma API, Next.js web app, PostgreSQL and Redis Compose stack, and a shared package for money, GST and permissions.
 

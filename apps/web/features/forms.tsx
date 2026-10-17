@@ -90,6 +90,7 @@ const storeSchema = z.object({
   city: z.string().trim().optional(),
   region: z.string().trim().optional(),
   postalCode: z.string().trim().optional(),
+  phone: z.string().trim().optional(),
   registerCode: z.string().trim().max(12).toUpperCase().optional(),
   registerName: z.string().trim().max(60).optional(),
   createRegister: z.boolean(),
@@ -99,12 +100,12 @@ type StoreInput = z.input<typeof storeSchema>;
 export function NewStoreSheet({ used, max }: { used: number; max: number }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<StoreInput>({ resolver: zodResolver(storeSchema), defaultValues: { code: "", name: "", address: "", city: "", region: "", postalCode: "", registerCode: "REG-01", registerName: "Front Till", createRegister: true } });
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<StoreInput>({ resolver: zodResolver(storeSchema), defaultValues: { code: "", name: "", address: "", city: "", region: "", postalCode: "", phone: "", registerCode: "REG-01", registerName: "Front Till", createRegister: true } });
   const full = used >= max;
   const withRegister = watch("createRegister");
   async function submit(value: StoreInput) {
     try {
-      const created = await clientApi<{ id: string }>("/admin/stores", { method: "POST", body: JSON.stringify({ code: value.code, name: value.name, address: value.address, city: value.city, region: value.region, postalCode: value.postalCode, ...(value.createRegister ? { register: { code: value.registerCode || "REG-01", name: value.registerName || "Front Till" } } : {}) }) });
+      const created = await clientApi<{ id: string }>("/admin/stores", { method: "POST", body: JSON.stringify({ code: value.code, name: value.name, address: value.address, city: value.city, region: value.region, postalCode: value.postalCode, phone: value.phone, ...(value.createRegister ? { register: { code: value.registerCode || "REG-01", name: value.registerName || "Front Till" } } : {}) }) });
       toast.success("Store created. Next, assign its manager.");
       reset(); setOpen(false);
       router.push(`/org/stores/${created.id}`);
@@ -120,6 +121,7 @@ export function NewStoreSheet({ used, max }: { used: number; max: number }) {
         <Field label="City / town" htmlFor="s-city"><Input id="s-city" {...register("city")} /></Field>
         <Field label="State / region" htmlFor="s-region"><Input id="s-region" {...register("region")} /></Field>
         <Field label="Postal code" htmlFor="s-postal"><Input id="s-postal" {...register("postalCode")} /></Field>
+        <Field label="Store phone" htmlFor="s-phone"><Input id="s-phone" type="tel" autoComplete="tel" {...register("phone")} /></Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4" {...register("createRegister")} /> <LocalizedText value={"Create a register (till) now"} /></label>
         {withRegister && <div className="grid grid-cols-2 gap-3">
           <Field label="Register code" htmlFor="s-rcode"><Input id="s-rcode" {...register("registerCode")} /></Field>

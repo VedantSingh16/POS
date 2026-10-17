@@ -134,7 +134,7 @@ Lightspeed Retail, Square for Retail, Shopify POS and Odoo POS all follow the sa
 - Custom attributes are defined once (text, number, selection, toggle) and filled in on each item.
 - Clicking an item opens a **full detail view** with sections: overview, pricing, stock by location, variants, attributes, sales and stock history.
 
-### 3.2 Changes for DeltCRM POS
+### 3.2 Changes for DeltPOS
 **Organisation sidebar:** replace the three items "Product catalogue / Categories / Catalogue setup" with one **Catalogue** item. Its page has tabs: Products · Categories · (Brands, if on) · Units · Tax · Import · Setup.
 - **Categories tab** becomes a real tree. The schema already supports `parentId`, so this is add sub-category, rename, move, deactivate, product count, and "View products" (opens the Products tab filtered by category). This is what makes it look different from the product list. Today both are flat tables built from the same `NamedTable`.
 

@@ -1,4 +1,4 @@
-# DeltCRM POS: UI/UX redesign (proposal)
+# DeltPOS: UI/UX redesign (proposal)
 
 Mockups of the proposed UI/UX fixes. Nothing in `apps/web` has been changed yet.
 

@@ -46,7 +46,7 @@ export function LoginForm() {
     <div className="grid w-full gap-0 [&_label]:text-sm [&_label]:font-semibold [&_label]:text-auth-ink">
       <div className="mb-8">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.19em] text-auth-primary"><LocalizedText value={"Welcome back"} /></p>
-        <h1 className="font-display text-[clamp(2.45rem,3.2vw,3.1rem)] font-bold leading-[1.04] tracking-[-0.065em] text-auth-ink"><LocalizedText value={"Sign in to DeltCRM"} /></h1>
+        <h1 className="font-display text-[clamp(2.45rem,3.2vw,3.1rem)] font-bold leading-[1.04] tracking-[-0.065em] text-auth-ink"><LocalizedText value={"Sign in to DeltPOS"} /></h1>
         <p className="mt-3 text-base leading-[1.6] text-auth-muted sm:text-[17px]"><LocalizedText value={"Access your organisation and stores."} /></p>
       </div>
       <form className="grid gap-5" noValidate onSubmit={handleSubmit(onSubmit)}>
@@ -80,7 +80,7 @@ export function LoginForm() {
         {error && <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <Button type="submit" disabled={isSubmitting} className="relative mt-1 h-14 justify-center rounded-[15px] bg-auth-primary px-4 text-base font-bold text-auth-on-primary shadow-md hover:bg-auth-primary-hover sm:px-5"><span><LocalizedText value={isSubmitting ? "Signing in…" : "Sign in"} /></span><span aria-hidden="true" className="absolute end-5 text-xl">→</span></Button>
       </form>
-      <p className="mt-8 text-center text-[15px] text-auth-muted"><LocalizedText value={"New to DeltCRM? "} /><Link href="/register" className="font-bold text-auth-primary underline decoration-auth-primary/35 underline-offset-4 hover:decoration-auth-primary"><LocalizedText value={"Create your organisation"} /></Link></p>
+      <p className="mt-8 text-center text-[15px] text-auth-muted"><LocalizedText value={"New to DeltPOS? "} /><Link href="/register" className="font-bold text-auth-primary underline decoration-auth-primary/35 underline-offset-4 hover:decoration-auth-primary"><LocalizedText value={"Create your organisation"} /></Link></p>
     </div>
   );
 }

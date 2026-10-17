@@ -1,7 +1,7 @@
 {
   "v": 3,
   "createdOnFiles": {"v": 1, "at": "2026-10-16T20:15:00Z"},
-  "title": "DeltCRM POS UI Redesign",
+  "title": "DeltPOS UI Redesign",
   "launch": {"view": "canvas"},
   "pages": [],
   "boards": {
@@ -19,7 +19,7 @@
   },
   "order": ["Main.dc.html", "Stores.dc.html", "StockMovement.dc.html", "Team.dc.html", "Products.dc.html", "CatalogueSetup.dc.html", "Settings.dc.html", "Login.dc.html", "Register.dc.html", "Pos.dc.html", "PosPay.dc.html"],
   "notes": {
-    "title": {"x": 0, "y": -340, "text": "DeltCRM POS: proposed UI/UX fixes", "kind": "title1", "maxW": 3860},
+    "title": {"x": 0, "y": -340, "text": "DeltPOS: proposed UI/UX fixes", "kind": "title1", "maxW": 3860},
     "n1": {"x": 1500, "y": 0, "w": 380, "fill": "green", "text": "Overview fixes\n• One 'Finish setting up' banner with progress + Continue setup (replaces checklist + duplicate KPI)\n• 'Ready to sell' says WHY a store isn't ready\n• Store row shows readiness + Open store\n• Activity written as sentences\n• Compact sidebar: 36px rows, deep green, bright green kept for actions\n• Org name lives only in sidebar; language + theme moved to account menu\n• Title 28px, one-line description"},
     "n2": {"x": 3460, "y": 0, "w": 380, "fill": "green", "text": "Stores fixes\n• New Readiness column (no more 'Active' vs 'Needs setup' contradiction)\n• Explicit Open store action + row chevron\n• Manager shown with initials\n• Search/Columns toolbar hidden under 8 rows\n• Plan slots shown in footer\n• No redundant breadcrumb on top-level pages"},
     "n3": {"x": 1500, "y": 1300, "w": 380, "fill": "green", "text": "Stock movement fixes\n• Transfers + Distributions merged into one page with two tabs and clear names\n• Disabled action now explains itself\n• Empty state shows requirements with what you have\n• Offers the next useful action instead of a dead end"},

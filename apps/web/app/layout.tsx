@@ -16,7 +16,7 @@ const manrope = localFont({
 const THEME_SCRIPT = `try{var t=localStorage.getItem("pos-theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}`;
 
 export const metadata: Metadata = {
-  title: { default: "DeltCRM POS", template: "%s · DeltCRM POS" },
+  title: { default: "DeltPOS", template: "%s · DeltPOS" },
   description: "Retail point of sale: organisation administration, store operations and checkout",
 };
 
