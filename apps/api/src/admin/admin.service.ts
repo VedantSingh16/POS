@@ -12,7 +12,8 @@ import { UserContext } from '../auth/auth.types.js';
 import { ORGANISATION_ADMINISTRATOR_ROLE, PERMISSIONS } from '../auth/permission-catalogue.js';
 import { JsonObject, money, oneOf, optionalString, requiredString, stringArray, uuid } from '../common/input.js';
 import { validateTaxNumber } from '@pos/shared/tax-id';
-import { composeOmanAddress, isOmanCountry, normalizeOmanPhone, validateOmanAddress } from '@pos/shared/address-formats';
+import { composeOmanAddress, isOmanCountry, normalizeOmanPhone, type OmanAddressDetails } from '@pos/shared/address-formats';
+import { validateStoreHours, type StoreOperatingHours } from '@pos/shared/store-hours';
 import { isCurrencyCode, minorFactor } from '@pos/shared/currency';
 import { isMarketCode, MARKETS, taxRegimeFor } from '@pos/shared/markets';
 import { cleanAttributeValues, cleanTypeConfig, readTypeConfig, type TypeConfig } from './product-types.js';
@@ -111,8 +112,6 @@ export class AdminService {
     const effectiveCountry = countryCode ?? currentProfile.countryCode;
     if (effectiveGstin && !validateTaxNumber(effectiveCountry, effectiveGstin).valid) throw new BadRequestException('Enter a tax number for the selected country or clear the previous one.');
     if ((taxProfileStatus ?? currentProfile.taxProfileStatus) === 'REGISTERED' && !effectiveGstin && (effectiveCountry === 'IN' || effectiveCountry === 'OM')) throw new BadRequestException('A tax number is required when registration is selected');
-    const addressDetails = input.addressDetails === undefined ? undefined : isOmanCountry(effectiveCountry) ? validateOmanAddress(input.addressDetails) : undefined;
-    if (addressDetails && !addressDetails.valid) throw new BadRequestException(Object.values(addressDetails.errors)[0] ?? 'Enter a valid address');
     const organization = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.organization.update({
         where: { id: context.organizationId },
@@ -120,7 +119,7 @@ export class AdminService {
           ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
           ...(optionalString(input.legalName) !== undefined ? { legalName: optionalString(input.legalName) } : {}),
           ...(optionalString(input.tradeName) !== undefined ? { tradeName: optionalString(input.tradeName) } : {}),
-          ...(addressDetails ? { addressDetails: addressDetails.details as Prisma.InputJsonObject, address: composeOmanAddress(addressDetails.details).address } : optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
+          ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
           ...(gstin !== undefined ? { gstin } : {}),
           ...(optionalString(input.businessType) !== undefined ? { businessType: optionalString(input.businessType)?.toUpperCase() } : {}),
           ...(optionalString(input.timezone) !== undefined ? { timezone: optionalString(input.timezone) } : {}),
@@ -608,7 +607,10 @@ export class AdminService {
     const timezone = optionalString(input.timezone) || profile.timezone || DEFAULT_TIMEZONE;
     const closeHour = input.closeHour === undefined || input.closeHour === null || input.closeHour === '' ? null : Number(input.closeHour);
     if (closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('closeHour must be an integer from 0 to 23');
-    const structured = this.addressFromInput(profile.countryCode, input);
+    const structured = this.addressFromInput(input);
+    // The UI requires an address, while omitted address keeps older API clients compatible.
+    if (input.address !== undefined && !(structured?.address ?? address).trim()) throw new BadRequestException('address is required');
+    const operatingHours = input.operatingHours === undefined ? null : this.parseOperatingHours(input.operatingHours);
     const storePhone = this.phoneFromInput(profile.countryCode, phone);
 
     try {
@@ -622,7 +624,7 @@ export class AdminService {
         if (!entitlement || current >= entitlement.maxStores) {
           throw new ConflictException(`Store limit reached (${entitlement?.maxStores ?? 0})`);
         }
-        const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address: structured?.address ?? address, city: structured?.city ?? city, region: structured?.region ?? region, postalCode: structured?.postalCode ?? postalCode, phone: storePhone, timezone, closeHour, addressDetails: (structured?.addressDetails ?? {}) as Prisma.InputJsonObject, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
+        const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address: structured?.address ?? address, city: structured?.city ?? city, region: structured?.region ?? region, postalCode: structured?.postalCode ?? postalCode, phone: storePhone, timezone, closeHour, ...(operatingHours ? { operatingHours: operatingHours as Prisma.InputJsonValue } : {}), addressDetails: (structured?.addressDetails ?? {}) as Prisma.InputJsonObject, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
         await tx.stockLocation.create({
           data: { organizationId: context.organizationId, storeId: store.id, code: `${code}-STOCKROOM`, name: `${name} Stockroom` },
         });
@@ -655,16 +657,21 @@ export class AdminService {
     return { taxNumber: check.normalized };
   }
 
-  /**
-   * Omani stores send `addressDetails` (governorate, wilayat, area, way, building, unit, landmark, P.O. Box, postal code).
-   * The one-line address, city (wilayat), region (governorate) and postal code are derived from it so receipts and
-   * older screens keep working. Other countries, or requests without `addressDetails`, are left untouched.
-   */
-  private addressFromInput(countryCode: string, input: JsonObject): { address: string; city: string; region: string; postalCode: string; addressDetails: JsonObject } | undefined {
-    if (!isOmanCountry(countryCode) || input.addressDetails === undefined) return undefined;
-    const check = validateOmanAddress(input.addressDetails);
-    if (!check.valid) throw new BadRequestException(Object.values(check.errors)[0] ?? 'Enter a valid Omani address');
-    return { ...composeOmanAddress(check.details), addressDetails: check.details as JsonObject };
+  /** The new UI stores one compact address. Structured Oman data is only read to keep legacy records editable. */
+  private addressFromInput(input: JsonObject): { address: string; city?: string; region?: string; postalCode?: string; addressDetails: JsonObject } | undefined {
+    const direct = optionalString(input.address);
+    if (direct !== undefined) return { address: direct, addressDetails: {} };
+    if (!input.addressDetails || typeof input.addressDetails !== 'object' || Array.isArray(input.addressDetails)) return undefined;
+    const legacy = input.addressDetails as OmanAddressDetails;
+    const composed = composeOmanAddress(legacy);
+    return { ...composed, addressDetails: input.addressDetails as JsonObject };
+  }
+
+  private parseOperatingHours(input: unknown): StoreOperatingHours | null {
+    if (input === null) return null;
+    const parsed = validateStoreHours(input);
+    if (!parsed.valid) throw new BadRequestException(parsed.error ?? 'Enter valid operating hours');
+    return parsed.value;
   }
 
   /** Oman phone numbers are stored as +968XXXXXXXX; other countries keep what was entered. */
@@ -685,14 +692,16 @@ export class AdminService {
     if (closeHour !== undefined && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('closeHour must be an integer from 0 to 23');
     const taxPatch = await this.storeTaxNumber(context.organizationId, input);
     const country = (await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true } })).countryCode;
-    const structured = this.addressFromInput(country, input);
+    const structured = this.addressFromInput(input);
+    if (input.address !== undefined && !optionalString(input.address)) throw new BadRequestException('address is required');
+    const operatingHours = input.operatingHours === undefined ? undefined : this.parseOperatingHours(input.operatingHours);
     await this.prisma.$transaction(async (tx) => {
       await tx.store.update({
         where: { id: storeId },
         data: {
           ...taxPatch,
           ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
-          ...(structured ? { address: structured.address, city: structured.city, region: structured.region, postalCode: structured.postalCode, addressDetails: structured.addressDetails as Prisma.InputJsonObject } : {
+          ...(structured ? { address: structured.address, ...(structured.city !== undefined ? { city: structured.city } : {}), ...(structured.region !== undefined ? { region: structured.region } : {}), ...(structured.postalCode !== undefined ? { postalCode: structured.postalCode } : {}), addressDetails: structured.addressDetails as Prisma.InputJsonObject } : {
             ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
             ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
             ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
@@ -700,6 +709,7 @@ export class AdminService {
           }),
           ...(optionalString(input.phone) !== undefined ? { phone: this.phoneFromInput(country, optionalString(input.phone) ?? '') } : {}),
           ...(optionalString(input.timezone) ? { timezone: optionalString(input.timezone) } : {}),
+          ...(operatingHours !== undefined ? { operatingHours: operatingHours === null ? Prisma.JsonNull : operatingHours as Prisma.InputJsonValue } : {}),
           ...(closeHour !== undefined ? { closeHour } : {}),
           ...(status ? { status: status as RecordStatus } : {}),
         },
@@ -720,7 +730,8 @@ export class AdminService {
     const organisationProductFields = cleanFieldSet(orgSettings.productFields);
     const storeCheckoutFields = cleanFieldSet(fieldSettings.checkoutFields, 'CHECKOUT');
     const billing = { ...DEFAULT_BILLING_SETTINGS, ...objectField(store.billingSettings) };
-    return { id: store.id, code: store.code, name: store.name, address: store.address, city: store.city, region: store.region, postalCode: store.postalCode, addressDetails: objectField(store.addressDetails), countryCode: organization.countryCode, taxRegime: organization.taxRegime, phone: store.phone, timezone: store.timezone, closeHour: store.closeHour, taxNumber: store.taxNumber,
+    const operatingHours = store.operatingHours ? objectField(store.operatingHours) : {};
+    return { id: store.id, code: store.code, name: store.name, address: store.address, city: store.city, region: store.region, postalCode: store.postalCode, addressDetails: objectField(store.addressDetails), countryCode: organization.countryCode, taxRegime: organization.taxRegime, phone: store.phone, timezone: store.timezone, operatingHours: Object.keys(operatingHours).length ? operatingHours : null, closeHour: store.closeHour, taxNumber: store.taxNumber,
       organisationProductFields, effectiveProductFields: organisationProductFields.fields, effectiveProductCoreFields: organisationProductFields.coreFields,
       checkoutFieldSettings: storeCheckoutFields, effectiveCheckoutFields: storeCheckoutFields.fields,
       requireBillHandler: billing.requireBillHandler === true, ...(await this.storeBilling(context.organizationId, billing)) };
@@ -748,7 +759,9 @@ export class AdminService {
     if (closeHour !== undefined && closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('Close hour must be an integer from 0 to 23');
     const taxPatch = await this.storeTaxNumber(context.organizationId, input);
     const country = (await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true } })).countryCode;
-    const structured = this.addressFromInput(country, input);
+    const structured = this.addressFromInput(input);
+    if (input.address !== undefined && !optionalString(input.address)) throw new BadRequestException('address is required');
+    const operatingHours = input.operatingHours === undefined ? undefined : this.parseOperatingHours(input.operatingHours);
     if (input.billing !== undefined && (typeof input.billing !== 'object' || input.billing === null || Array.isArray(input.billing))) throw new BadRequestException('billing must be an object');
     const billingPatch = input.billing === undefined ? undefined : applyBillingPatch({ ...DEFAULT_BILLING_SETTINGS, ...objectField((await this.ensureStore(context.organizationId, id)).billingSettings) }, input.billing as JsonObject);
     const store = await this.ensureStore(context.organizationId, id);
@@ -765,7 +778,7 @@ export class AdminService {
         ...(billingPatch ? { billingSettings: billingPatch as Prisma.InputJsonObject } : {}),
         ...(fieldSettings ? { fieldSettings } : {}),
         ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
-        ...(structured ? { address: structured.address, city: structured.city, region: structured.region, postalCode: structured.postalCode, addressDetails: structured.addressDetails as Prisma.InputJsonObject } : {
+        ...(structured ? { address: structured.address, ...(structured.city !== undefined ? { city: structured.city } : {}), ...(structured.region !== undefined ? { region: structured.region } : {}), ...(structured.postalCode !== undefined ? { postalCode: structured.postalCode } : {}), addressDetails: structured.addressDetails as Prisma.InputJsonObject } : {
           ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) ?? '' } : {}),
           ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
           ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
@@ -773,6 +786,7 @@ export class AdminService {
         }),
         ...(optionalString(input.phone) !== undefined ? { phone: this.phoneFromInput(country, optionalString(input.phone) ?? '') } : {}),
         ...(optionalString(input.timezone) ? { timezone: optionalString(input.timezone) } : {}),
+        ...(operatingHours !== undefined ? { operatingHours: operatingHours === null ? Prisma.JsonNull : operatingHours as Prisma.InputJsonValue } : {}),
         ...(closeHour !== undefined ? { closeHour } : {}),
       } });
       await this.audit.record(context, 'store.settings.updated', 'Store', id, { fields: Object.keys(input) }, tx);
@@ -1506,15 +1520,16 @@ export class AdminService {
     const storeName = requiredString(storeInput.name, 'store.name');
     if (storeName.length > 120) throw new BadRequestException('Store name must be 120 characters or fewer');
     // Omani stores send structured address parts; everything else (and older clients) sends address and city directly.
-    const structured = this.addressFromInput(countryCode, storeInput);
+    const structured = this.addressFromInput(storeInput);
     const address = structured?.address ?? requiredString(storeInput.address, 'store.address');
-    const city = structured?.city ?? requiredString(storeInput.city, 'store.city');
+    if (!address.trim()) throw new BadRequestException('store.address is required');
+    const city = structured?.city ?? optionalString(storeInput.city) ?? '';
     const region = structured?.region ?? optionalString(storeInput.region) ?? '';
     const postalCode = structured?.postalCode ?? optionalString(storeInput.postalCode) ?? '';
     const phone = this.phoneFromInput(countryCode, optionalString(storeInput.phone) ?? '');
     const addressDetails = (structured?.addressDetails ?? {}) as Prisma.InputJsonObject;
     const storeTimezone = optionalString(storeInput.timezone) || organizationTimezone;
-    const organizationAddress = this.addressFromInput(countryCode, orgInput);
+    const organizationAddress = this.addressFromInput(orgInput);
     try { new Intl.DateTimeFormat('en', { timeZone: storeTimezone }); }
     catch { throw new BadRequestException('Choose a valid store time zone'); }
 

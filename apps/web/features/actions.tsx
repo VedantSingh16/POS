@@ -19,8 +19,6 @@ import { useLocale } from "@/components/i18n/locale-provider";
 import { ConfigurableFieldValues, type ConfiguredField } from "@/features/settings/configurable-field-values";
 import { MARKETS, taxRegimeFor } from "@pos/shared/markets";
 import { validateTaxNumber } from "@pos/shared/tax-id";
-import { validateOmanAddress, type OmanAddressDetails } from "@pos/shared/address-formats";
-import { OmanAddressFields } from "@/features/settings/oman-address-fields";
 
 export function useRun() {
   const router = useRouter();
@@ -108,14 +106,14 @@ export function CreditSheet({ customerId, stores }: { customerId: string; stores
 }
 
 /* ───────── Organisation profile ───────── */
-export type OrgProfile = { name: string; legalName: string; tradeName: string; gstin: string; address: string; addressDetails: OmanAddressDetails; timezone: string; businessType: string; countryCode: string; taxRegime: string; taxProfileStatus: string };
+export type OrgProfile = { name: string; legalName: string; tradeName: string; gstin: string; address: string; addressDetails: Record<string, unknown>; timezone: string; businessType: string; countryCode: string; taxRegime: string; taxProfileStatus: string };
 export function OrgProfileForm({ initial }: { initial: OrgProfile }) {
   const { busy, run } = useRun();
   const [v, setV] = React.useState(initial);
   const set = (k: keyof OrgProfile) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setV((c) => ({ ...c, [k]: e.target.value }));
   const dirty = JSON.stringify(v) !== JSON.stringify(initial);
   return (
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (v.name.trim().length < 2) { toast.error("Enter the organisation name."); return; } if (v.gstin.trim() && !validateTaxNumber(v.countryCode, v.gstin).valid) { toast.error("Enter a valid tax number for the selected country."); return; } if (v.taxProfileStatus === "REGISTERED" && (v.countryCode === "IN" || v.countryCode === "OM") && !v.gstin.trim()) { toast.error("Enter the registration number."); return; } const hasAddressDetails = Object.values(v.addressDetails).some(Boolean); if (v.countryCode === "OM" && hasAddressDetails) { const check = validateOmanAddress(v.addressDetails); if (!check.valid) { toast.error(Object.values(check.errors)[0] ?? "Complete the address."); return; } } void run(() => send("/admin/organization", "PATCH", { ...v, ...(v.countryCode === "OM" && hasAddressDetails ? { addressDetails: v.addressDetails } : { addressDetails: undefined }) }), "Organisation profile saved"); }}>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); if (v.name.trim().length < 2) { toast.error("Enter the organisation name."); return; } if (v.gstin.trim() && !validateTaxNumber(v.countryCode, v.gstin).valid) { toast.error("Enter a valid tax number for the selected country."); return; } if (v.taxProfileStatus === "REGISTERED" && (v.countryCode === "IN" || v.countryCode === "OM") && !v.gstin.trim()) { toast.error("Enter the registration number."); return; } void run(() => send("/admin/organization", "PATCH", { ...v, address: v.address.trim(), addressDetails: undefined }), "Organisation profile saved"); }}>
       <L label="Organisation name"><Input value={v.name} onChange={set("name")} /></L>
       <L label="Country or region"><NativeSelect value={v.countryCode} onChange={(event) => setV((current) => ({ ...current, countryCode: event.target.value, taxRegime: taxRegimeFor(event.target.value), gstin: "" }))}>{MARKETS.map((market) => <option key={market.code} value={market.code}>{market.name}</option>)}</NativeSelect></L>
       <L label="Legal name"><Input value={v.legalName} onChange={set("legalName")} /></L>
@@ -132,8 +130,6 @@ export function OrgProfileForm({ initial }: { initial: OrgProfile }) {
       <L label="Tax wording"><NativeSelect value={v.taxRegime} onChange={set("taxRegime")}><option value="VAT"><LocalizedText value={"VAT"} /></option><option value="GST"><LocalizedText value={"GST"} /></option><option value="TAX"><LocalizedText value={"Tax"} /></option></NativeSelect></L>
       {v.taxProfileStatus === "REGISTERED" && <L label={v.taxRegime === "GST" ? "GSTIN" : v.taxRegime === "VAT" ? "VAT number" : "Tax number"} hint="Printed on tax invoices."><Input value={v.gstin} onChange={set("gstin")} maxLength={v.countryCode === "IN" ? 15 : v.countryCode === "OM" ? 12 : 20} /></L>}
       <p className="text-xs text-muted-foreground sm:col-span-2"><LocalizedText value={"When tax is registered, each product needs an assigned tax group before it can be sold. “Not sure yet” pauses sales until this profile is reviewed."} /></p>
-      <L label="Registered address"><Input value={v.address} onChange={set("address")} /></L>
-      {v.countryCode === "OM" && <OmanAddressFields idPrefix="org" value={v.addressDetails} onChange={(addressDetails) => setV((current) => ({ ...current, addressDetails }))} />}
       <L label="Time zone"><Input value={v.timezone} onChange={set("timezone")} /></L>
       <L label="Business type"><NativeSelect value={v.businessType} onChange={set("businessType")}><option value="RETAIL"><LocalizedText value={"Retail"} /></option><option value="GROCERY"><LocalizedText value={"Grocery"} /></option><option value="PHARMACY"><LocalizedText value={"Pharmacy"} /></option><option value="OTHER"><LocalizedText value={"Other"} /></option></NativeSelect></L>
       <div className="flex items-end justify-end sm:col-span-2"><Button type="submit" disabled={busy || !dirty}><LocalizedText value={busy ? "Saving…" : "Save profile"} /></Button></div>

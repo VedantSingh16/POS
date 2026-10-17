@@ -38,6 +38,7 @@ import { GST_STATES, gstinStateCode, isIntraState, validateGstin, validateTaxNum
 import { createHash } from 'node:crypto';
 import { PaymentsService } from './payments/payments.service.js';
 import { verifyPassword } from '../security/password.js';
+import { isStoreOpenAt, validateStoreHours } from '@pos/shared/store-hours';
 
 type LineInput = { variantId?: unknown; quantity?: unknown; note?: unknown; discountCents?: unknown; discountPercent?: unknown; discountReason?: unknown; unitPriceCents?: unknown; priceIncludesTax?: unknown };
 
@@ -615,6 +616,18 @@ export class PosService {
     const registerId = uuid(input.registerId, 'registerId');
     this.authorization.assertStoreAccess(context, storeId);
     this.authorization.assertPermissions(context, ['register.open'], storeId);
+    const storeSettings = await this.prisma.store.findFirst({ where: { id: storeId, organizationId: context.organizationId, status: 'ACTIVE' }, select: { timezone: true, operatingHours: true } });
+    if (!storeSettings) throw new NotFoundException('Active store not found');
+    const operatingHours = storeSettings.operatingHours;
+    const hasConfiguredHours = operatingHours !== null
+      && typeof operatingHours === 'object'
+      && !Array.isArray(operatingHours)
+      && Object.keys(operatingHours as Record<string, unknown>).length > 0;
+    if (hasConfiguredHours) {
+      const parsedHours = validateStoreHours(operatingHours);
+      if (!parsedHours.valid) throw new BadRequestException('The store operating hours are invalid; update them before opening a register');
+      if (!isStoreOpenAt(parsedHours.value, storeSettings.timezone)) throw new BadRequestException({ code: 'STORE_CLOSED', message: 'Registers can only be opened during store operating hours' });
+    }
     const register = await this.prisma.register.findFirst({
       where: { id: registerId, organizationId: context.organizationId, status: 'ACTIVE' },
     });
@@ -724,11 +737,12 @@ export class PosService {
     this.authorization.assertPermissions(context, ['register.close'], initial.storeId);
     const settings = await this.orgSettings(context.organizationId, initial.storeId);
     const tolerance = Math.max(0, Number(settings.cashVarianceToleranceCents ?? 0) || 0);
-    const expectedVariance = counted - initial.expectedCashCents;
+    const expectedCash = await this.calculateExpectedCash(this.prisma, initial);
+    const expectedVariance = counted - expectedCash;
     const requiresReview = Math.abs(expectedVariance) > tolerance;
     const closeReason = optionalString(input.reason) ?? '';
     if (requiresReview && !closeReason.trim()) throw new BadRequestException('A reason is required for a register variance outside the configured tolerance');
-    const closePayload = { countedCashCents: counted, expectedCashCents: initial.expectedCashCents, varianceCents: expectedVariance, reason: closeReason };
+    const closePayload = { countedCashCents: counted, expectedCashCents: expectedCash, varianceCents: expectedVariance, reason: closeReason };
     const closeApprovalToken = requiresReview && input.approvalId !== undefined
       ? await this.findApprovalToken(context, input.approvalId, 'REGISTER_VARIANCE', initial.storeId, sessionId, closePayload)
       : null;
@@ -739,12 +753,13 @@ export class PosService {
       if (closeApprovalToken) await this.consumeApprovalToken(tx, context, closeApprovalToken.tokenId, 'REGISTER_VARIANCE', initial.storeId, sessionId, closePayload);
       const session = await this.openSessionRow(context, sessionId, tx);
       this.authorization.assertPermissions(context, ['register.close'], session.storeId);
-      const variance = counted - session.expectedCashCents;
+      const recalculatedExpectedCash = await this.calculateExpectedCash(tx, session);
+      const variance = counted - recalculatedExpectedCash;
       if (variance !== expectedVariance) throw new ConflictException('Register cash changed during close; recount and try again');
       // `status: OPEN` in the filter makes a concurrent double-close a no-op instead of a second close.
       const result = await tx.registerSession.updateMany({
         where: { id: sessionId, status: 'OPEN' },
-        data: { status: 'CLOSED', countedCashCents: counted, varianceCents: variance, closedAt: new Date(), closedById: context.userId, closeApprovedById, closeReason, forcedClosed: false },
+        data: { status: 'CLOSED', expectedCashCents: recalculatedExpectedCash, countedCashCents: counted, varianceCents: variance, closedAt: new Date(), closedById: context.userId, closeApprovedById, closeReason, forcedClosed: false },
       });
       if (result.count === 0) throw new ConflictException('Register session is already closed');
       await tx.alert.updateMany({ where: { organizationId: context.organizationId, type: 'REGISTER_NOT_CLOSED', referenceId: sessionId, status: { in: ['OPEN', 'ACKNOWLEDGED'] } }, data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedById: context.userId, resolutionNote: 'Register session closed', activeDedupeKey: null } });
@@ -765,10 +780,19 @@ export class PosService {
         consumedAt: new Date(),
         payloadHash: this.approvalPayloadHash('REGISTER_VARIANCE', session.storeId, sessionId, closePayload),
       } });
-      await this.audit.record(context, 'register-session.closed', 'RegisterSession', sessionId, { counted, expected: session.expectedCashCents, variance, denominations: denominationCount?.items ?? null, reason: closeReason, approvedById: closeApprovedById }, tx);
+      await this.audit.record(context, 'register-session.closed', 'RegisterSession', sessionId, { counted, expected: recalculatedExpectedCash, variance, denominations: denominationCount?.items ?? null, reason: closeReason, approvedById: closeApprovedById }, tx);
       return session.id;
     });
     return { ...(await this.sessionById(context, closed)), countedByDenomination: denominationCount?.items ?? null };
+  }
+
+  private async calculateExpectedCash(tx: Tx | PrismaService, session: { id: string; openingFloatCents: number }): Promise<number> {
+    const [payments, refunds, movements] = await Promise.all([
+      tx.salePayment.aggregate({ where: { tenderType: 'CASH', sale: { sessionId: session.id, status: 'COMPLETED' } }, _sum: { amountCents: true } }),
+      tx.saleReturn.aggregate({ where: { sessionId: session.id, status: 'COMPLETED', refundTender: 'CASH' }, _sum: { totalCents: true } }),
+      tx.cashMovement.aggregate({ where: { sessionId: session.id }, _sum: { amountCents: true } }),
+    ]);
+    return session.openingFloatCents + (payments._sum.amountCents ?? 0) - (refunds._sum.totalCents ?? 0) + (movements._sum.amountCents ?? 0);
   }
 
   async sessionSummary(context: UserContext, sessionId: string) {

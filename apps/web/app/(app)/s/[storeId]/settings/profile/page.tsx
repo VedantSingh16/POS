@@ -12,7 +12,7 @@ export default async function StoreProfileSettings({ params }: PageProps<"/s/[st
   const { data } = await api.storeSettings(storeId);
   const canEdit = (me.permissions.stores[storeId] ?? []).includes("store.settings.manage");
   return <>
-    <PageHeader title="Store profile" description="Store identity, invoice details, time zone, and business close hour." crumbs={[{ label: "Settings", href: `/s/${storeId}/settings/profile` }, { label: store?.name ?? "Store" }, { label: "Store profile" }]} />
+    <PageHeader title="Store profile" description="Store identity, invoice details, time zone, and register operating hours." crumbs={[{ label: "Settings", href: `/s/${storeId}/settings/profile` }, { label: store?.name ?? "Store" }, { label: "Store profile" }]} />
     <StoreSettingsForm initial={data} canEdit={canEdit} />
   </>;
 }

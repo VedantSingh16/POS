@@ -316,6 +316,8 @@ model Store {
   /// Structured address parts for countries with their own format (Oman: governorate, wilayat, area, way, building, unit, landmark, P.O. Box). `address`, `city`, `region` and `postalCode` are derived from it.
   addressDetails  Json         @default("{}") @map("address_details")
   timezone        String       @default("Asia/Muscat")
+  /// Null means the store has no operating-hours restriction. When set, this is a weekly map of day -> { open, close } or null.
+  operatingHours  Json?        @map("operating_hours")
   closeHour       Int?         @map("close_hour")
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)

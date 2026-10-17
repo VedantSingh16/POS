@@ -11,7 +11,6 @@ export default async function CatalogueLayout({ children, modal }: { children: R
     { label: "Categories", href: "/org/catalog/categories" },
     ...(fields.coreFields.includes("brand") ? [{ label: "Brands", href: "/org/catalog/brands" }] : []),
     { label: "Units", href: "/org/catalog/units" },
-    { label: "Tax", href: "/org/catalog/tax" },
     { label: "Import", href: "/org/catalog/import" },
     { label: "Setup", href: "/org/catalog/setup" },
   ];

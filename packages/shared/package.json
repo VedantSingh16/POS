@@ -61,6 +61,11 @@
       "node": "./dist/address-formats.js",
       "default": "./src/address-formats.ts"
     },
+    "./store-hours": {
+      "types": "./src/store-hours.ts",
+      "node": "./dist/store-hours.js",
+      "default": "./src/store-hours.ts"
+    },
     "./locale": {
       "types": "./src/locale.ts",
       "node": "./dist/locale.js",

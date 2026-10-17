@@ -17,6 +17,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:seed:verification": "tsx prisma/seed-verification.ts",
     "db:prepare": "prisma migrate deploy && prisma db seed",
     "lint": "oxlint src/ test/",
     "test": "vitest run",
