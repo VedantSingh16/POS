@@ -1,14 +1,15 @@
 import { LocalizedText } from "@/components/i18n/localized-text";
 import { AlertTriangle, Inbox, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useLocale } from "@/components/i18n/locale-provider";
 
-export function Money({ minor, className }: { minor: number; className?: string }) {
-  const { locale } = useLocale();
-  return <span className={cn("tabular font-medium", minor < 0 && "text-danger", className)}>{formatMoney(minor, locale)}</span>;
-}
+/**
+ * Money lives in its own "use client" file (./money.tsx) because it calls the
+ * useLocale() hook. This file renders fine as a Server Component as long as
+ * none of its own exports call a hook directly; re-exporting Money keeps the
+ * existing `from "@/components/data/primitives"` imports working unchanged.
+ */
+export { Money } from "@/components/data/money";
 
 type Tone = "neutral" | "success" | "warning" | "danger" | "info" | "brand";
 const STATUS_TONE: Record<string, Tone> = {

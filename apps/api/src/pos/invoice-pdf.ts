@@ -6,6 +6,8 @@
 export type InvoiceData = {
   /** ISO code of the currency the sale was made in (OMR, INR...). Decides decimals, symbol and the words. */
   currency: string;
+  countryCode?: string;
+  taxRegime?: 'GST' | 'VAT' | 'TAX';
   invoiceNumber: string;
   issuedAt: Date;
   timezone: string;
@@ -134,10 +136,9 @@ function formatDate(date: Date, timezone: string): string {
 
 export function buildInvoicePdf(data: InvoiceData): Buffer {
   const amt = (cents: number) => rupees(cents, data.currency);
-  // India: GST with CGST+SGST or IGST. Everywhere else: one VAT line.
-  const india = data.currency === 'INR';
-  const taxName = india ? 'GST' : 'VAT';
-  const taxIdName = india ? 'GSTIN' : 'Tax no.';
+  const india = (data.countryCode ?? (data.currency === 'INR' ? 'IN' : '')) === 'IN';
+  const taxName = data.taxRegime ?? (data.countryCode === 'OM' ? 'VAT' : india ? 'GST' : 'TAX');
+  const taxIdName = taxName === 'GST' && india ? 'GSTIN' : taxName === 'VAT' ? 'VAT no.' : 'Tax no.';
   const withSymbol = (cents: number) => `${currencyInfo(data.currency).symbol === '₹' ? 'Rs.' : currencyInfo(data.currency).symbol} ${amt(cents)}`;
   const pages: Page[] = [];
   let page = new Page();
@@ -150,7 +151,7 @@ export function buildInvoicePdf(data: InvoiceData): Buffer {
     page.rect(M, y - 9, W - 2 * M, 15, 0.92);
     page.text(cols.no + 2, y + 2, '#', 7.5, true);
     page.text(cols.item, y + 2, 'Item', 7.5, true);
-    page.text(cols.hsn, y + 2, 'HSN', 7.5, true);
+    page.text(cols.hsn, y + 2, india ? 'HSN' : 'HS code', 7.5, true);
     page.text(cols.qty, y + 2, 'Qty', 7.5, true, 'r');
     page.text(cols.rate, y + 2, 'Rate', 7.5, true, 'r');
     page.text(cols.disc, y + 2, 'Disc', 7.5, true, 'r');
@@ -180,7 +181,7 @@ export function buildInvoicePdf(data: InvoiceData): Buffer {
   page.text(M, y, 'Billed to', 7.5, true);
   page.text(300, y, 'Sale details', 7.5, true);
   y += 11;
-  const intraState = india && (data.placeOfSupply?.intraState ?? true);
+  const intraState = india && taxName === 'GST' && (data.placeOfSupply?.intraState ?? true);
   page.text(M, y, data.buyer?.legalName || data.customer?.name || 'Walk-in customer', 9, true);
   page.text(300, y, `Recorded by: ${data.cashier || '-'}`, 9);
   y += 11;

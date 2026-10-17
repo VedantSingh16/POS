@@ -6,7 +6,7 @@ import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { RolesTable } from "@/features/tables";
 import { api } from "@/features/api";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 export async function generateMetadata() { return { title: await getLocalizedPageTitle("Roles") }; }
 

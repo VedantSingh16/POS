@@ -34,7 +34,7 @@ import { formatMinor, minorFactor } from '@pos/shared/currency';
 import { currencyFromSettings } from '../common/org-currency.js';
 import { DEFAULT_BILLING_SETTINGS } from '../common/billing-settings.js';
 import { cleanFieldSet, cleanFieldValues, objectField } from '../common/field-config.js';
-import { GST_STATES, gstinStateCode, isIntraState, validateGstin } from '@pos/shared/tax-id';
+import { GST_STATES, gstinStateCode, isIntraState, validateGstin, validateTaxNumber } from '@pos/shared/tax-id';
 import { createHash } from 'node:crypto';
 import { PaymentsService } from './payments/payments.service.js';
 import { verifyPassword } from '../security/password.js';
@@ -280,6 +280,57 @@ export class PosService {
         stock: stock.get(variant.id) ?? 0,
       };
     });
+  }
+
+  async getStoreProduct(context: UserContext, requestedStoreId: string, requestedVariantId: string) {
+    const storeId = uuid(requestedStoreId, 'storeId');
+    const variantId = uuid(requestedVariantId, 'variantId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['catalog.view'], storeId);
+    const productFieldConfig = cleanFieldSet((await this.orgSettings(context.organizationId, storeId)).productFields);
+    const variant = await this.prisma.productVariant.findFirst({
+      where: { id: variantId, organizationId: context.organizationId },
+      include: {
+        product: { include: { category: { select: { id: true, name: true } }, productType: { select: { id: true, name: true } }, brandRef: { select: { id: true, name: true } }, variants: { select: { id: true, sku: true, name: true, status: true, uomId: true, customFields: true, barcodes: { select: { code: true }, orderBy: { code: 'asc' } }, prices: this.currentPriceFilter(storeId) } } } },
+        uom: { select: { id: true, code: true, name: true } },
+        barcodes: { select: { code: true }, orderBy: { code: 'asc' } },
+        prices: this.currentPriceFilter(storeId),
+        storeVariants: { where: { storeId }, include: { taxGroup: { select: { id: true, name: true, rateBps: true, includesTax: true, status: true } } } },
+      },
+    });
+    if (!variant) throw new NotFoundException('Product not found');
+    const assignment = variant.storeVariants[0];
+    if (!assignment || assignment.status !== 'ACTIVE') throw new NotFoundException('Product is not sold in this store');
+    const [balances, movements, sales] = await Promise.all([
+      this.prisma.inventoryBalance.findMany({ where: { organizationId: context.organizationId, variantId, location: { storeId } }, include: { location: { select: { id: true, name: true, code: true } } }, orderBy: { location: { name: 'asc' } } }),
+      this.prisma.inventoryMovement.findMany({ where: { organizationId: context.organizationId, variantId, location: { storeId } }, include: { location: { select: { name: true, code: true } } }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      this.prisma.saleLine.findMany({ where: { variantId, sale: { organizationId: context.organizationId, storeId } }, include: { sale: { select: { id: true, receiptNumber: true, createdAt: true, status: true } } }, orderBy: { sale: { createdAt: 'desc' } }, take: 10 }),
+    ]);
+    const canViewCost = this.authorization.hasPermission(context, 'report.view', storeId);
+    return {
+      variantId: variant.id,
+      productId: variant.productId,
+      name: variant.product.name,
+      variantName: variant.name,
+      sku: variant.sku,
+      barcodes: variant.barcodes.map((barcode) => barcode.code),
+      description: variant.product.description,
+      brand: variant.product.brandRef?.name ?? variant.product.brand,
+      category: variant.product.category,
+      productType: variant.product.productType,
+      productCoreFields: productFieldConfig.coreFields,
+      customFields: { ...objectField(variant.product.customFields), ...objectField(variant.customFields) },
+      status: variant.status,
+      uom: variant.uom,
+      price: this.pickPrice(variant.prices, storeId),
+      taxGroup: assignment.taxGroup?.status === 'ACTIVE' ? { id: assignment.taxGroup.id, name: assignment.taxGroup.name, ratePercent: assignment.taxGroup.rateBps / 100, includesTax: assignment.taxGroup.includesTax } : null,
+      ...(canViewCost ? { costCents: variant.costCents } : {}),
+      stock: balances.map((balance) => ({ locationId: balance.locationId, locationName: balance.location.name, locationCode: balance.location.code, status: balance.status, quantity: Number(balance.quantity), reorderPoint: Number(balance.reorderPoint), safetyStock: Number(balance.safetyStock) })),
+      activity: {
+        movements: movements.map((movement) => ({ id: movement.id, at: movement.createdAt, type: movement.type, quantity: Number(movement.quantity), status: movement.status, reason: movement.reason, locationName: movement.location.name, locationCode: movement.location.code, ...(canViewCost ? { unitCostCents: movement.unitCostCents } : {}) })),
+        sales: sales.map((line) => ({ id: line.id, saleId: line.sale.id, receiptNumber: line.sale.receiptNumber, at: line.sale.createdAt, status: line.sale.status, quantity: Number(line.quantity), unitPriceCents: line.unitPriceCents, taxCents: line.taxCents, lineTotalCents: line.lineTotalCents, ...(canViewCost ? { unitCostCents: line.unitCostCents } : {}) })),
+      },
+    };
   }
 
   async assignStoreProducts(context: UserContext, input: JsonObject) {
@@ -1268,18 +1319,20 @@ export class PosService {
     if (!sale) throw new NotFoundException('Sale not found');
     this.authorization.assertStoreAccess(context, sale.storeId);
     this.authorization.assertPermissions(context, ['sale.view'], sale.storeId);
-    type Snapshot = { seller: { name: string; address: string; taxNumber: string; stateCode: string; storeName: string; storeCode: string; storeAddress: string; timezone: string }; buyer: { name: string; phone: string; isBusiness: boolean; legalName: string; taxNumber: string; address: string; stateCode: string } | null; placeOfSupply: { stateCode: string; stateName: string; intraState: boolean }; footer: string; billHandler?: string; checkoutFields?: { key: string; label: string; type: string; value: string | number | boolean; showOnReceipt?: boolean }[] };
+    type Snapshot = { countryCode?: string; taxRegime?: 'GST' | 'VAT' | 'TAX'; seller: { name: string; address: string; taxNumber: string; stateCode: string; storeName: string; storeCode: string; storeAddress: string; timezone: string }; buyer: { name: string; phone: string; isBusiness: boolean; legalName: string; taxNumber: string; address: string; stateCode: string } | null; placeOfSupply: { stateCode: string; stateName: string; intraState: boolean }; footer: string; billHandler?: string; checkoutFields?: { key: string; label: string; type: string; value: string | number | boolean; showOnReceipt?: boolean }[] };
     let snapshot = sale.documentSnapshot as Snapshot | null;
     if (!snapshot) {
       // Sales made before invoices were frozen: build the same shape from today's details.
       const [organization, settings] = await Promise.all([
-        this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true } }),
+        this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true, countryCode: true, taxRegime: true } }),
         this.orgSettings(context.organizationId, sale.storeId),
       ]);
       const taxNumber = sale.store.taxNumber || organization?.gstin || '';
       const sellerState = gstinStateCode(taxNumber);
       const buyerState = sale.customer ? sale.customer.stateCode || gstinStateCode(sale.customer.taxNumber) : '';
       snapshot = {
+        countryCode: organization?.countryCode,
+        taxRegime: organization?.taxRegime as Snapshot['taxRegime'],
         seller: { name: organization?.legalName || organization?.tradeName || organization?.name || 'Invoice', address: organization?.address ?? '', taxNumber, stateCode: sellerState, storeName: sale.store.name, storeCode: sale.store.code, storeAddress: sale.store.address, timezone: sale.store.timezone },
         buyer: sale.customer ? { name: sale.customer.name, phone: sale.customer.phone, isBusiness: sale.customer.isBusiness, legalName: sale.customer.legalName, taxNumber: sale.customer.taxNumber, address: sale.customer.billingAddress, stateCode: buyerState } : null,
         placeOfSupply: { stateCode: buyerState || sellerState, stateName: GST_STATES[buyerState || sellerState] ?? '', intraState: isIntraState(sellerState, buyerState) },
@@ -1289,6 +1342,8 @@ export class PosService {
     const charges = (Array.isArray(sale.charges) ? sale.charges : []) as { name: string; amountCents: number; taxCents: number; taxRateBps: number }[];
     const buffer = buildInvoicePdf({
       currency: (sale.documentSnapshot as { currency?: string } | null)?.currency ?? currencyFromSettings(await this.orgSettings(context.organizationId)),
+      countryCode: snapshot.countryCode,
+      taxRegime: snapshot.taxRegime,
       invoiceNumber: sale.receiptNumber,
       issuedAt: sale.createdAt,
       timezone: snapshot.seller.timezone || sale.store.timezone,
@@ -2320,26 +2375,26 @@ export class PosService {
     };
   }
 
-  /** Business-customer identity: a valid GSTIN gives the state; without one the state may be given directly. */
-  private customerIdentity(input: JsonObject, current: { isBusiness: boolean; taxNumber: string; stateCode: string } | null) {
+  /** Business-customer identity. India keeps GST state handling; other markets use their configured tax number format. */
+  private customerIdentity(input: JsonObject, current: { isBusiness: boolean; taxNumber: string; stateCode: string } | null, countryCode: string) {
     const taxInput = input.taxNumber === undefined ? undefined : optionalString(input.taxNumber) ?? '';
     let taxNumber = current?.taxNumber ?? '';
     let stateCode = current?.stateCode ?? '';
     if (taxInput !== undefined) {
       if (taxInput === '') { taxNumber = ''; if (input.stateCode === undefined) stateCode = ''; } else {
-        const check = validateGstin(taxInput);
+        const check = countryCode === 'IN' ? validateGstin(taxInput) : validateTaxNumber(countryCode, taxInput);
         if (!check.valid) throw new BadRequestException(check.error ?? 'Invalid tax number');
         taxNumber = check.normalized;
-        stateCode = check.stateCode;
+        stateCode = countryCode === 'IN' ? check.stateCode : '';
       }
     }
     if (input.stateCode !== undefined && !taxNumber) {
       const code = optionalString(input.stateCode) ?? '';
-      if (code && !GST_STATES[code]) throw new BadRequestException(`Unknown GST state code ${code}`);
+      if (countryCode === 'IN' && code && !GST_STATES[code]) throw new BadRequestException(`Unknown GST state code ${code}`);
       stateCode = code;
     }
     const isBusiness = input.isBusiness === undefined ? (current?.isBusiness ?? false) || Boolean(taxNumber) : input.isBusiness === true;
-    if (isBusiness && !taxNumber) throw new BadRequestException('A business customer needs a GSTIN / tax number');
+    if (isBusiness && !taxNumber) throw new BadRequestException('A business customer needs a tax registration number');
     return {
       isBusiness,
       taxNumber,
@@ -2359,7 +2414,8 @@ export class PosService {
   }
 
   async createCustomer(context: UserContext, input: JsonObject) {
-    const identity = this.customerIdentity(input, null);
+    const organization = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true } });
+    const identity = this.customerIdentity(input, null, organization.countryCode);
     const customer = await this.prisma.customer.create({
       data: {
         organizationId: context.organizationId,
@@ -2378,7 +2434,8 @@ export class PosService {
   async updateCustomer(context: UserContext, customerId: string, input: JsonObject) {
     const current = await this.prisma.customer.findFirst({ where: { id: uuid(customerId, 'customerId'), organizationId: context.organizationId } });
     if (!current) throw new NotFoundException('Customer not found');
-    const identity = this.customerIdentity(input, current);
+    const organization = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true } });
+    const identity = this.customerIdentity(input, current, organization.countryCode);
     const customer = await this.prisma.customer.update({
       where: { id: current.id },
       data: {
@@ -2621,6 +2678,7 @@ export class PosService {
     if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') throw new ForbiddenException('Demo data is disabled in production');
     const organizationId = context.organizationId;
     return this.prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { countryCode: true, taxRegime: true } });
       let store = await tx.store.findUnique({ where: { organizationId_code: { organizationId, code: 'MAIN' } } });
       if (!store) {
         await tx.$queryRaw`SELECT id FROM organizations WHERE id = ${organizationId}::uuid FOR UPDATE`;
@@ -2662,9 +2720,10 @@ export class PosService {
         await tx.variantPrice.create({ data: { organizationId, variantId: variant.id, amountCents: 49900, currency: currencyFromSettings(await this.orgSettings(organizationId)), includesTax: true } });
       }
       await this.ensureStoreProduct(tx, organizationId, store.id, variant.id);
+      const taxCode = organization.taxRegime === 'GST' ? 'GST5' : organization.taxRegime === 'VAT' ? 'VAT5' : 'TAX5';
       const storeTax = await tx.taxGroup.upsert({
-        where: { organizationId_storeId_code: { organizationId, storeId: store.id, code: 'GST5' } },
-        create: { organizationId, storeId: store.id, code: 'GST5', name: 'GST 5%', rateBps: 500 },
+        where: { organizationId_storeId_code: { organizationId, storeId: store.id, code: taxCode } },
+        create: { organizationId, storeId: store.id, code: taxCode, name: `${organization.taxRegime} 5%`, rateBps: 500 },
         update: { status: 'ACTIVE' },
       });
       await tx.storeVariant.update({ where: { storeId_variantId: { storeId: store.id, variantId: variant.id } }, data: { taxGroupId: storeTax.id } });
@@ -2765,7 +2824,7 @@ export class PosService {
     if (!store) throw new NotFoundException('Store not found');
     const name = requiredString(input.name, 'name');
     const ratePercent = finiteNumber(input.ratePercent, 'ratePercent');
-    if (ratePercent < 0 || ratePercent > 100) throw new BadRequestException('GST rate must be between 0 and 100');
+    if (ratePercent < 0 || ratePercent > 100) throw new BadRequestException('Tax rate must be between 0 and 100');
     const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24) || 'TAX';
     const code = `${store.code}_${slug}`;
     try {
@@ -2789,7 +2848,7 @@ export class PosService {
     if (!current) throw new NotFoundException('Tax group not found in this store');
     const name = input.name === undefined ? undefined : requiredString(input.name, 'name');
     const ratePercent = input.ratePercent === undefined ? undefined : finiteNumber(input.ratePercent, 'ratePercent');
-    if (ratePercent !== undefined && (ratePercent < 0 || ratePercent > 100)) throw new BadRequestException('GST rate must be between 0 and 100');
+    if (ratePercent !== undefined && (ratePercent < 0 || ratePercent > 100)) throw new BadRequestException('Tax rate must be between 0 and 100');
     const updated = await this.prisma.taxGroup.update({ where: { id }, data: {
       ...(name ? { name } : {}), ...(input.hsnCode !== undefined ? { hsnCode: optionalString(input.hsnCode) ?? '' } : {}),
       ...(ratePercent !== undefined ? { rateBps: Math.round(ratePercent * 100) } : {}),
@@ -3179,7 +3238,7 @@ export class PosService {
   /** Seller, buyer and place of supply as they are now, saved on the sale so a reprint never changes. */
   private async documentSnapshot(context: UserContext, storeId: string, customer: CustomerForPricing | null, settings: JsonObject): Promise<JsonObject> {
     const [organization, store] = await Promise.all([
-      this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true } }),
+      this.prisma.organization.findUnique({ where: { id: context.organizationId }, select: { name: true, legalName: true, tradeName: true, address: true, gstin: true, countryCode: true, taxRegime: true } }),
       this.prisma.store.findUnique({ where: { id: storeId }, select: { name: true, code: true, address: true, taxNumber: true, timezone: true } }),
     ]);
     const sellerTaxNumber = store?.taxNumber || organization?.gstin || '';
@@ -3190,6 +3249,8 @@ export class PosService {
     return {
       version: 1,
       currency: currencyFromSettings(settings),
+      countryCode: organization?.countryCode ?? 'OM',
+      taxRegime: organization?.taxRegime ?? 'VAT',
       seller: {
         name: organization?.legalName || organization?.tradeName || organization?.name || 'Invoice',
         address: organization?.address ?? '',
@@ -3198,7 +3259,7 @@ export class PosService {
         storeName: store?.name ?? '',
         storeCode: store?.code ?? '',
         storeAddress: store?.address ?? '',
-        timezone: store?.timezone ?? 'Asia/Kolkata',
+        timezone: store?.timezone ?? 'Asia/Muscat',
       },
       buyer: customer ? { name: customer.name, phone: customer.phone, isBusiness: customer.isBusiness, legalName: customer.legalName, taxNumber: customer.taxNumber, address: customer.billingAddress, stateCode: buyerState } : null,
       placeOfSupply: { stateCode: supplyState, stateName: GST_STATES[supplyState] ?? '', intraState },
@@ -3336,8 +3397,8 @@ export class PosService {
   /** Sequential, gap-free numbering per store and document kind. Must run inside the document's transaction. */
   /** Gap-free numbers per store, kind and financial year (April-March): TAX-2627-000001. Rolls back with the sale. */
   private async nextDocumentNumber(tx: Tx, organizationId: string, storeId: string, kind: 'TAX' | 'CN') {
-    const store = await tx.store.findUnique({ where: { id: storeId }, select: { timezone: true } });
-    const year = financialYearLabel(new Date(), store?.timezone ?? 'Asia/Kolkata');
+    const store = await tx.store.findUnique({ where: { id: storeId }, select: { timezone: true, organization: { select: { countryCode: true } } } });
+    const year = financialYearLabel(new Date(), store?.timezone ?? 'Asia/Muscat', store?.organization.countryCode ?? 'OM');
     const sequence = await tx.documentSequence.upsert({
       where: { storeId_kind: { storeId, kind: `${kind}-${year}` } },
       create: { organizationId, storeId, kind: `${kind}-${year}`, lastValue: 1 },

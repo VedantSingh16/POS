@@ -89,7 +89,7 @@ try {
   await skuInput.fill("BROWSER-CHECK-BLUE-S");
   assert.equal(await skuInput.inputValue(), "BROWSER-CHECK-BLUE-S");
   await page.getByLabel("Color: Blue / Size: S barcode").fill("890000000001");
-  await page.getByLabel("Color: Blue / Size: S price in rupees").fill("125.00");
+  await page.getByLabel(/Color: Blue \/ Size: S price in [A-Z]{3}/).fill("125.00");
   const currencyMatch = (await page.getByRole("dialog", { name: "New product" }).locator("table thead").innerText()).match(/\(([A-Z]{3})\)/);
   assert.ok(currencyMatch, "variant price header should show the organization currency");
   const fractionDigits = await page.evaluate((currency) => new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits, currencyMatch[1]);

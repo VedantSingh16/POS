@@ -12,10 +12,10 @@ import type { ConfiguredField } from "@/features/settings/configurable-field-val
 export default async function ProductDetail({ params }: PageProps<"/org/catalog/products/[id]">) {
   await requirePermission("catalog.view");
   const { id } = await params;
-  const [{ data: p }, { data: categories }, { data: uoms }, { data: productTypes }, { data: settings }] = await Promise.all([api.product(id), api.categories(), api.uoms(), api.productTypes(), api.settings()]);
+  const [{ data: p }, { data: categories }, { data: uoms }, { data: productTypes }, { data: fields }] = await Promise.all([api.product(id), api.categories(), api.uoms(), api.productTypes(), api.catalogFieldConfig()]);
   if (!p) notFound();
   const typeConfig = productTypes.find((type) => type.id === p.productTypeId)?.config;
-  const productFieldSet = settings.productFields as { fields?: ConfiguredField[]; coreFields?: string[] } | undefined;
+  const productFieldSet = fields as { fields?: ConfiguredField[]; coreFields?: string[] };
   const productFieldDefinitions = productFieldSet?.fields ?? [];
   const productCoreFields = productFieldSet?.coreFields ?? ["name", "description", "productType", "attributes", "brand", "category", "sku", "barcode", "price", "cost", "uom", "status", "openPrice", "floorPrice", "includesTax"];
   const productFields = productFieldDefinitions.filter((field) => field.level === "PRODUCT" && field.active);

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/app/page-header";
 import { KpiTile, StatusBadge } from "@/components/data/primitives";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuditTable } from "@/features/tables";
 import { api } from "@/features/api";

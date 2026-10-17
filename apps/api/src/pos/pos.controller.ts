@@ -63,6 +63,12 @@ export class PosController {
     return { items: await this.pos.listPendingForStore(request.user!, storeId) };
   }
 
+  @Get('stores/:storeId/products/:variantId')
+  @RequirePermissions('catalog.view')
+  storeProduct(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('variantId') variantId: string) {
+    return this.pos.getStoreProduct(request.user!, storeId, variantId);
+  }
+
   @Post('store-products/verify')
   @RequirePermissions('store-catalog.verify')
   verifyStoreProduct(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) {

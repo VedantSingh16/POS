@@ -176,15 +176,17 @@ model Organization {
   legalName        String       @default("") @map("legal_name")
   tradeName        String       @default("") @map("trade_name")
   address          String       @default("")
+  addressDetails   Json         @default("{}") @map("address_details")
   gstin            String       @default("")
   businessType     String       @default("RETAIL") @map("business_type")
-  countryCode      String       @default("IN") @map("country_code")
+  countryCode      String       @default("OM") @map("country_code")
+  taxRegime        String       @default("VAT") @map("tax_regime")
   /// NOT_REVIEWED blocks checkout; LEGACY preserves the behavior of organisations created before tax profiles existed.
   taxProfileStatus String       @default("NOT_REVIEWED") @map("tax_profile_status")
   slug             String       @unique
   status           RecordStatus @default(ACTIVE)
-  currency         String       @default("INR")
-  timezone         String       @default("Asia/Kolkata")
+  currency         String       @default("OMR")
+  timezone         String       @default("Asia/Muscat")
   createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -311,7 +313,9 @@ model Store {
   billingSettings Json         @default("{}") @map("billing_settings")
   /// Store-scoped field configuration for merchant-defined product data.
   fieldSettings   Json         @default("{}") @map("field_settings")
-  timezone        String       @default("Asia/Kolkata")
+  /// Structured address parts for countries with their own format (Oman: governorate, wilayat, area, way, building, unit, landmark, P.O. Box). `address`, `city`, `region` and `postalCode` are derived from it.
+  addressDetails  Json         @default("{}") @map("address_details")
+  timezone        String       @default("Asia/Muscat")
   closeHour       Int?         @map("close_hour")
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -661,7 +665,7 @@ model VariantPrice {
   /// NULL = organisation-wide price; set = store-specific price.
   storeId        String?        @map("store_id") @db.Uuid
   amountCents    Int            @map("amount_cents")
-  currency       String         @default("INR")
+  currency       String         @default("OMR")
   includesTax    Boolean        @default(false) @map("includes_tax")
   effectiveFrom  DateTime       @default(now()) @map("effective_from") @db.Timestamptz(3)
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)

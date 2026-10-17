@@ -26,14 +26,38 @@ async function api(path, options = {}) {
   return body;
 }
 
+async function optionalApi(path, options = {}) {
+  try { return await api(path, options); } catch { return null; }
+}
+
 const login = await api("/auth/login", { method: "POST", body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD, organizationSlug: PRIMARY_ORG_SLUG } });
 const stores = await api("/admin/stores", { token: login.accessToken });
 if (!stores.stores?.[0]?.id) throw new Error("At least one store is required for the route audit");
 const storeId = stores.stores[0].id;
 
+// Include detail routes when the seed database has records for them. Empty databases still get
+// the stable route coverage below, while populated environments exercise the pages that used to
+// fail during server rendering or hydration.
+const [catalogue, customers, sales, registers] = await Promise.all([
+  optionalApi("/admin/catalog/products", { token: login.accessToken }),
+  optionalApi(`/pos/v1/customers?storeId=${encodeURIComponent(storeId)}`, { token: login.accessToken }),
+  optionalApi(`/pos/v1/sales?storeId=${encodeURIComponent(storeId)}`, { token: login.accessToken }),
+  optionalApi(`/pos/v1/registers?storeId=${encodeURIComponent(storeId)}`, { token: login.accessToken }),
+]);
+const firstProduct = catalogue?.products?.[0];
+const firstVariant = firstProduct?.variants?.[0];
+const firstCustomer = customers?.customers?.[0];
+const firstSale = sales?.sales?.[0];
+const firstRegisterSession = registers?.registers?.find((register) => register.sessionId)?.sessionId;
+
 const routes = [
   "/org", "/org/users", "/org/roles", "/org/stores", "/org/catalog/products", "/org/catalog/setup", "/org/catalog/categories", "/org/catalog/brands", "/org/catalog/types", "/org/catalog/fields", "/org/catalog/units", "/org/catalog/import", "/org/catalog/tax", "/org/customers", "/org/reports", "/org/settings/general", "/org/settings/tax", "/org/settings/billing", "/org/settings/receipts", "/org/settings/approvals", "/org/settings/security", "/org/audit",
   `/s/${storeId}`, `/s/${storeId}/sales`, `/s/${storeId}/returns`, `/s/${storeId}/returns/new`, `/s/${storeId}/inventory`, `/s/${storeId}/inventory/ledger`, `/s/${storeId}/inventory/adjust`, `/s/${storeId}/inventory/opening-stock`, `/s/${storeId}/registers`, `/s/${storeId}/approvals`, `/s/${storeId}/alerts`, `/s/${storeId}/staff`, `/s/${storeId}/reports`, `/s/${storeId}/pos`, `/s/${storeId}/settings`, `/s/${storeId}/settings/profile`, `/s/${storeId}/settings/billing`, `/s/${storeId}/settings/checkout`, `/s/${storeId}/settings/product-fields`,
+  ...(firstProduct ? [`/org/catalog/products/${firstProduct.id}`] : []),
+  ...(firstVariant ? [`/s/${storeId}/products/${firstVariant.id}`] : []),
+  ...(firstCustomer ? [`/org/customers/${firstCustomer.id}`] : []),
+  ...(firstSale ? [`/s/${storeId}/sales/${firstSale.id}`] : []),
+  ...(firstRegisterSession ? [`/s/${storeId}/registers/${firstRegisterSession}`] : []),
 ];
 
 const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });

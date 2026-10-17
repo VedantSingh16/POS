@@ -4,11 +4,14 @@ import { PageHeader } from "@/components/app/page-header";
 import { NamedTable } from "@/features/tables";
 import { NewBrandSheet } from "@/features/catalog/record-forms";
 import { api } from "@/features/api";
+import { redirect } from "next/navigation";
 
 export async function generateMetadata() { return { title: await getLocalizedPageTitle("Brands") }; }
 
 export default async function Page() {
   const me = await requirePermission("catalog.view");
+  const { data: fields } = await api.catalogFieldConfig();
+  if (!fields.coreFields.includes("brand")) redirect("/org/catalog/products");
   const { data } = await api.brands();
   const canManage = me.permissions.organization.includes("catalog.manage");
   return (

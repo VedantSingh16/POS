@@ -236,10 +236,22 @@ export class AdminController {
     return { categories: await this.admin.listCategories(request.user!) };
   }
 
+  @Get('catalog/field-config')
+  @RequirePermissions('catalog.view')
+  catalogFieldConfig(@Req() request: AuthenticatedRequest) {
+    return this.admin.getCatalogFieldConfig(request.user!);
+  }
+
   @Post('catalog/categories')
   @RequirePermissions('catalog.manage')
   createCategory(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) {
     return this.admin.createCategory(request.user!, body);
+  }
+
+  @Patch('catalog/categories/:categoryId')
+  @RequirePermissions('catalog.manage')
+  updateCategory(@Req() request: AuthenticatedRequest, @Param('categoryId') categoryId: string, @Body() body: JsonObject) {
+    return this.admin.updateCategory(request.user!, categoryId, body);
   }
 
   @Get('catalog/uoms')

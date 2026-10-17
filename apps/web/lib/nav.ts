@@ -1,7 +1,7 @@
 import { hasOrgScope, hasPermission, type Me } from "@/lib/permissions";
 import {
-  LayoutDashboard, Users, ShieldCheck, Store, Package, FolderTree, Percent, UserRound, BarChart3, Settings, SlidersHorizontal,
-  ScrollText, ArrowLeftRight, CircleDollarSign, Receipt, Undo2, Boxes, Landmark, CheckCheck, Bell, ShoppingCart, Tags, type LucideIcon,
+  LayoutDashboard, Users, ShieldCheck, Store, Package, Percent, UserRound, BarChart3, Settings,
+  ScrollText, ArrowLeftRight, CircleDollarSign, Receipt, Undo2, Boxes, Landmark, CheckCheck, Bell, ShoppingCart, type LucideIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -48,9 +48,7 @@ export const NAV: NavSection[] = [
       { label: "Distributions", href: "/org/distributions", icon: ArrowLeftRight, permission: "catalog.distribute", group: "Locations & stock", keywords: ["push stock", "distribute", "allocation"] },
       { label: "Team members", href: "/org/users", icon: Users, permission: "users.view", group: "People & access", keywords: ["users", "staff", "managers"] },
       { label: "Roles & access", href: "/org/roles", icon: ShieldCheck, permission: "roles.view", group: "People & access", keywords: ["permissions"] },
-      { label: "Product catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items"], activePaths: ["/org/catalog/import"] },
-      { label: "Categories", href: "/org/catalog/categories", icon: FolderTree, permission: "catalog.view", group: "Catalogue" },
-      { label: "Catalogue setup", href: "/org/catalog/setup", icon: SlidersHorizontal, permission: "catalog.view", group: "Catalogue", keywords: ["types", "fields", "brands", "units", "configuration"], activePaths: ["/org/catalog/types", "/org/catalog/fields", "/org/catalog/brands", "/org/catalog/units"] },
+      { label: "Catalogue", href: "/org/catalog/products", icon: Package, permission: "catalog.view", group: "Catalogue", keywords: ["products", "items", "categories", "brands", "units"], activePaths: ["/org/catalog/categories", "/org/catalog/setup", "/org/catalog/types", "/org/catalog/fields", "/org/catalog/brands", "/org/catalog/units", "/org/catalog/tax", "/org/catalog/import"] },
       { label: "Customers", href: "/org/customers", icon: UserRound, permission: "customer.view", group: "Customers & insights" },
       { label: "Reports & analytics", href: "/org/reports", icon: BarChart3, permission: "report.view", group: "Customers & insights", keywords: ["sales", "gst", "compare"] },
       { label: "Organisation settings", href: "/org/settings/general", icon: Settings, permission: "org.settings.manage", group: "Administration", activePaths: ["/org/settings"] },
@@ -69,8 +67,6 @@ export const NAV: NavSection[] = [
       { label: "Store reports", href: "/s/:storeId/reports", icon: BarChart3, permission: "report.view", group: "Sales & reports" },
       { label: "Inventory", href: "/s/:storeId/inventory", icon: Boxes, permission: "inventory.view", group: "Stock", keywords: ["stock"] },
       { label: "Products", href: "/s/:storeId/products", icon: Package, permission: "catalog.view", group: "Stock", keywords: ["catalogue", "items"] },
-      { label: "Categories", href: "/s/:storeId/categories", icon: FolderTree, permission: "catalog.view", group: "Stock" },
-      { label: "Brands", href: "/s/:storeId/brands", icon: Tags, permission: "catalog.view", group: "Stock", keywords: ["product taxonomy"] },
       { label: "Registers", href: "/s/:storeId/registers", icon: Landmark, permission: "registers.view", group: "Store operations", keywords: ["cash", "shift", "till"] },
       { label: "Approvals", href: "/s/:storeId/approvals", icon: CheckCheck, permission: "approval.manage", group: "Store operations" },
       { label: "Alerts", href: "/s/:storeId/alerts", icon: Bell, permission: "report.view", group: "Store operations" },

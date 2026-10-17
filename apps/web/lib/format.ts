@@ -2,7 +2,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { currencyInfo, DEFAULT_CURRENCY, formatMinor, isCurrencyCode, minorFactor, minorToInput, parseMinor } from "@pos/shared/currency";
 import type { Locale } from "@pos/shared/locale";
 
-const formatLocale = (locale: Locale) => locale === "ar" ? "ar" : "en-IN";
+const formatLocale = (locale: Locale) => locale === "ar" ? "ar-OM" : "en-GB";
 
 /**
  * The organisation's currency. It is set from the signed-in profile (on the server when the profile is read, and in the

@@ -8,3 +8,4 @@ export * from './fiscal.js';
 export * from './currency.js';
 export * from './markets.js';
 export * from './locale.js';
+export * from './address-formats.js';

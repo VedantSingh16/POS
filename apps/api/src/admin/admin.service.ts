@@ -11,9 +11,10 @@ import { AuthorizationService } from '../auth/authorization.service.js';
 import { UserContext } from '../auth/auth.types.js';
 import { ORGANISATION_ADMINISTRATOR_ROLE, PERMISSIONS } from '../auth/permission-catalogue.js';
 import { JsonObject, money, oneOf, optionalString, requiredString, stringArray, uuid } from '../common/input.js';
-import { validateGstin } from '@pos/shared/tax-id';
+import { validateTaxNumber } from '@pos/shared/tax-id';
+import { composeOmanAddress, isOmanCountry, normalizeOmanPhone, validateOmanAddress } from '@pos/shared/address-formats';
 import { isCurrencyCode, minorFactor } from '@pos/shared/currency';
-import { isMarketCode, MARKETS } from '@pos/shared/markets';
+import { isMarketCode, MARKETS, taxRegimeFor } from '@pos/shared/markets';
 import { cleanAttributeValues, cleanTypeConfig, readTypeConfig, type TypeConfig } from './product-types.js';
 import { applyBillingPatch, BILLING_KEYS, DEFAULT_BILLING_SETTINGS } from '../common/billing-settings.js';
 import { cleanFieldSet, cleanFieldValues, objectField } from '../common/field-config.js';
@@ -26,6 +27,9 @@ type RoleAssignmentInput = { roleId: string; scopeType: 'ORGANIZATION' | 'STORE'
 const USER_STATUSES: readonly string[] = Object.values(UserStatus);
 const RECORD_STATUSES: readonly string[] = Object.values(RecordStatus);
 const PRODUCT_STATUSES: readonly string[] = Object.values(ProductStatus);
+
+/** Used only when neither the request nor the organisation names a time zone. */
+const DEFAULT_TIMEZONE = 'Asia/Muscat';
 
 const SETTINGS_KEYS = ['defaultStoreId', 'inventoryPolicy', 'storeCloseHour', 'idleLockMinutes', 'onboarding', 'productFields'] as const;
 
@@ -87,19 +91,28 @@ export class AdminService {
     this.requireOrganizationPermission(context, 'org.settings.manage');
     const countryCode = input.countryCode === undefined ? undefined : oneOf(input.countryCode, MARKETS.map((market) => market.code), 'countryCode');
     const taxProfileStatus = input.taxProfileStatus === undefined ? undefined : oneOf(input.taxProfileStatus, ['NOT_REVIEWED', 'REGISTERED', 'NOT_REGISTERED', 'UNSURE', 'LEGACY'] as const, 'taxProfileStatus');
-    const currentProfile = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true, gstin: true, taxProfileStatus: true } });
+    const currentProfile = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true, gstin: true, taxProfileStatus: true, taxRegime: true } });
+    const taxRegime = input.taxRegime === undefined ? undefined : oneOf(input.taxRegime, ['GST', 'VAT', 'TAX'] as const, 'taxRegime');
+    if (countryCode && countryCode !== currentProfile.countryCode) {
+      const sales = await this.prisma.sale.count({ where: { organizationId: context.organizationId } });
+      if (sales) throw new ConflictException('Country cannot be changed after the first sale without migrating historical tax documents.');
+    }
     if (taxProfileStatus === 'LEGACY' && currentProfile.taxProfileStatus !== 'LEGACY') throw new BadRequestException('LEGACY is reserved for organisations carried forward from earlier versions');
     const gstinInput = optionalString(input.gstin);
     let gstin: string | undefined;
     if (gstinInput !== undefined) {
       if (gstinInput) {
-        const result = validateGstin(gstinInput);
-        if (!result.valid) throw new BadRequestException(result.error ?? 'Invalid GSTIN');
+        const result = validateTaxNumber(countryCode ?? currentProfile.countryCode, gstinInput);
+        if (!result.valid) throw new BadRequestException(result.error ?? 'Invalid tax number');
         gstin = result.normalized;
       } else gstin = '';
     }
     const effectiveGstin = gstinInput === undefined ? currentProfile.gstin : gstin;
-    if ((countryCode ?? currentProfile.countryCode) === 'IN' && taxProfileStatus === 'REGISTERED' && !effectiveGstin) throw new BadRequestException('GSTIN is required when GST registration is selected');
+    const effectiveCountry = countryCode ?? currentProfile.countryCode;
+    if (effectiveGstin && !validateTaxNumber(effectiveCountry, effectiveGstin).valid) throw new BadRequestException('Enter a tax number for the selected country or clear the previous one.');
+    if ((taxProfileStatus ?? currentProfile.taxProfileStatus) === 'REGISTERED' && !effectiveGstin && (effectiveCountry === 'IN' || effectiveCountry === 'OM')) throw new BadRequestException('A tax number is required when registration is selected');
+    const addressDetails = input.addressDetails === undefined ? undefined : isOmanCountry(effectiveCountry) ? validateOmanAddress(input.addressDetails) : undefined;
+    if (addressDetails && !addressDetails.valid) throw new BadRequestException(Object.values(addressDetails.errors)[0] ?? 'Enter a valid address');
     const organization = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.organization.update({
         where: { id: context.organizationId },
@@ -107,11 +120,12 @@ export class AdminService {
           ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
           ...(optionalString(input.legalName) !== undefined ? { legalName: optionalString(input.legalName) } : {}),
           ...(optionalString(input.tradeName) !== undefined ? { tradeName: optionalString(input.tradeName) } : {}),
-          ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
+          ...(addressDetails ? { addressDetails: addressDetails.details as Prisma.InputJsonObject, address: composeOmanAddress(addressDetails.details).address } : optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
           ...(gstin !== undefined ? { gstin } : {}),
           ...(optionalString(input.businessType) !== undefined ? { businessType: optionalString(input.businessType)?.toUpperCase() } : {}),
           ...(optionalString(input.timezone) !== undefined ? { timezone: optionalString(input.timezone) } : {}),
           ...(countryCode !== undefined ? { countryCode } : {}),
+          ...(taxRegime !== undefined || countryCode !== undefined ? { taxRegime: taxRegime ?? taxRegimeFor(countryCode) } : {}),
           ...(taxProfileStatus !== undefined ? { taxProfileStatus } : {}),
         },
       });
@@ -590,9 +604,12 @@ export class AdminService {
     const region = optionalString(input.region) ?? '';
     const postalCode = optionalString(input.postalCode) ?? '';
     const phone = optionalString(input.phone) ?? '';
-    const timezone = optionalString(input.timezone) || 'Asia/Kolkata';
+    const profile = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true, timezone: true } });
+    const timezone = optionalString(input.timezone) || profile.timezone || DEFAULT_TIMEZONE;
     const closeHour = input.closeHour === undefined || input.closeHour === null || input.closeHour === '' ? null : Number(input.closeHour);
     if (closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('closeHour must be an integer from 0 to 23');
+    const structured = this.addressFromInput(profile.countryCode, input);
+    const storePhone = this.phoneFromInput(profile.countryCode, phone);
 
     try {
       const storeId = await this.prisma.$transaction(async (tx) => {
@@ -605,7 +622,7 @@ export class AdminService {
         if (!entitlement || current >= entitlement.maxStores) {
           throw new ConflictException(`Store limit reached (${entitlement?.maxStores ?? 0})`);
         }
-        const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address, city, region, postalCode, phone, timezone, closeHour, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
+        const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address: structured?.address ?? address, city: structured?.city ?? city, region: structured?.region ?? region, postalCode: structured?.postalCode ?? postalCode, phone: storePhone, timezone, closeHour, addressDetails: (structured?.addressDetails ?? {}) as Prisma.InputJsonObject, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
         await tx.stockLocation.create({
           data: { organizationId: context.organizationId, storeId: store.id, code: `${code}-STOCKROOM`, name: `${name} Stockroom` },
         });
@@ -628,13 +645,34 @@ export class AdminService {
   }
 
   /** Empty clears the store's own GSTIN (the organisation's is used); anything else must be a valid GSTIN. */
-  private storeTaxNumber(input: JsonObject): { taxNumber: string } | Record<string, never> {
+  private async storeTaxNumber(organizationId: string, input: JsonObject): Promise<{ taxNumber: string } | Record<string, never>> {
     if (input.taxNumber === undefined) return {};
     const raw = optionalString(input.taxNumber) ?? '';
     if (raw === '') return { taxNumber: '' };
-    const check = validateGstin(raw);
-    if (!check.valid) throw new BadRequestException(check.error ?? 'Invalid GSTIN');
+    const profile = await this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { countryCode: true } });
+    const check = validateTaxNumber(profile.countryCode, raw);
+    if (!check.valid) throw new BadRequestException(check.error ?? 'Invalid tax number');
     return { taxNumber: check.normalized };
+  }
+
+  /**
+   * Omani stores send `addressDetails` (governorate, wilayat, area, way, building, unit, landmark, P.O. Box, postal code).
+   * The one-line address, city (wilayat), region (governorate) and postal code are derived from it so receipts and
+   * older screens keep working. Other countries, or requests without `addressDetails`, are left untouched.
+   */
+  private addressFromInput(countryCode: string, input: JsonObject): { address: string; city: string; region: string; postalCode: string; addressDetails: JsonObject } | undefined {
+    if (!isOmanCountry(countryCode) || input.addressDetails === undefined) return undefined;
+    const check = validateOmanAddress(input.addressDetails);
+    if (!check.valid) throw new BadRequestException(Object.values(check.errors)[0] ?? 'Enter a valid Omani address');
+    return { ...composeOmanAddress(check.details), addressDetails: check.details as JsonObject };
+  }
+
+  /** Oman phone numbers are stored as +968XXXXXXXX; other countries keep what was entered. */
+  private phoneFromInput(countryCode: string, phone: string): string {
+    if (!isOmanCountry(countryCode)) return phone;
+    const result = normalizeOmanPhone(phone);
+    if (!result.valid) throw new BadRequestException(result.error ?? 'Enter a valid Omani phone number');
+    return result.phone;
   }
 
   async updateStore(context: UserContext, storeId: string, input: JsonObject) {
@@ -645,18 +683,22 @@ export class AdminService {
     if (status && !RECORD_STATUSES.includes(status)) throw new BadRequestException('Invalid store status');
     const closeHour = input.closeHour === undefined || input.closeHour === null || input.closeHour === '' ? undefined : Number(input.closeHour);
     if (closeHour !== undefined && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('closeHour must be an integer from 0 to 23');
-    const taxPatch = this.storeTaxNumber(input);
+    const taxPatch = await this.storeTaxNumber(context.organizationId, input);
+    const country = (await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true } })).countryCode;
+    const structured = this.addressFromInput(country, input);
     await this.prisma.$transaction(async (tx) => {
       await tx.store.update({
         where: { id: storeId },
         data: {
           ...taxPatch,
           ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
-          ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
-          ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
-          ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
-          ...(optionalString(input.postalCode) !== undefined ? { postalCode: optionalString(input.postalCode) ?? '' } : {}),
-          ...(optionalString(input.phone) !== undefined ? { phone: optionalString(input.phone) ?? '' } : {}),
+          ...(structured ? { address: structured.address, city: structured.city, region: structured.region, postalCode: structured.postalCode, addressDetails: structured.addressDetails as Prisma.InputJsonObject } : {
+            ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) } : {}),
+            ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
+            ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
+            ...(optionalString(input.postalCode) !== undefined ? { postalCode: optionalString(input.postalCode) ?? '' } : {}),
+          }),
+          ...(optionalString(input.phone) !== undefined ? { phone: this.phoneFromInput(country, optionalString(input.phone) ?? '') } : {}),
           ...(optionalString(input.timezone) ? { timezone: optionalString(input.timezone) } : {}),
           ...(closeHour !== undefined ? { closeHour } : {}),
           ...(status ? { status: status as RecordStatus } : {}),
@@ -672,12 +714,13 @@ export class AdminService {
     this.authorizationStoreAccess(context, id);
     this.authorization.assertPermissions(context, ['store.settings.view'], id);
     const store = await this.ensureStore(context.organizationId, id);
+    const organization = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true, taxRegime: true } });
     const orgSettings = (await this.getOrganizationSettingsObject(context.organizationId));
     const fieldSettings = objectField(store.fieldSettings);
     const organisationProductFields = cleanFieldSet(orgSettings.productFields);
     const storeCheckoutFields = cleanFieldSet(fieldSettings.checkoutFields, 'CHECKOUT');
     const billing = { ...DEFAULT_BILLING_SETTINGS, ...objectField(store.billingSettings) };
-    return { id: store.id, code: store.code, name: store.name, address: store.address, city: store.city, region: store.region, postalCode: store.postalCode, phone: store.phone, timezone: store.timezone, closeHour: store.closeHour, taxNumber: store.taxNumber,
+    return { id: store.id, code: store.code, name: store.name, address: store.address, city: store.city, region: store.region, postalCode: store.postalCode, addressDetails: objectField(store.addressDetails), countryCode: organization.countryCode, taxRegime: organization.taxRegime, phone: store.phone, timezone: store.timezone, closeHour: store.closeHour, taxNumber: store.taxNumber,
       organisationProductFields, effectiveProductFields: organisationProductFields.fields, effectiveProductCoreFields: organisationProductFields.coreFields,
       checkoutFieldSettings: storeCheckoutFields, effectiveCheckoutFields: storeCheckoutFields.fields,
       requireBillHandler: billing.requireBillHandler === true, ...(await this.storeBilling(context.organizationId, billing)) };
@@ -703,7 +746,9 @@ export class AdminService {
     if ('productFields' in input) throw new BadRequestException('Product fields are owned by the organisation and cannot be changed by a store.');
     const closeHour = !('closeHour' in input) ? undefined : input.closeHour === null || input.closeHour === '' ? null : Number(input.closeHour);
     if (closeHour !== undefined && closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException('Close hour must be an integer from 0 to 23');
-    const taxPatch = this.storeTaxNumber(input);
+    const taxPatch = await this.storeTaxNumber(context.organizationId, input);
+    const country = (await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { countryCode: true } })).countryCode;
+    const structured = this.addressFromInput(country, input);
     if (input.billing !== undefined && (typeof input.billing !== 'object' || input.billing === null || Array.isArray(input.billing))) throw new BadRequestException('billing must be an object');
     const billingPatch = input.billing === undefined ? undefined : applyBillingPatch({ ...DEFAULT_BILLING_SETTINGS, ...objectField((await this.ensureStore(context.organizationId, id)).billingSettings) }, input.billing as JsonObject);
     const store = await this.ensureStore(context.organizationId, id);
@@ -720,11 +765,13 @@ export class AdminService {
         ...(billingPatch ? { billingSettings: billingPatch as Prisma.InputJsonObject } : {}),
         ...(fieldSettings ? { fieldSettings } : {}),
         ...(optionalString(input.name) ? { name: optionalString(input.name) } : {}),
-        ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) ?? '' } : {}),
-        ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
-        ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
-        ...(optionalString(input.postalCode) !== undefined ? { postalCode: optionalString(input.postalCode) ?? '' } : {}),
-        ...(optionalString(input.phone) !== undefined ? { phone: optionalString(input.phone) ?? '' } : {}),
+        ...(structured ? { address: structured.address, city: structured.city, region: structured.region, postalCode: structured.postalCode, addressDetails: structured.addressDetails as Prisma.InputJsonObject } : {
+          ...(optionalString(input.address) !== undefined ? { address: optionalString(input.address) ?? '' } : {}),
+          ...(optionalString(input.city) !== undefined ? { city: optionalString(input.city) ?? '' } : {}),
+          ...(optionalString(input.region) !== undefined ? { region: optionalString(input.region) ?? '' } : {}),
+          ...(optionalString(input.postalCode) !== undefined ? { postalCode: optionalString(input.postalCode) ?? '' } : {}),
+        }),
+        ...(optionalString(input.phone) !== undefined ? { phone: this.phoneFromInput(country, optionalString(input.phone) ?? '') } : {}),
         ...(optionalString(input.timezone) ? { timezone: optionalString(input.timezone) } : {}),
         ...(closeHour !== undefined ? { closeHour } : {}),
       } });
@@ -795,10 +842,16 @@ export class AdminService {
 
   // ───────────── Catalogue ─────────────
 
+  async getCatalogFieldConfig(context: UserContext) {
+    this.requireOrganizationPermission(context, 'catalog.view');
+    const settings = await this.getOrganizationSettingsObject(context.organizationId);
+    return cleanFieldSet(settings.productFields);
+  }
+
   async listCategories(context: UserContext) {
     this.requireOrganizationPermission(context, 'catalog.view');
-    const categories = await this.prisma.category.findMany({ where: { organizationId: context.organizationId }, orderBy: { name: 'asc' } });
-    return categories.map(({ organizationId: _organizationId, ...category }) => category);
+    const categories = await this.prisma.category.findMany({ where: { organizationId: context.organizationId }, include: { _count: { select: { products: true } } }, orderBy: { name: 'asc' } });
+    return categories.map(({ organizationId: _organizationId, _count, ...category }) => ({ ...category, products: _count.products }));
   }
 
   async createCategory(context: UserContext, input: JsonObject) {
@@ -812,6 +865,31 @@ export class AdminService {
       const created = await tx.category.create({ data: { organizationId: context.organizationId, parentId, name } });
       await this.audit.record(context, 'category.created', 'Category', created.id, { name }, tx);
       return created;
+    });
+    const { organizationId: _organizationId, ...dto } = category;
+    return dto;
+  }
+
+  async updateCategory(context: UserContext, categoryId: string, input: JsonObject) {
+    this.requireOrganizationPermission(context, 'catalog.manage');
+    const id = uuid(categoryId, 'categoryId');
+    const categories = await this.prisma.category.findMany({ where: { organizationId: context.organizationId }, select: { id: true, parentId: true } });
+    const current = categories.find((category) => category.id === id);
+    if (!current) throw new NotFoundException('Category not found');
+    const parentId = input.parentId === undefined ? current.parentId : input.parentId === null || input.parentId === '' ? null : uuid(input.parentId, 'parentId');
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    const visited = new Set<string>([id]);
+    for (let ancestor = parentId; ancestor; ancestor = byId.get(ancestor)?.parentId ?? null) {
+      if (!byId.has(ancestor)) throw new BadRequestException('Parent category not found');
+      if (visited.has(ancestor)) throw new BadRequestException('A category cannot be nested under itself or a descendant');
+      visited.add(ancestor);
+    }
+    const name = input.name === undefined ? undefined : requiredString(input.name, 'name');
+    const status = input.status === undefined ? undefined : oneOf(input.status, RECORD_STATUSES, 'status') as RecordStatus;
+    const category = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({ where: { id }, data: { ...(name ? { name } : {}), parentId, ...(status ? { status } : {}) } });
+      await this.audit.record(context, 'category.updated', 'Category', id, { fields: Object.keys(input) }, tx);
+      return updated;
     });
     const { organizationId: _organizationId, ...dto } = category;
     return dto;
@@ -1008,7 +1086,37 @@ export class AdminService {
     this.requireOrganizationPermission(context, 'catalog.view');
     const product = await this.prisma.product.findFirst({ where: { id: uuid(productId, 'productId'), organizationId: context.organizationId }, include: productInclude });
     if (!product) throw new NotFoundException('Product not found');
-    return this.productDto(product);
+    const variantIds = product.variants.map((variant) => variant.id);
+    const [balances, movements, sales] = variantIds.length === 0 ? [[], [], []] : await Promise.all([
+      this.prisma.inventoryBalance.findMany({
+        where: { organizationId: context.organizationId, variantId: { in: variantIds } },
+        include: { location: { select: { id: true, name: true, code: true, store: { select: { id: true, name: true, code: true } } } }, variant: { select: { id: true, sku: true, name: true } } },
+        orderBy: [{ location: { name: 'asc' } }, { variant: { name: 'asc' } }],
+      }),
+      this.prisma.inventoryMovement.findMany({
+        where: { organizationId: context.organizationId, variantId: { in: variantIds } },
+        include: { location: { select: { name: true, code: true, store: { select: { name: true, code: true } } } }, variant: { select: { sku: true, name: true } } },
+        orderBy: { createdAt: 'desc' }, take: 10,
+      }),
+      this.prisma.saleLine.findMany({
+        where: { variantId: { in: variantIds }, sale: { organizationId: context.organizationId } },
+        include: { sale: { select: { id: true, receiptNumber: true, storeId: true, createdAt: true, status: true, store: { select: { name: true, code: true } } } }, variant: { select: { sku: true, name: true } } },
+        orderBy: { sale: { createdAt: 'desc' } }, take: 10,
+      }),
+    ]);
+    const dto = this.productDto(product);
+    const productFieldConfig = cleanFieldSet((await this.getOrganizationSettingsObject(context.organizationId)).productFields);
+    const canViewCost = context.isOrganisationAdministrator || this.authorization.hasPermission(context, 'report.view');
+    return {
+      ...dto,
+      productCoreFields: productFieldConfig.coreFields,
+      variants: dto.variants.map((variant) => ({ ...variant, ...(canViewCost ? {} : { costCents: undefined }) })),
+      stock: balances.map((balance) => ({ variantId: balance.variantId, sku: balance.variant.sku, variantName: balance.variant.name, locationId: balance.locationId, locationName: balance.location.name, locationCode: balance.location.code, storeId: balance.location.store?.id ?? null, storeName: balance.location.store?.name ?? 'Organisation stock', status: balance.status, quantity: Number(balance.quantity), reorderPoint: Number(balance.reorderPoint), safetyStock: Number(balance.safetyStock) })),
+      activity: {
+        movements: movements.map((movement) => ({ id: movement.id, at: movement.createdAt, type: movement.type, quantity: Number(movement.quantity), status: movement.status, reason: movement.reason, unitCostCents: canViewCost ? movement.unitCostCents : undefined, locationName: movement.location.name, locationCode: movement.location.code, storeName: movement.location.store?.name ?? 'Organisation stock', sku: movement.variant.sku, variantName: movement.variant.name })),
+        sales: sales.map((line) => ({ id: line.id, saleId: line.sale.id, receiptNumber: line.sale.receiptNumber, at: line.sale.createdAt, status: line.sale.status, storeId: line.sale.storeId, storeName: line.sale.store.name, storeCode: line.sale.store.code, sku: line.variant.sku, variantName: line.variant.name, quantity: Number(line.quantity), unitPriceCents: line.unitPriceCents, taxCents: line.taxCents, lineTotalCents: line.lineTotalCents, ...(canViewCost ? { unitCostCents: line.unitCostCents } : {}) })),
+      },
+    };
   }
 
   async listBrands(context: UserContext) {
@@ -1078,7 +1186,8 @@ export class AdminService {
     if (!current) throw new NotFoundException('Product not found');
     const customFields = await this.cleanCustomProductFields(context.organizationId, 'PRODUCT', input.customFields, current.customFields);
     const status = input.status === undefined ? undefined : this.productStatus(input.status);
-    const categoryId = input.categoryId === null ? null : input.categoryId === undefined ? undefined : uuid(input.categoryId, 'categoryId');
+    if (input.categoryId === null || input.categoryId === '') throw new BadRequestException('Category is required');
+    const categoryId = input.categoryId === undefined ? undefined : uuid(input.categoryId, 'categoryId');
     if (categoryId && !(await this.prisma.category.findFirst({ where: { id: categoryId, organizationId: context.organizationId }, select: { id: true } }))) {
       throw new BadRequestException('Category not found');
     }
@@ -1122,7 +1231,7 @@ export class AdminService {
   async createProduct(context: UserContext, input: JsonObject) {
     this.requireOrganizationPermission(context, 'catalog.manage');
     const name = requiredString(input.name, 'name');
-    const categoryId = typeof input.categoryId === 'string' ? uuid(input.categoryId, 'categoryId') : null;
+    const categoryId = uuid(input.categoryId, 'categoryId');
     if (categoryId && !(await this.prisma.category.findFirst({ where: { id: categoryId, organizationId: context.organizationId }, select: { id: true } }))) {
       throw new BadRequestException('Category not found');
     }
@@ -1173,7 +1282,10 @@ export class AdminService {
     const customFields = await this.cleanCustomProductFields(context.organizationId, 'VARIANT', input.customFields, {});
     const sku = requiredString(input.sku, 'sku').toUpperCase();
     const name = requiredString(input.name, 'name');
-    const uomId = typeof input.uomId === 'string' ? uuid(input.uomId, 'uomId') : null;
+    if (input.uomId === null) throw new BadRequestException('Unit of measure is required');
+    const uomId = typeof input.uomId === 'string'
+      ? uuid(input.uomId, 'uomId')
+      : (await this.prisma.unitOfMeasure.upsert({ where: { organizationId_code: { organizationId: context.organizationId, code: 'PCS' } }, create: { organizationId: context.organizationId, code: 'PCS', name: 'Pieces' }, update: {}, select: { id: true } })).id;
     if (uomId && !(await this.prisma.unitOfMeasure.findFirst({ where: { id: uomId, organizationId: context.organizationId }, select: { id: true } }))) {
       throw new BadRequestException('Unit of measure not found');
     }
@@ -1225,7 +1337,8 @@ export class AdminService {
     const customFields = await this.cleanCustomProductFields(context.organizationId, 'VARIANT', input.customFields, current.customFields);
     const status = input.status === undefined ? undefined : this.productStatus(input.status);
     const costCents = input.costCents === undefined ? undefined : money(input.costCents, 'costCents');
-    const uomId = input.uomId === null ? null : input.uomId === undefined ? undefined : uuid(input.uomId, 'uomId');
+    if (input.uomId === null) throw new BadRequestException('Unit of measure is required');
+    const uomId = input.uomId === undefined ? undefined : uuid(input.uomId, 'uomId');
     if (uomId && !(await this.prisma.unitOfMeasure.findFirst({ where: { id: uomId, organizationId: context.organizationId }, select: { id: true } }))) throw new BadRequestException('Unit of measure not found');
     {
       const barcodeCount = Array.isArray(input.barcodes) ? stringArray(input.barcodes).length : await this.prisma.barcode.count({ where: { variantId: id } });
@@ -1272,13 +1385,15 @@ export class AdminService {
       const hasPriceCents = row.priceCents !== undefined;
       const price = Number(hasPriceCents ? row.priceCents : row.price);
       const barcode = typeof row.barcode === 'string' ? row.barcode.trim() : '';
+      const category = typeof row.category === 'string' ? row.category.trim() : '';
       const rate = Number(row.ratePercent ?? row.gst ?? 0);
       const cost = row.costCents === undefined ? 0 : Number(row.costCents);
       if (!sku) errors.push({ row: rowNumber, field: 'sku', message: 'SKU is required' });
       if (!name) errors.push({ row: rowNumber, field: 'name', message: 'Product name is required' });
-      if (!Number.isFinite(price) || price < 0 || (hasPriceCents && !Number.isInteger(price))) errors.push({ row: rowNumber, field: 'price', message: 'Price must be non-negative; priceCents must be an integer in paise' });
-      if (!Number.isFinite(rate) || rate < 0 || rate > 100) errors.push({ row: rowNumber, field: 'ratePercent', message: 'GST rate must be between 0 and 100' });
-      if (!Number.isInteger(cost) || cost < 0) errors.push({ row: rowNumber, field: 'costCents', message: 'costCents must be a non-negative integer in paise' });
+      if (!category) errors.push({ row: rowNumber, field: 'category', message: 'Category is required' });
+      if (!Number.isFinite(price) || price < 0 || (hasPriceCents && !Number.isInteger(price))) errors.push({ row: rowNumber, field: 'price', message: 'Price must be non-negative; priceCents must be an integer in the currency minor unit' });
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) errors.push({ row: rowNumber, field: 'ratePercent', message: 'Tax rate must be between 0 and 100' });
+      if (!Number.isInteger(cost) || cost < 0) errors.push({ row: rowNumber, field: 'costCents', message: 'costCents must be a non-negative integer in the currency minor unit' });
       if (sku && seenSkus.has(sku)) errors.push({ row: rowNumber, field: 'sku', message: 'SKU is duplicated in the import' });
       if (barcode && seenBarcodes.has(barcode)) errors.push({ row: rowNumber, field: 'barcode', message: 'Barcode is duplicated in the import' });
       if (sku) seenSkus.add(sku);
@@ -1316,15 +1431,17 @@ export class AdminService {
         const categoryName = optionalString(row.category);
         const brand = optionalString(row.brand) || '';
         const amountCents = row.priceCents !== undefined ? money(row.priceCents, 'priceCents') : Math.round(Number(row.price) * minorFactor(currency));
-        const category = categoryName ? await tx.category.findFirst({ where: { organizationId: context.organizationId, name: categoryName } }) : null;
+        const category = await tx.category.findFirst({ where: { organizationId: context.organizationId, name: categoryName } })
+          ?? await tx.category.create({ data: { organizationId: context.organizationId, name: categoryName! } });
         const productKey = `${productName}\u0000${category?.id ?? ''}\u0000${brand}`;
         let product = products.get(productKey);
         if (!product) {
-          product = await tx.product.create({ data: { organizationId: context.organizationId, categoryId: category?.id ?? null, name: productName, brand }, select: { id: true } });
+          product = await tx.product.create({ data: { organizationId: context.organizationId, categoryId: category.id, name: productName, brand }, select: { id: true } });
           products.set(productKey, product);
         }
         const costCents = row.costCents !== undefined ? money(row.costCents, 'costCents') : 0;
-        const variant = await tx.productVariant.create({ data: { organizationId: context.organizationId, productId: product.id, sku, name, costCents } });
+        const uom = await tx.unitOfMeasure.upsert({ where: { organizationId_code: { organizationId: context.organizationId, code: 'PCS' } }, create: { organizationId: context.organizationId, code: 'PCS', name: 'Pieces' }, update: {}, select: { id: true } });
+        const variant = await tx.productVariant.create({ data: { organizationId: context.organizationId, productId: product.id, sku, name, costCents, uomId: uom.id } });
         const barcode = optionalString(row.barcode);
         if (barcode) await tx.barcode.create({ data: { organizationId: context.organizationId, variantId: variant.id, code: barcode } });
         await tx.variantPrice.create({ data: { organizationId: context.organizationId, variantId: variant.id, amountCents, currency, includesTax: row.includesTax === true } });
@@ -1368,15 +1485,16 @@ export class AdminService {
     if (!isCurrencyCode(orgInput.currency)) throw new BadRequestException('Choose a supported base currency');
     const currency = orgInput.currency;
     const businessType = oneOf(orgInput.businessType ?? 'RETAIL', ['RETAIL', 'GROCERY', 'PHARMACY', 'OTHER'] as const, 'organization.businessType');
+    const taxRegime = oneOf(orgInput.taxRegime ?? taxRegimeFor(countryCode), ['GST', 'VAT', 'TAX'] as const, 'organization.taxRegime');
     const taxProfileStatus = oneOf(orgInput.taxProfileStatus, ['REGISTERED', 'NOT_REGISTERED', 'UNSURE'] as const, 'organization.taxProfileStatus');
     const rawGstin = optionalString(orgInput.gstin) ?? '';
     let gstin = '';
-    if (countryCode === 'IN' && taxProfileStatus === 'REGISTERED') {
-      const result = validateGstin(rawGstin);
-      if (!result.valid) throw new BadRequestException(result.error ?? 'Enter a valid GSTIN');
+    if ((countryCode === 'IN' || countryCode === 'OM') && taxProfileStatus === 'REGISTERED') {
+      const result = validateTaxNumber(countryCode, rawGstin);
+      if (!result.valid) throw new BadRequestException(result.error ?? (countryCode === 'OM' ? 'Enter a valid VAT number' : 'Enter a valid GSTIN'));
       gstin = result.normalized;
     } else if (rawGstin) {
-      const result = validateGstin(rawGstin);
+      const result = validateTaxNumber(countryCode, rawGstin);
       if (!result.valid) throw new BadRequestException(result.error ?? 'Enter a valid tax number');
       gstin = result.normalized;
     }
@@ -1387,12 +1505,16 @@ export class AdminService {
 
     const storeName = requiredString(storeInput.name, 'store.name');
     if (storeName.length > 120) throw new BadRequestException('Store name must be 120 characters or fewer');
-    const address = requiredString(storeInput.address, 'store.address');
-    const city = requiredString(storeInput.city, 'store.city');
-    const region = optionalString(storeInput.region) ?? '';
-    const postalCode = optionalString(storeInput.postalCode) ?? '';
-    const phone = optionalString(storeInput.phone) ?? '';
+    // Omani stores send structured address parts; everything else (and older clients) sends address and city directly.
+    const structured = this.addressFromInput(countryCode, storeInput);
+    const address = structured?.address ?? requiredString(storeInput.address, 'store.address');
+    const city = structured?.city ?? requiredString(storeInput.city, 'store.city');
+    const region = structured?.region ?? optionalString(storeInput.region) ?? '';
+    const postalCode = structured?.postalCode ?? optionalString(storeInput.postalCode) ?? '';
+    const phone = this.phoneFromInput(countryCode, optionalString(storeInput.phone) ?? '');
+    const addressDetails = (structured?.addressDetails ?? {}) as Prisma.InputJsonObject;
     const storeTimezone = optionalString(storeInput.timezone) || organizationTimezone;
+    const organizationAddress = this.addressFromInput(countryCode, orgInput);
     try { new Intl.DateTimeFormat('en', { timeZone: storeTimezone }); }
     catch { throw new BadRequestException('Choose a valid store time zone'); }
 
@@ -1408,7 +1530,7 @@ export class AdminService {
         if (store) {
           store = await tx.store.update({
             where: { id: store.id },
-            data: { name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone },
+            data: { name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone, ...(structured ? { addressDetails } : {}) },
           });
         } else {
           const activeCount = await tx.store.count({ where: { organizationId: context.organizationId, status: 'ACTIVE' } });
@@ -1418,7 +1540,7 @@ export class AdminService {
             code = `STORE-${String(sequence + 1).padStart(2, '0')}`;
             if (sequence >= 999) throw new ConflictException('Could not generate a unique store code');
           }
-          store = await tx.store.create({ data: { organizationId: context.organizationId, code, name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
+          store = await tx.store.create({ data: { organizationId: context.organizationId, code, name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone, addressDetails, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
         }
 
         await tx.stockLocation.upsert({
@@ -1434,9 +1556,18 @@ export class AdminService {
             : await tx.register.create({ data: { organizationId: context.organizationId, storeId: store.id, code: 'REG-01', name: 'Front Register' } });
         }
 
+        // A starting rate is editable at store level; it does not force every product to use it.
+        if (countryCode === 'OM' && taxRegime === 'VAT' && taxProfileStatus === 'REGISTERED') {
+          await tx.taxGroup.upsert({
+            where: { organizationId_storeId_code: { organizationId: context.organizationId, storeId: store.id, code: 'VAT5' } },
+            create: { organizationId: context.organizationId, storeId: store.id, code: 'VAT5', name: 'VAT 5%', rateBps: 500 },
+            update: {},
+          });
+        }
+
         await tx.organization.update({
           where: { id: context.organizationId },
-          data: { name, countryCode, currency, businessType, timezone: organizationTimezone, taxProfileStatus, gstin },
+          data: { name, address: organizationAddress?.address ?? optionalString(orgInput.address) ?? '', ...(organizationAddress ? { addressDetails: organizationAddress.addressDetails as Prisma.InputJsonObject } : {}), countryCode, currency, businessType, timezone: organizationTimezone, taxRegime, taxProfileStatus, gstin },
         });
         await tx.user.update({ where: { id: context.userId }, data: { defaultStoreId: store.id } });
         await tx.userStore.updateMany({ where: { userId: context.userId }, data: { isDefault: false } });
@@ -1461,7 +1592,7 @@ export class AdminService {
           complete: true,
           required: false,
           optionalSkippedAt: null,
-          data: { ...(existingOnboarding.data && typeof existingOnboarding.data === 'object' && !Array.isArray(existingOnboarding.data) ? existingOnboarding.data as JsonObject : {}), organization: { name, countryCode, currency, businessType, timezone: organizationTimezone, taxProfileStatus, gstin }, store: { name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone } },
+          data: { ...(existingOnboarding.data && typeof existingOnboarding.data === 'object' && !Array.isArray(existingOnboarding.data) ? existingOnboarding.data as JsonObject : {}), organization: { name, countryCode, currency, businessType, timezone: organizationTimezone, taxProfileStatus, gstin }, store: { name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone, addressDetails } },
         };
         const nextSettings: JsonObject = { ...settings, defaultStoreId: store.id, ...(Array.isArray(settings.enabledTenders) ? {} : { enabledTenders: ['CASH'] }), onboarding };
         await tx.organizationSettings.upsert({
@@ -1504,7 +1635,7 @@ export class AdminService {
       const code = requiredString(value.code, `stores[${index}].code`).toUpperCase();
       const name = requiredString(value.name, `stores[${index}].name`);
       const address = optionalString(value.address) ?? '';
-      const timezone = optionalString(value.timezone) || 'Asia/Kolkata';
+      const timezone = optionalString(value.timezone) || DEFAULT_TIMEZONE;
       const closeHour = value.closeHour === undefined || value.closeHour === null || value.closeHour === '' ? null : Number(value.closeHour);
       if (closeHour !== null && (!Number.isInteger(closeHour) || closeHour < 0 || closeHour > 23)) throw new BadRequestException(`Store ${index + 1} close hour must be from 0 to 23`);
       const registerCode = requiredString(value.registerCode, `stores[${index}].registerCode`).toUpperCase();

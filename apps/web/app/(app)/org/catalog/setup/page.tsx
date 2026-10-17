@@ -4,9 +4,10 @@ import Link from "next/link";
 import { ArrowRight, Barcode, Boxes, Ruler, SlidersHorizontal, Tags } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { Card } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { requirePermission } from "@/lib/server/session";
 import { hasPermission } from "@/lib/permissions";
+import { api } from "@/features/api";
 
 export async function generateMetadata() { return { title: await getLocalizedPageTitle("Catalogue setup") }; }
 
@@ -19,6 +20,7 @@ const productSetup = [
 export default async function CatalogueSetupPage() {
   const me = await requirePermission("catalog.view");
   const canManageFields = hasPermission(me, "org.settings.manage");
+  const { data: fields } = await api.catalogFieldConfig();
 
   return (
     <>
@@ -37,7 +39,7 @@ export default async function CatalogueSetupPage() {
           </div>
           <Card className="overflow-hidden">
             <ul className="divide-y divide-border">
-              {productSetup.map(({ title, description, href, icon: Icon }) => (
+              {productSetup.filter((item) => item.title !== "Brands" || fields.coreFields.includes("brand")).map(({ title, description, href, icon: Icon }) => (
                 <li key={href}>
                   <Link href={href} className="group flex min-h-[5.5rem] items-center gap-4 px-4 py-4 transition-colors hover:bg-accent/55 sm:px-5">
                     <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent text-primary"><Icon aria-hidden className="size-5" /></span>

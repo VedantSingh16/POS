@@ -9,10 +9,10 @@ export async function generateMetadata() { return { title: await getLocalizedPag
 
 export default async function CustomersPage() {
   await requirePermission("customer.view");
-  const [{ data }, { data: stores }] = await Promise.all([api.customers(), api.stores()]);
+  const [{ data }, { data: stores }, { data: profile }] = await Promise.all([api.customers(), api.stores(), api.orgProfile()]);
   return (
     <>
-      <PageHeader title="Customers" description="Shared across every store." crumbs={[{ label: "Organisation", href: "/org" }, { label: "Customers" }]} actions={<NewCustomerSheet stores={stores.map((s) => ({ id: s.id, name: s.name, code: s.code }))} />} />
+      <PageHeader title="Customers" description="Shared across every store." crumbs={[{ label: "Organisation", href: "/org" }, { label: "Customers" }]} actions={<NewCustomerSheet stores={stores.map((s) => ({ id: s.id, name: s.name, code: s.code }))} taxRegime={profile.taxRegime} />} />
       <CustomersTable data={data} />
     </>
   );

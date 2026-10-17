@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { StatusBadge } from "@/components/data/primitives";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InviteUserSheet } from "@/features/forms";

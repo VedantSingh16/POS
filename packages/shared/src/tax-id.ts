@@ -52,3 +52,27 @@ export function isIntraState(sellerStateCode: string | null | undefined, buyerSt
   if (!seller || !buyer) return true;
   return seller === buyer;
 }
+
+/**
+ * Omani VAT registration number: "OM" followed by 9 digits and a final digit or X (e.g. OM1100012379).
+ * The check is shape-only; the Tax Authority is the source of truth for whether a number is active.
+ */
+const OMAN_VATIN = /^OM[0-9]{9}[0-9X]$/;
+
+export function validateOmanVatNumber(value: string | null | undefined): GstinCheck {
+  const normalized = normalizeTaxNumber(value);
+  if (!normalized) return { valid: false, normalized, stateCode: '', error: 'Tax number is empty' };
+  if (!OMAN_VATIN.test(normalized)) return { valid: false, normalized, stateCode: '', error: 'Omani VAT number is "OM" followed by 10 characters, for example OM1100012379' };
+  return { valid: true, normalized, stateCode: '' };
+}
+
+/** Validates a tax registration number for the given country. India uses GSTIN, Oman uses the OM VAT number, others accept 5-20 letters or digits. */
+export function validateTaxNumber(countryCode: string | null | undefined, value: string | null | undefined): GstinCheck {
+  const country = (countryCode ?? '').toUpperCase();
+  if (country === 'IN') return validateGstin(value);
+  if (country === 'OM') return validateOmanVatNumber(value);
+  const normalized = normalizeTaxNumber(value);
+  if (!normalized) return { valid: false, normalized, stateCode: '', error: 'Tax number is empty' };
+  if (!/^[A-Z0-9-]{5,20}$/.test(normalized)) return { valid: false, normalized, stateCode: '', error: 'Enter a valid tax number (5 to 20 letters or digits)' };
+  return { valid: true, normalized, stateCode: '' };
+}

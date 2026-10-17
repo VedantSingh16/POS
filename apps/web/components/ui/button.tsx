@@ -1,32 +1,19 @@
+"use client";
 import * as React from "react";
 import { Slot } from "radix-ui";
-import { cva, type VariantProps } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { useTranslate } from "@/components/i18n/localized-text";
+import { buttonVariants } from "@/components/ui/button-variants";
 
-const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-base font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/70",
-        outline: "border border-input bg-card hover:bg-secondary",
-        ghost: "hover:bg-secondary",
-        destructive: "bg-danger text-white hover:bg-danger/90",
-        success: "bg-success text-white hover:bg-success/90",
-      },
-      size: {
-        sm: "h-11 px-4 text-sm",
-        default: "h-11 px-4",
-        touch: "h-12 px-5",
-        icon: "size-10",
-        "icon-sm": "size-10",
-      },
-    },
-    defaultVariants: { variant: "default", size: "default" },
-  },
-);
+/**
+ * "use client" is required here: Button calls useTranslate(), a hook, in its
+ * own render. Many server-rendered pages render <Button>…</Button> as plain
+ * JSX (e.g. the store reports filter form); without this directive React
+ * tries to run Button as a Server Component, the hook call throws, and the
+ * whole page fails to load. buttonVariants (no hooks) stays importable by
+ * server components from the separate button-variants.ts module.
+ */
 
 type ButtonProps = React.ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean };
 
@@ -39,4 +26,4 @@ function Button({ className, variant, size, asChild = false, ...props }: ButtonP
   />;
 }
 
-export { Button, buttonVariants };
+export { Button };

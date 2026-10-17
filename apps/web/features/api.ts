@@ -39,9 +39,14 @@ export type ProductTypeRow = { id: string; name: string; description: string; st
 export type CatalogProductDetail = {
   productTypeId?: string | null; productType?: { id: string; name: string } | null; attributes?: Record<string, string | number | boolean>;
   customFields?: Record<string, string | number | boolean>;
-  id: string; name: string; description: string; brand: string; categoryId: string | null;
+  id: string; name: string; description: string; brand: string; productCoreFields?: string[]; categoryId: string | null;
   category: { id: string; name: string } | null; status: string;
   variants: { id: string; productId: string; sku: string; name: string; costCents: number; openPrice?: boolean; floorPriceCents?: number; status: string; uomId: string | null; customFields?: Record<string, string | number | boolean>; barcodes: string[]; prices: { id: string; amountCents: number; currency: string; includesTax: boolean; effectiveFrom: string }[] }[];
+  stock?: { variantId: string; sku: string; variantName: string; locationId: string; locationName: string; locationCode: string; storeId: string | null; storeName: string; status: string; quantity: number; reorderPoint: number; safetyStock: number }[];
+  activity?: { movements: { id: string; at: string; type: string; quantity: number; status: string; reason: string; unitCostCents?: number; locationName: string; locationCode: string; storeName: string; sku: string; variantName: string }[]; sales: { id: string; saleId: string; receiptNumber: string; at: string; status: string; storeId: string; storeName: string; storeCode: string; sku: string; variantName: string; quantity: number; unitPriceCents: number; taxCents: number; lineTotalCents: number; unitCostCents?: number }[] };
+};
+export type StoreProductDetail = {
+  variantId: string; productId: string; name: string; variantName: string; sku: string; barcodes: string[]; description: string; brand: string; productCoreFields?: string[]; category: { id: string; name: string } | null; productType: { id: string; name: string } | null; customFields: Record<string, string | number | boolean>; status: string; uom: { id: string; code: string; name: string } | null; price: { amountCents: number; currency: string; includesTax: boolean } | null; taxGroup: { id: string; name: string; ratePercent: number; includesTax: boolean } | null; costCents?: number; stock: { locationId: string; locationName: string; locationCode: string; status: string; quantity: number; reorderPoint: number; safetyStock: number }[]; activity: { movements: { id: string; at: string; type: string; quantity: number; status: string; reason: string; locationName: string; locationCode: string; unitCostCents?: number }[]; sales: { id: string; saleId: string; receiptNumber: string; at: string; status: string; quantity: number; unitPriceCents: number; taxCents: number; lineTotalCents: number; unitCostCents?: number }[] };
 };
 type UserRow = m.UserRow;
 type RoleRow = m.RoleRow;
@@ -119,7 +124,7 @@ export const api = {
   },
   async orgProfile() {
     const { organization: o } = await read<any>("/admin/overview");
-    return real({ name: o.name ?? "", legalName: o.legalName ?? "", tradeName: o.tradeName ?? "", gstin: o.gstin ?? "", address: o.address ?? "", timezone: o.timezone ?? "Asia/Kolkata", businessType: o.businessType ?? "RETAIL", countryCode: o.countryCode ?? "ZZ", taxProfileStatus: o.taxProfileStatus ?? "LEGACY" });
+    return real({ name: o.name ?? "", legalName: o.legalName ?? "", tradeName: o.tradeName ?? "", gstin: o.gstin ?? "", address: o.address ?? "", addressDetails: o.addressDetails ?? {}, timezone: o.timezone ?? "Asia/Muscat", businessType: o.businessType ?? "RETAIL", countryCode: o.countryCode ?? "ZZ", taxRegime: o.taxRegime ?? "TAX", taxProfileStatus: o.taxProfileStatus ?? "LEGACY" });
   },
   async transfers() {
     const value = await read<any>("/pos/v1/transfers");
@@ -287,14 +292,15 @@ export const api = {
   async product(id: string): Promise<Result<CatalogProductDetail>> {
     return real(await read<CatalogProductDetail>(`/admin/catalog/products/${id}`));
   },
+  async storeProduct(storeId: string, variantId: string): Promise<Result<StoreProductDetail>> {
+    return real(await read<StoreProductDetail>(`/pos/v1/stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(variantId)}`, { storeId }));
+  },
+  async catalogFieldConfig() {
+    return real(await read<{ fields: unknown[]; coreFields: string[] }>("/admin/catalog/field-config"));
+  },
   async categories(storeId?: string) {
     const value = await read<any>(storeId ? `/pos/v1/catalog/categories?storeId=${encodeURIComponent(storeId)}` : "/admin/catalog/categories", storeId ? { storeId } : {});
-    const counts = new Map<string, number>();
-    if (!storeId) {
-      const catalogue = await read<any>("/admin/catalog/products").catch(() => ({ products: [] }));
-      for (const product of catalogue.products ?? []) if (product.categoryId) counts.set(product.categoryId, (counts.get(product.categoryId) ?? 0) + 1);
-    }
-    return real((value.categories ?? []).map((category: any) => ({ id: category.id, name: category.name, products: counts.get(category.id) ?? 0 })) as m.CategoryRow[]);
+    return real((value.categories ?? []).map((category: any) => ({ id: category.id, name: category.name, parentId: category.parentId ?? null, status: category.status ?? "ACTIVE", products: category.products ?? 0 })) as m.CategoryRow[]);
   },
   async brands() {
     const value = await read<any>("/admin/catalog/brands");

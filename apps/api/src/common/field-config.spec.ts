@@ -15,7 +15,7 @@ describe('configurable field definitions', () => {
       coreFields: ['category'],
     });
     expect(config.fields.map((item) => item.key)).toEqual(['material', 'size']);
-    expect(config.coreFields).toEqual(['category', 'name', 'sku', 'price']);
+    expect(config.coreFields).toEqual(['category', 'name', 'sku', 'price', 'uom', 'status']);
     expect(config.coreFields).not.toContain('brand');
   });
 

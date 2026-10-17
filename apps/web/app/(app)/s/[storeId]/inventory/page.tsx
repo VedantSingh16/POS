@@ -3,7 +3,7 @@ import { LocalizedText } from "@/components/i18n/localized-text";
 import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { InventoryTable } from "@/features/tables";
 import { api, soft } from "@/features/api";
 import { NewLocationSheet, RebuildStockButton } from "@/features/actions";

@@ -56,6 +56,11 @@
       "node": "./dist/markets.js",
       "default": "./src/markets.ts"
     },
+    "./address-formats": {
+      "types": "./src/address-formats.ts",
+      "node": "./dist/address-formats.js",
+      "default": "./src/address-formats.ts"
+    },
     "./locale": {
       "types": "./src/locale.ts",
       "node": "./dist/locale.js",

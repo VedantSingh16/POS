@@ -23,19 +23,20 @@ export type FieldDefinition = {
 export type FieldSet = { version: 1; allowStoreFields: boolean; fields: FieldDefinition[]; coreFields: string[] };
 export type StoreFieldSet = { version: 1; overrides: Record<string, Partial<FieldDefinition>>; fields: FieldDefinition[]; coreFields?: string[] };
 
-export const CORE_PRODUCT_FIELDS = ['name', 'description', 'productType', 'attributes', 'brand', 'category', 'sku', 'barcode', 'price', 'cost', 'uom', 'status', 'openPrice', 'floorPrice', 'includesTax'] as const;
+export const CORE_PRODUCT_FIELDS = ['name', 'description', 'productType', 'attributes', 'brand', 'category', 'sku', 'barcode', 'price', 'cost', 'uom', 'status', 'openPrice', 'floorPrice', 'includesTax', 'variants'] as const;
 export const CORE_CHECKOUT_FIELDS = ['customer', 'coupon', 'discount', 'discountReason', 'paymentReference', 'splitTender', 'itemNote', 'billHandler', 'tender', 'cashTendered'] as const;
-const LOCKED_CORE_FIELDS = new Set(['name', 'sku', 'price']);
+const LOCKED_CORE_FIELDS = new Set(['name', 'category', 'sku', 'price', 'uom', 'status']);
 const LOCKED_CHECKOUT_FIELDS = new Set(['billHandler', 'tender', 'cashTendered']);
 
-const DEFAULT_FIELD_SET: FieldSet = { version: 1, allowStoreFields: false, fields: [], coreFields: [...CORE_PRODUCT_FIELDS] };
+const DEFAULT_PRODUCT_CORE_FIELDS = ['name', 'description', 'category', 'sku', 'barcode', 'price', 'cost', 'uom', 'status'];
+const DEFAULT_FIELD_SET: FieldSet = { version: 1, allowStoreFields: false, fields: [], coreFields: DEFAULT_PRODUCT_CORE_FIELDS };
 const DEFAULT_STORE_FIELD_SET: StoreFieldSet = { version: 1, overrides: {}, fields: [] };
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
 type FieldSetDomain = 'PRODUCT' | 'CHECKOUT';
 
 export function cleanFieldSet(value: unknown, domain: FieldSetDomain = 'PRODUCT'): FieldSet {
-  if (value === undefined || value === null) return { ...structuredClone(DEFAULT_FIELD_SET), coreFields: [...coreKeys(domain)] };
+  if (value === undefined || value === null) return { ...structuredClone(DEFAULT_FIELD_SET), coreFields: domain === 'PRODUCT' ? [...DEFAULT_PRODUCT_CORE_FIELDS] : [...CORE_CHECKOUT_FIELDS] };
   if (!record(value)) throw new BadRequestException('Field configuration must be an object');
   if (value.version !== undefined && value.version !== 1) throw new BadRequestException('Unsupported field configuration version');
   if (!Array.isArray(value.fields) || value.fields.length > 30) throw new BadRequestException('Configure at most 30 fields');
@@ -46,7 +47,7 @@ export function cleanFieldSet(value: unknown, domain: FieldSetDomain = 'PRODUCT'
   });
   const keys = fields.map((item) => item.key);
   if (new Set(keys).size !== keys.length) throw new BadRequestException('Field keys must be unique');
-  const coreFields = value.coreFields === undefined ? [...coreKeys(domain)] : cleanCoreFields(value.coreFields, 'coreFields', domain);
+  const coreFields = value.coreFields === undefined ? [...(domain === 'PRODUCT' ? DEFAULT_PRODUCT_CORE_FIELDS : coreKeys(domain))] : cleanCoreFields(value.coreFields, 'coreFields', domain);
   for (const locked of lockedCoreKeys(domain)) if (!coreFields.includes(locked)) coreFields.push(locked);
   return { version: 1, allowStoreFields: domain === 'CHECKOUT' && value.allowStoreFields === true, fields: fields.sort((a, b) => a.order - b.order), coreFields };
 }

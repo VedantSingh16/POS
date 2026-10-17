@@ -36,7 +36,7 @@ export function NewTaxGroupSheet() {
 
 export function NewProductSheet({ stores, brands, categories, productTypes: productTypesProp, productFields: productFieldSet }: { stores: { id: string; name: string; code: string }[]; brands: { id: string; name: string }[]; categories: { id: string; name: string }[]; productTypes?: ProductTypeRow[]; productFields?: { fields: ConfiguredField[]; coreFields?: string[] } }) {
   const productTypes = productTypesProp ?? [];
-  const coreFields = productFieldSet?.coreFields ?? ["name", "description", "productType", "attributes", "brand", "category", "sku", "barcode", "price", "cost", "uom", "status"];
+  const coreFields = productFieldSet?.coreFields ?? ["name", "description", "category", "sku", "barcode", "price", "cost", "uom", "status"];
   const configuredFields = productFieldSet?.fields ?? [];
   const productFields = configuredFields.filter((field) => field.level === "PRODUCT");
   const variantFields = configuredFields.filter((field) => field.level === "VARIANT");
@@ -58,7 +58,8 @@ export function NewProductSheet({ stores, brands, categories, productTypes: prod
   const showBrand = coreFields.includes("brand") || selectedType?.config.requireBrand === true;
   const showCategory = coreFields.includes("category") || selectedType?.config.requireCategory === true;
   const showBarcode = coreFields.includes("barcode") || selectedType?.config.requireBarcode === true;
-  const combinations = useMemo(() => buildVariantCombinations(attributes), [attributes]);
+  const useVariants = coreFields.includes("variants");
+  const combinations = useMemo(() => useVariants ? buildVariantCombinations(attributes) : [{ key: "standard", label: "Standard", values: {} }], [attributes, useVariants]);
 
   function updateAttribute(id: string, field: "name" | "values", value: string) {
     setAttributes((current) => current.map((attribute) => attribute.id === id ? { ...attribute, [field]: value } : attribute));
@@ -75,9 +76,10 @@ export function NewProductSheet({ stores, brands, categories, productTypes: prod
     event.preventDefault();
     const productName = name.trim();
     if (productName.length < 2 || !skuPrefix.trim() || combinations.length === 0) {
-      toast.error("Enter a product name, SKU prefix, and at least one value for every attribute.");
+      toast.error(useVariants ? "Enter a product name, SKU prefix, and at least one value for every attribute." : "Enter a product name and SKU prefix.");
       return;
     }
+    if (!categoryId) { toast.error("Choose a category before creating the product."); return; }
     const missingProductField = productFields.find((field) => field.required && (productFieldValues[field.key] === undefined || productFieldValues[field.key] === ""));
     if (missingProductField) { toast.error(`${missingProductField.label} is required.`); return; }
     const missingVariantField = combinations.flatMap((combination) => variantFields.flatMap((field) => field.required && (edits[combination.key]?.customFields?.[field.key] === undefined || edits[combination.key]?.customFields?.[field.key] === "") ? [{ combination, field }] : []))[0];
@@ -97,7 +99,7 @@ export function NewProductSheet({ stores, brands, categories, productTypes: prod
         sku: (values?.sku ?? generatedSku).trim(),
         barcode: values?.barcode?.trim() || undefined,
         amountCents: toMinor(price),
-        includesTax: true,
+        includesTax: coreFields.includes("includesTax"),
         customFields: edits[combination.key]?.customFields ?? {},
       };
     });
@@ -147,14 +149,14 @@ export function NewProductSheet({ stores, brands, categories, productTypes: prod
     <ConfigurableFieldValues fields={productFields} values={productFieldValues} onChange={setProductFieldValues} idPrefix="new-product-field" />
     {coreFields.includes("description") && <Field label="Description" htmlFor="product-description"><Input id="product-description" value={description} onChange={(event) => setDescription(event.target.value)} /></Field>}
     {showBrand && <Field label={selectedType?.config.requireBrand ? "Brand · required by this product type" : "Brand"} htmlFor="product-brand"><NativeSelect id="product-brand" value={brandId} onChange={(event) => { setBrandId(event.target.value); const b = brands.find((item) => item.id === event.target.value); setBrand(b?.name ?? ""); }}><option value=""><LocalizedText value={selectedType?.config.requireBrand ? "Choose a brand" : "No brand"} /></option>{allowedBy(selectedType, "brandIds", brands).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</NativeSelect></Field>}
-    {showCategory && <Field label="Category" htmlFor="product-category"><NativeSelect id="product-category" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value=""><LocalizedText value={"Uncategorised"} /></option>{allowedBy(selectedType, "categoryIds", categories).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></Field>}
+    {showCategory && <Field label="Category" htmlFor="product-category"><NativeSelect id="product-category" required value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value=""><LocalizedText value={"Choose a category"} /></option>{allowedBy(selectedType, "categoryIds", categories).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></Field>}
     <Field label="SKU prefix" htmlFor="product-sku-prefix"><Input id="product-sku-prefix" required value={skuPrefix} onChange={(event) => setSkuPrefix(event.target.value)} placeholder="e.g. TSHIRT" /></Field>
     <section className="grid gap-2" aria-label="Stores that sell this product">
       <div><h3 className="text-sm font-semibold"><LocalizedText value={"Send to stores"} /></h3><p className="text-xs text-muted-foreground"><LocalizedText value={"Each store has its own catalogue. Selected stores receive the product as "} /><b><LocalizedText value={"Pending"} /></b> <LocalizedText value={"and add it themselves. Leave all unchecked to keep it in the organisation catalogue only; you can send it later from Distributions."} /></p></div>
       {stores.length === 0 ? <p className="text-sm text-muted-foreground"><LocalizedText value={"No stores yet."} /></p> : <div className="grid gap-1.5 sm:grid-cols-2">{stores.map((store) => <label key={store.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={storeIds.includes(store.id)} onChange={() => setStoreIds((current) => current.includes(store.id) ? current.filter((id) => id !== store.id) : [...current, store.id])} /> {store.name} <span className="text-muted-foreground">({store.code})</span></label>)}</div>}
       {storeIds.length > 0 && <Field label={combinations.length === 1 ? "Stock to send to each store" : "Stock to send per variant, to each store"} htmlFor="product-opening"><Input id="product-opening" type="number" min="0" value={openingQty} onChange={(event) => setOpeningQty(event.target.value)} placeholder="Optional (0 sends the product without stock)" /></Field>}
     </section>
-    <section className="grid gap-2" aria-label="Variant attributes">
+    {useVariants && <section className="grid gap-2" aria-label="Variant attributes">
       <div><h3 className="text-sm font-semibold"><LocalizedText value={"Variant attributes"} /></h3><p className="text-xs text-muted-foreground"><LocalizedText value={"Enter comma-separated values. Every combination becomes a variant."} /></p></div>
       {attributes.map((attribute) => <div className="grid grid-cols-[1fr_2fr_auto] gap-2" key={attribute.id}>
         <Input aria-label="Attribute name" value={attribute.name} onChange={(event) => updateAttribute(attribute.id, "name", event.target.value)} placeholder="Attribute (e.g. Size)" />
@@ -162,11 +164,11 @@ export function NewProductSheet({ stores, brands, categories, productTypes: prod
         <Button type="button" variant="outline" aria-label={`Remove ${attribute.name || "attribute"}`} onClick={() => setAttributes((current) => current.filter((item) => item.id !== attribute.id))}><LocalizedText value={"Remove"} /></Button>
       </div>)}
       <Button type="button" variant="outline" className="w-fit" onClick={() => setAttributes((current) => [...current, { id: `attribute-${Date.now()}`, name: "", values: "" }])}><LocalizedText value={"Add attribute"} /></Button>
-    </section>
+    </section>}
     <section className="grid gap-2" aria-label="Generated variants">
       <h3 className="text-sm font-semibold"><LocalizedText value={"Generated variants ("} />{combinations.length})</h3>
       {combinations.length === 0 ? <p className="text-sm text-muted-foreground"><LocalizedText value={"Add uniquely named attributes, each with unique comma-separated values."} /></p> : <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[560px] text-start text-sm"><thead><tr className="border-b bg-muted/40"><th className="p-2"><LocalizedText value={"Variant"} /></th><th className="p-2"><LocalizedText value={"SKU"} /></th>{showBarcode && <th className="p-2"><LocalizedText value={"Barcode"} /></th>}<th className="p-2"><LocalizedText value={"Base price ("} />{currencyCode()})</th></tr></thead><tbody>
-        {combinations.map((combination, index) => <React.Fragment key={combination.key}><tr className="border-b last:border-0"><th scope="row" className="p-2 font-medium">{combination.label}</th><td className="p-2"><Input aria-label={`${combination.label} SKU`} required value={edits[combination.key]?.sku ?? `${skuPrefix.trim()}-${String(index + 1).padStart(2, "0")}`} onChange={(event) => updateVariant(combination.key, "sku", event.target.value)} /></td>{showBarcode && <td className="p-2"><Input aria-label={`${combination.label} barcode`} value={edits[combination.key]?.barcode ?? ""} onChange={(event) => updateVariant(combination.key, "barcode", event.target.value)} /></td>}<td className="p-2"><Input aria-label={`${combination.label} price in rupees`} type="number" min="0" step="0.01" required value={edits[combination.key]?.price ?? "0"} onChange={(event) => updateVariant(combination.key, "price", event.target.value)} /></td></tr>{variantFields.length > 0 && <tr className="border-b"><td colSpan={showBarcode ? 4 : 3} className="bg-muted/20 p-3"><details><summary className="cursor-pointer text-xs font-medium"><LocalizedText value={"Extra variant fields"} /></summary><div className="mt-3"><ConfigurableFieldValues fields={variantFields} values={edits[combination.key]?.customFields ?? {}} onChange={(values) => updateVariantFields(combination.key, values)} idPrefix={`variant-${combination.key}`} /></div></details></td></tr>}</React.Fragment>)}
+        {combinations.map((combination, index) => <React.Fragment key={combination.key}><tr className="border-b last:border-0"><th scope="row" className="p-2 font-medium">{combination.label}</th><td className="p-2"><Input aria-label={`${combination.label} SKU`} required value={edits[combination.key]?.sku ?? `${skuPrefix.trim()}-${String(index + 1).padStart(2, "0")}`} onChange={(event) => updateVariant(combination.key, "sku", event.target.value)} /></td>{showBarcode && <td className="p-2"><Input aria-label={`${combination.label} barcode`} value={edits[combination.key]?.barcode ?? ""} onChange={(event) => updateVariant(combination.key, "barcode", event.target.value)} /></td>}<td className="p-2"><Input aria-label={`${combination.label} price in ${currencyCode()}`} type="number" min="0" step="0.01" required value={edits[combination.key]?.price ?? "0"} onChange={(event) => updateVariant(combination.key, "price", event.target.value)} /></td></tr>{variantFields.length > 0 && <tr className="border-b"><td colSpan={showBarcode ? 4 : 3} className="bg-muted/20 p-3"><details><summary className="cursor-pointer text-xs font-medium"><LocalizedText value={"Extra variant fields"} /></summary><div className="mt-3"><ConfigurableFieldValues fields={variantFields} values={edits[combination.key]?.customFields ?? {}} onChange={(values) => updateVariantFields(combination.key, values)} idPrefix={`variant-${combination.key}`} /></div></details></td></tr>}</React.Fragment>)}
       </tbody></table></div>}
     </section>
     <div className="sticky bottom-0 -mx-5 flex justify-end gap-2 border-t bg-popover px-5 py-3"><SheetClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></SheetClose><Button type="submit" disabled={pending || combinations.length === 0}>{pending ? "Creating…" : `Create ${combinations.length} variant${combinations.length === 1 ? "" : "s"}`}</Button></div>

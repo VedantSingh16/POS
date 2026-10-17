@@ -12,6 +12,7 @@ import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
 import { formatDateTime, formatMoney as formatMoneyValue, currencyCode, currencyNotes, minorPerUnit, toMinor } from "@/lib/format";
 import { useLocale } from "@/components/i18n/locale-provider";
+import { safeRandomUUID } from "@/lib/uuid";
 
 export type BoardRegister = { id: string; name: string; code?: string; status: string; sessionId: string; cashier: string; openedAt: string; expectedMinor: number; active: boolean };
 
@@ -134,7 +135,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
     const cents = toMinor(amount);
     if (!Number.isInteger(cents) || cents <= 0) { toast.error("Enter an amount greater than zero."); return; }
     if (!reason.trim()) { toast.error("Add a short reason so the cash can be traced."); return; }
-    if (!movementId.current) movementId.current = crypto.randomUUID();
+    if (!movementId.current) movementId.current = safeRandomUUID();
     setBusy(true);
     const queuedItem: PendingCashMovement = { storeId, registerId: register.id, sessionId: register.sessionId, type, amountCents: cents, reason: reason.trim(), clientMovementId: movementId.current, createdAt: new Date().toISOString() };
     try {

@@ -63,10 +63,10 @@ describe("permissions", () => {
     expect(labels(cashier, A)).not.toEqual(expect.arrayContaining(["Store overview", "Alerts"]));
     expect(labels(cashier, A)).not.toEqual(expect.arrayContaining(["Team members", "Roles & access", "Reports & analytics", "Audit log", "Inventory"]));
     expect(labels(cashier, B)).toEqual([]);
-    expect(labels(admin, A)).toEqual(expect.arrayContaining(["Overview", "Team members", "Product catalogue", "Catalogue setup", "Sales", "Returns"]));
+    expect(labels(admin, A)).toEqual(expect.arrayContaining(["Overview", "Team members", "Catalogue", "Sales", "Returns"]));
     expect(labels(manager, A)).toEqual(expect.arrayContaining(["Store reports"]));
     expect(labels(manager, A)).toEqual(expect.arrayContaining(["Products", "Staff", "Store settings", "Billing & checkout"]));
-    expect(labels(manager, A)).toContain("Brands");
+    expect(labels(manager, A)).not.toContain("Brands");
     expect(labels(manager, A)).not.toEqual(expect.arrayContaining(["Team members", "Roles & access", "Stores", "Organisation settings"]));
     const settingsAdmin = { ...admin, permissions: { ...admin.permissions, organization: [...admin.permissions.organization, "org.settings.manage"] } };
     expect(labels(settingsAdmin, A)).toEqual(expect.arrayContaining(["Organisation settings", "Billing & checkout"]));
@@ -102,15 +102,13 @@ describe("permissions", () => {
   it("keeps catalogue and settings groups active on their nested routes", () => {
     const orgItems = NAV.find((section) => section.id === "org")!.items;
     const storeItems = NAV.find((section) => section.id === "store")!.items;
-    expect(isNavItemActive("/org/catalog/import", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(true);
-    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(false);
-    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Catalogue setup")!, A)).toBe(true);
-    expect(isNavItemActive("/org/catalog/types", orgItems.find((item) => item.label === "Catalogue setup")!, A)).toBe(true);
-    expect(isNavItemActive("/org/catalog/fields", orgItems.find((item) => item.label === "Catalogue setup")!, A)).toBe(true);
-    expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Product catalogue")!, A)).toBe(false);
-    expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Categories")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/import", orgItems.find((item) => item.label === "Catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/brands", orgItems.find((item) => item.label === "Catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/types", orgItems.find((item) => item.label === "Catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/fields", orgItems.find((item) => item.label === "Catalogue")!, A)).toBe(true);
+    expect(isNavItemActive("/org/catalog/categories", orgItems.find((item) => item.label === "Catalogue")!, A)).toBe(true);
     expect(isNavItemActive("/org/settings/tax", orgItems.find((item) => item.label === "Organisation settings")!, A)).toBe(true);
-    expect(isNavItemActive(`/s/${A}/brands`, storeItems.find((item) => item.label === "Brands")!, A)).toBe(true);
+    expect(isNavItemActive(`/s/${A}/products`, storeItems.find((item) => item.label === "Products")!, A)).toBe(true);
     expect(isNavItemActive(`/s/${A}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(true);
     expect(isNavItemActive(`/s/${B}/settings/checkout`, storeItems.find((item) => item.label === "Billing & checkout")!, A)).toBe(false);
   });

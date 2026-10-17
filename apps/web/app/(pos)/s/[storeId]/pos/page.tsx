@@ -17,7 +17,7 @@ export default async function PosPage({ params }: PageProps<"/s/[storeId]/pos">)
     soft(api.categories(storeId), [], (m) => problems.push(`categories: ${m}`)),
     soft(api.registers(storeId), [], (m) => problems.push(`registers: ${m}`)),
     soft(api.customers(storeId), [], (m) => problems.push(`customers: ${m}`)),
-    soft(api.checkoutConfig(storeId), { fields: [], coreFields: ["billHandler", "tender", "cashTendered"], handlers: [], requireBillHandler: false, requireDiscountReasonCode: false, discountReasons: [], discounts: { lineEnabled: true, lineMaxPercent: 100, billEnabled: true, billMaxPercent: 100, allowStacking: true }, productFields: [], productCoreFields: ["name", "sku", "price"] }, (m) => problems.push(`checkout settings: ${m}`)),
+    soft(api.checkoutConfig(storeId), { countryCode: "OM", taxRegime: "VAT", fields: [], coreFields: ["billHandler", "tender", "cashTendered"], handlers: [], requireBillHandler: false, requireDiscountReasonCode: false, discountReasons: [], discounts: { lineEnabled: true, lineMaxPercent: 100, billEnabled: true, billMaxPercent: 100, allowStacking: true }, productFields: [], productCoreFields: ["name", "sku", "price"] }, (m) => problems.push(`checkout settings: ${m}`)),
   ]);
   return (
     <SessionProvider me={me}>

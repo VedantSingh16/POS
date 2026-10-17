@@ -39,7 +39,8 @@ export function EditProductSheet({ product, categories, productTypes = [], custo
       const type = productTypes.find((item) => item.id === typeId);
       const problem = missingAttribute(type, typeValues);
       if (problem) { toast.error(problem); return; }
-      await clientApi(`/admin/catalog/products/${product.id}`, { method: "PATCH", body: JSON.stringify({ ...value, categoryId: value.categoryId || null, productTypeId: typeId || null, customFields, attributes: typeId ? Object.fromEntries(Object.entries(typeValues).filter(([, v]) => v !== "")) : {} }) });
+      if (!value.categoryId) { toast.error("Choose a category."); return; }
+      await clientApi(`/admin/catalog/products/${product.id}`, { method: "PATCH", body: JSON.stringify({ ...value, ...(!showBrand ? { brand: undefined } : {}), categoryId: value.categoryId, productTypeId: typeId || null, customFields, attributes: typeId ? Object.fromEntries(Object.entries(typeValues).filter(([, v]) => v !== "")) : {} }) });
       toast.success("Product updated");
       window.location.reload();
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not update product"); }
@@ -49,7 +50,7 @@ export function EditProductSheet({ product, categories, productTypes = [], custo
     <Field label="Product name" htmlFor={`edit-product-name-${product.id}`}><Input id={`edit-product-name-${product.id}`} required minLength={2} {...form.register("name", { required: true, minLength: 2 })} /></Field>
     {showBrand && <Field label={selectedType?.config.requireBrand ? "Brand · required by this product type" : "Brand"} htmlFor={`edit-product-brand-${product.id}`}><Input id={`edit-product-brand-${product.id}`} {...form.register("brand")} /></Field>}
     {visibleCore.includes("description") && <Field label="Description" htmlFor={`edit-product-description-${product.id}`}><Input id={`edit-product-description-${product.id}`} {...form.register("description")} /></Field>}
-    {showCategory && <Field label="Category" htmlFor={`edit-product-category-${product.id}`}><NativeSelect id={`edit-product-category-${product.id}`} {...form.register("categoryId")}><option value=""><LocalizedText value={"Uncategorised"} /></option>{allowedBy(selectedType, "categoryIds", categories).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</NativeSelect></Field>}
+    {showCategory && <Field label="Category" htmlFor={`edit-product-category-${product.id}`}><NativeSelect id={`edit-product-category-${product.id}`} required {...form.register("categoryId")}><option value=""><LocalizedText value={"Choose a category"} /></option>{allowedBy(selectedType, "categoryIds", categories).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</NativeSelect></Field>}
     {visibleCore.includes("status") && <Field label="Status" htmlFor={`edit-product-status-${product.id}`}><NativeSelect id={`edit-product-status-${product.id}`} {...form.register("status")}>{statuses.map((status) => <option key={status} value={status}><LocalizedText value={statusLabels[status]} /></option>)}</NativeSelect></Field>}
     <div className="flex justify-end gap-2"><SheetClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></SheetClose><Button type="submit" disabled={form.formState.isSubmitting}><LocalizedText value={form.formState.isSubmitting ? "Saving…" : "Save product"} /></Button></div>
   </form></FormSheet>;

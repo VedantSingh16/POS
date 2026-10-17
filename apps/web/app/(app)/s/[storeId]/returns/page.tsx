@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/server/session";
 import { PageHeader } from "@/components/app/page-header";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { ReturnsTable } from "@/features/tables";
 import { api } from "@/features/api";
 

@@ -7,7 +7,7 @@ import { api } from "@/features/api";
 import { requireSession } from "@/lib/server/session";
 import { KpiTile, Money } from "@/components/data/primitives";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import Link from "next/link";
 
 export async function generateMetadata() { return { title: await getLocalizedPageTitle("Reports") }; }
@@ -15,7 +15,9 @@ export async function generateMetadata() { return { title: await getLocalizedPag
 export default async function ReportsPage() {
   await requirePermission("report.view");
   const me = await requireSession();
-  const [{ data }, { data: report }, { data: stores }] = await Promise.all([api.charts(), api.reports(), api.stores()]);
+  const [{ data }, { data: report }, { data: stores }, { data: profile }] = await Promise.all([api.charts(), api.reports(), api.stores(), api.orgProfile()]);
+  const taxLabel = profile.taxRegime === "GST" ? "GST" : profile.taxRegime === "VAT" ? "VAT" : "Tax";
+  const codeLabel = profile.countryCode === "IN" ? "HSN" : "HS code";
   // One real report per store, so organisation totals and individual stores are never confused.
   const perStore = await Promise.all(stores.filter((store) => store.status === "ACTIVE").map(async (store) => {
     try { return { store, report: (await api.reports(store.id)).data }; } catch { return { store, report: null }; }
@@ -31,7 +33,7 @@ export default async function ReportsPage() {
         </tbody></table></div>}
       </CardContent></Card>
       <div className="grid gap-4 lg:grid-cols-2"><TrendChart data={data.trend} /><HourChart data={data.byHour} /><TenderChart data={data.tender} /></div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-2"><Card><CardHeader><CardTitle><LocalizedText value={"GST summary"} /></CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-start"><th className="py-2"><LocalizedText value={"HSN"} /></th><th className="py-2"><LocalizedText value={"Rate"} /></th><th className="py-2 text-end"><LocalizedText value={"Taxable"} /></th><th className="py-2 text-end"><LocalizedText value={"GST"} /></th></tr></thead><tbody>{report.gst.map((row: { hsnCode: string; rateBps: number; taxableCents: number; taxCents: number }) => <tr key={`${row.hsnCode}-${row.rateBps}`} className="border-b"><td className="py-2">{row.hsnCode || "—"}</td><td className="py-2">{row.rateBps / 100}%</td><td className="py-2 text-end"><Money minor={row.taxableCents} /></td><td className="py-2 text-end"><Money minor={row.taxCents} /></td></tr>)}</tbody></table></div></CardContent></Card><Card><CardHeader><CardTitle><LocalizedText value={"Cash reconciliation"} /></CardTitle></CardHeader><CardContent>{report.cashReconciliation.length ? <div className="divide-y">{report.cashReconciliation.slice(0, 8).map((row: { sessionId: string; register: string; cashier: string; status: string; varianceCents: number | null }) => <div key={row.sessionId} className="flex justify-between gap-3 py-2 text-sm"><span>{row.register} · {row.cashier}<span className="block text-xs text-muted-foreground">{row.status}</span></span><Money minor={row.varianceCents ?? 0} /></div>)}</div> : <p className="text-sm text-muted-foreground"><LocalizedText value={"No register sessions in this period."} /></p>}</CardContent></Card></div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2"><Card><CardHeader><CardTitle><LocalizedText value={`${taxLabel} summary`} /></CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-start"><th className="py-2"><LocalizedText value={codeLabel} /></th><th className="py-2"><LocalizedText value={"Rate"} /></th><th className="py-2 text-end"><LocalizedText value={"Taxable"} /></th><th className="py-2 text-end"><LocalizedText value={taxLabel} /></th></tr></thead><tbody>{report.gst.map((row: { hsnCode: string; rateBps: number; taxableCents: number; taxCents: number }) => <tr key={`${row.hsnCode}-${row.rateBps}`} className="border-b"><td className="py-2">{row.hsnCode || "—"}</td><td className="py-2">{row.rateBps / 100}%</td><td className="py-2 text-end"><Money minor={row.taxableCents} /></td><td className="py-2 text-end"><Money minor={row.taxCents} /></td></tr>)}</tbody></table></div></CardContent></Card><Card><CardHeader><CardTitle><LocalizedText value={"Cash reconciliation"} /></CardTitle></CardHeader><CardContent>{report.cashReconciliation.length ? <div className="divide-y">{report.cashReconciliation.slice(0, 8).map((row: { sessionId: string; register: string; cashier: string; status: string; varianceCents: number | null }) => <div key={row.sessionId} className="flex justify-between gap-3 py-2 text-sm"><span>{row.register} · {row.cashier}<span className="block text-xs text-muted-foreground">{row.status}</span></span><Money minor={row.varianceCents ?? 0} /></div>)}</div> : <p className="text-sm text-muted-foreground"><LocalizedText value={"No register sessions in this period."} /></p>}</CardContent></Card></div>
     </>
   );
 }

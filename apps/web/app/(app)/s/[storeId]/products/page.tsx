@@ -11,8 +11,9 @@ import type { ConfiguredField } from "@/features/settings/configurable-field-val
 
 export async function generateMetadata() { return { title: await getLocalizedPageTitle("Store products") }; }
 
-export default async function StoreProducts({ params }: PageProps<"/s/[storeId]/products">) {
+export default async function StoreProducts({ params, searchParams }: PageProps<"/s/[storeId]/products">) {
   const { storeId } = await params;
+  const query = await searchParams;
   const me = await requirePermission("catalog.view", storeId);
   const store = me.stores.find((value) => value.id === storeId);
   const canManageStore = hasPermission(me, "catalog.manage.store", storeId);
@@ -38,6 +39,7 @@ export default async function StoreProducts({ params }: PageProps<"/s/[storeId]/
   }));
   const productConfig = storeSettings.effectiveProductFields ?? [];
   const displayFields = productConfig as ConfiguredField[];
+  const categoryCounts = [...new Map(rows.map((row) => [row.category, rows.filter((item) => item.category === row.category).length])).entries()].filter(([name]) => name).sort((a, b) => a[0].localeCompare(b[0]));
   return (
     <>
       <PageHeader
@@ -58,7 +60,8 @@ export default async function StoreProducts({ params }: PageProps<"/s/[storeId]/
           <PendingVerificationList storeId={storeId} items={pending} taxGroups={taxOptions.map((t) => ({ id: t.id, name: t.name, rate: t.ratePercent }))} canReview={canVerify} />
         </section>
       )}
-      <StoreProductsTable storeId={storeId} data={rows} productTypes={productTypes} displayFieldDefinitions={displayFields} coreFields={storeSettings.effectiveProductCoreFields} />
+      {categoryCounts.length > 0 && <div className="mb-4 flex flex-wrap gap-2" aria-label="Products by category">{categoryCounts.map(([name, count]) => <a key={name} className="rounded-full border px-3 py-1 text-xs hover:bg-accent" href={`/s/${storeId}/products?category=${encodeURIComponent(name)}`}>{name} · {count}</a>)}</div>}
+      <StoreProductsTable storeId={storeId} data={rows} initialCategory={typeof query.category === "string" ? query.category : ""} productTypes={productTypes} displayFieldDefinitions={displayFields} coreFields={storeSettings.effectiveProductCoreFields} />
     </>
   );
 }

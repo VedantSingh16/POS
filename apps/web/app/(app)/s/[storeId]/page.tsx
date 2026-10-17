@@ -5,7 +5,7 @@ import { Banknote, Clock3, Receipt, ShoppingCart, TriangleAlert } from "lucide-r
 import { PageHeader } from "@/components/app/page-header";
 import { HourChart, TenderChart } from "@/components/data/charts";
 import { KpiTile } from "@/components/data/primitives";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money } from "@/components/data/primitives";
 import { api } from "@/features/api";
@@ -33,7 +33,7 @@ export default async function StoreDashboard({ params }: PageProps<"/s/[storeId]
     canViewRegisters ? api.registers(storeId) : Promise.resolve({ data: [] }),
   ]);
   // "Today" is the store's own calendar day, not the server's UTC day.
-  const zone = await api.storeSettings(storeId).then((r) => String((r.data as { timezone?: string }).timezone || "Asia/Kolkata")).catch(() => "Asia/Kolkata");
+  const zone = await api.storeSettings(storeId).then((r) => String((r.data as { timezone?: string }).timezone || "Asia/Muscat")).catch(() => "Asia/Muscat");
   const locale = await getServerLocale();
   const dayKey = (value: Date) => { try { return new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(value); } catch { return value.toISOString().slice(0, 10); } };
   const todayKey = dayKey(new Date());

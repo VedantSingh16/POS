@@ -69,18 +69,19 @@ export function StoresTable({ data }: { data: Store[] }) {
 
 type Product = Omit<M.Product, "status"> & { status: string; description?: string; attributes?: Record<string, string | number | boolean>; productId?: string; categoryId?: string | null; brand?: string; productTypeName?: string; costMinor?: number; uomCode?: string | null; openPrice?: boolean; floorPriceCents?: number; includesTax?: boolean; customFields?: Record<string, string | number | boolean> };
 type ProductFilterOption = { id: string; name: string };
-export function ProductsTable({ data, categories, brands, stores, selectedStoreId, productTypes = [], customFieldDefinitions = [], coreFields }: {
+export function ProductsTable({ data, categories, brands, stores, selectedStoreId, initialCategoryId = "", productTypes = [], customFieldDefinitions = [], coreFields }: {
   data: Product[];
   categories: ProductFilterOption[];
   brands: ProductFilterOption[];
   stores: { id: string; name: string; code: string }[];
   selectedStoreId?: string;
+  initialCategoryId?: string;
   productTypes?: ProductFilterOption[];
   customFieldDefinitions?: ConfiguredField[];
   coreFields?: string[];
 }) {
   const t = useTranslate();
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(initialCategoryId);
   const [brand, setBrand] = useState("");
   const [productTypeName, setProductTypeName] = useState("");
   const [storeAssignment, setStoreAssignment] = useState<"" | "IN_STORE" | "NOT_IN_STORE">("");
@@ -201,7 +202,7 @@ export function InventoryTable({ data, storeId, productTypes = [] }: { data: Inv
   const prioritized = [...data].sort((a, b) => (urgency[a.status] ?? 2) - (urgency[b.status] ?? 2) || a.onHand - b.onHand);
   const options = productTypes.length ? productTypes : [...new Map(data.flatMap((item) => item.productTypeId && item.productTypeName ? [[item.productTypeId, { id: item.productTypeId, name: item.productTypeName }] as const] : [])).values()];
   const visible = prioritized.filter((product) => !productTypeId || product.productTypeId === productTypeId);
-  return <DataTable columns={cols} data={visible} toolbar={<ProductVersionFilter value={productTypeId} onChange={setProductTypeId} options={options} />} searchPlaceholder="Search product, SKU, barcode, or version…" emptyTitle="No stock records" emptyDescription="Stock will appear here after products are assigned to this store." />;
+  return <DataTable columns={cols} data={visible} rowHref={(row) => `/s/${storeId}/products/${row.variantId}`} toolbar={<ProductVersionFilter value={productTypeId} onChange={setProductTypeId} options={options} />} searchPlaceholder="Search product, SKU, barcode, or version…" emptyTitle="No stock records" emptyDescription="Stock will appear here after products are assigned to this store." />;
 }
 
 type Led = M.LedgerRow;

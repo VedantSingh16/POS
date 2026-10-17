@@ -3,7 +3,7 @@ import { LocalizedText } from "@/components/i18n/localized-text";
 import { ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/data/primitives";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { landingPath } from "@/lib/permissions";
 import { requireSession } from "@/lib/server/session";
 

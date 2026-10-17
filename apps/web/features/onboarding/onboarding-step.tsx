@@ -4,24 +4,31 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, Info } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { clientApi } from "@/features/client-api";
 import { CURRENCIES } from "@pos/shared/currency";
-import { MARKETS, marketByCode } from "@pos/shared/markets";
+import { MARKETS, marketByCode, taxRegimeFor } from "@pos/shared/markets";
+import { OMAN_ADDRESS_FIELDS, OMAN_GOVERNORATES, isOmanCountry, omanGovernorate, validateOmanAddress, normalizeOmanPhone } from "@pos/shared/address-formats";
+import { validateTaxNumber } from "@pos/shared/tax-id";
+import { OmanAddressFields } from "@/features/settings/oman-address-fields";
 
 type OrganizationDraft = {
   name: string;
+  address: string;
+  addressDetails: Record<string, string>;
   countryCode: string;
+  taxRegime: string;
   currency: string;
   businessType: string;
   timezone: string;
   taxProfileStatus: string;
   gstin: string;
 };
-type StoreDraft = { name: string; address: string; city: string; region: string; postalCode: string; phone: string; timezone: string };
+type StoreDraft = { name: string; address: string; city: string; region: string; postalCode: string; phone: string; timezone: string; addressDetails: Record<string, string> };
 type Props = {
   currentStep: number;
   initialData: Record<string, unknown>;
@@ -31,7 +38,6 @@ type Props = {
 };
 
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const AUTH_CARD = "rounded-[24px] border-auth-outline bg-auth-surface shadow-sm ring-1 ring-auth-outline";
 const AUTH_INPUT = "h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink placeholder:text-auth-muted focus-visible:border-auth-primary focus-visible:ring-auth-primary/20";
 const AUTH_SELECT = "h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink focus-visible:border-auth-primary focus-visible:ring-3 focus-visible:ring-auth-primary/20";
@@ -44,7 +50,10 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
   const initialStore = asRecord(initialData.store);
   const [orgState, setOrgState] = React.useState<OrganizationDraft>({
     name: String(initialOrg.name ?? organization.name),
+    address: String(initialOrg.address ?? ""),
+    addressDetails: Object.fromEntries(Object.entries(asRecord(initialOrg.addressDetails)).map(([key, value]) => [key, String(value ?? "")])),
     countryCode: String(initialOrg.countryCode ?? organization.countryCode),
+    taxRegime: String(initialOrg.taxRegime ?? taxRegimeFor(initialOrg.countryCode ?? organization.countryCode)),
     currency: String(initialOrg.currency ?? organization.currency),
     businessType: String(initialOrg.businessType ?? "RETAIL"),
     timezone: String(initialOrg.timezone ?? organization.timezone),
@@ -59,22 +68,34 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
     postalCode: String(initialStore.postalCode ?? ""),
     phone: String(initialStore.phone ?? ""),
     timezone: String(initialStore.timezone ?? initialOrg.timezone ?? organization.timezone),
+    addressDetails: Object.fromEntries(Object.entries(asRecord(initialStore.addressDetails)).map(([key, value]) => [key, String(value ?? "")])),
   });
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
 
   const setOrg = (key: keyof OrganizationDraft, value: string) => setOrgState((current) => ({ ...current, [key]: value }));
-  const setStore = (key: keyof StoreDraft, value: string) => setStoreState((current) => ({ ...current, [key]: value }));
+  const setOrgAddress = (addressDetails: Record<string, string>) => setOrgState((current) => ({ ...current, addressDetails }));
+  const setStore = (key: Exclude<keyof StoreDraft, "addressDetails">, value: string) => setStoreState((current) => ({ ...current, [key]: value }));
+  const setDetail = (key: string, value: string) => setStoreState((current) => ({ ...current, addressDetails: { ...current.addressDetails, [key]: value } }));
+  const storeIsOman = isOmanCountry(orgState.countryCode);
+  const vat = orgState.taxRegime === "VAT";
 
   async function saveOrganization() {
     setError("");
     if (orgState.name.trim().length < 2) { setError("Enter your organisation name."); return; }
     if (!orgState.countryCode || !orgState.currency || !orgState.businessType) { setError("Choose your country, currency and business type."); return; }
     if (!["REGISTERED", "NOT_REGISTERED", "UNSURE"].includes(orgState.taxProfileStatus)) { setError("Choose a tax registration status to continue."); return; }
-    if (orgState.countryCode === "IN" && orgState.taxProfileStatus === "REGISTERED" && !GSTIN.test(orgState.gstin.trim().toUpperCase())) { setError("Enter a valid 15-character GSTIN."); return; }
+    if (orgState.taxProfileStatus === "REGISTERED" && (orgState.countryCode === "IN" || orgState.countryCode === "OM")) {
+      const check = validateTaxNumber(orgState.countryCode, orgState.gstin.trim().toUpperCase());
+      if (!check.valid) { setError(check.error ?? (orgState.countryCode === "OM" ? "Enter a valid Omani VAT number, for example OM1234567890." : "Enter a valid 15-character GSTIN.")); return; }
+    }
+    if (storeIsOman) {
+      const address = validateOmanAddress(orgState.addressDetails);
+      if (!address.valid) { setError(Object.values(address.errors)[0] ?? "Complete the organisation address."); return; }
+    }
     setBusy(true);
     try {
-      await clientApi("/admin/onboarding", { method: "PATCH", body: JSON.stringify({ version: 2, currentStep: 0, completedSteps: [0], data: { organization: { ...orgState, name: orgState.name.trim(), gstin: orgState.gstin.trim().toUpperCase() } } }) });
+      await clientApi("/admin/onboarding", { method: "PATCH", body: JSON.stringify({ version: 2, currentStep: 0, completedSteps: [0], data: { organization: { ...orgState, name: orgState.name.trim(), gstin: orgState.gstin.trim().toUpperCase(), ...(storeIsOman ? { addressDetails: validateOmanAddress(orgState.addressDetails).details } : {}) } } }) });
       router.push("/onboarding/store");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save organisation details.");
@@ -84,13 +105,22 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
   async function saveStore() {
     setError("");
     if (storeState.name.trim().length < 2) { setError("Enter your store name."); return; }
-    if (storeState.address.trim().length < 3) { setError("Enter the store street address."); return; }
-    if (storeState.city.trim().length < 2) { setError("Enter the store city."); return; }
+    if (storeIsOman) {
+      const check = validateOmanAddress(storeState.addressDetails);
+      if (!check.valid) { setError(Object.values(check.errors)[0] ?? "Complete the store address."); return; }
+      const phone = normalizeOmanPhone(storeState.phone);
+      if (!phone.valid) { setError(phone.error ?? "Enter a valid Omani phone number."); return; }
+    } else {
+      if (storeState.address.trim().length < 3) { setError("Enter the store street address."); return; }
+      if (storeState.city.trim().length < 2) { setError("Enter the store city."); return; }
+    }
     setBusy(true);
     try {
       const savedOrg = asRecord(initialData.organization);
       const organizationDraft = Object.keys(savedOrg).length ? savedOrg as OrganizationDraft : orgState;
-      const storeDraft = { ...storeState, name: storeState.name.trim(), address: storeState.address.trim(), city: storeState.city.trim() };
+      const storeDraft = storeIsOman
+        ? { ...storeState, name: storeState.name.trim(), addressDetails: validateOmanAddress(storeState.addressDetails).details }
+        : { ...storeState, name: storeState.name.trim(), address: storeState.address.trim(), city: storeState.city.trim(), addressDetails: {} };
       await clientApi("/admin/onboarding", { method: "PATCH", body: JSON.stringify({ version: 2, currentStep: 1, completedSteps: [0], data: { store: storeDraft } }) });
       await clientApi("/admin/onboarding/required", { method: "POST", body: JSON.stringify({ organization: organizationDraft, store: storeDraft }) });
       router.replace("/onboarding/optional");
@@ -150,12 +180,16 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
   if (currentStep === 0) return <div className="grid gap-5 sm:gap-6">
     <Card className={AUTH_CARD}><CardContent className="grid gap-x-5 gap-y-5 p-5 sm:grid-cols-2 sm:p-7 lg:p-8">
       {field("Business name", orgState.name, (value) => setOrg("name", value), { autoComplete: "organization" })}
-      <label className={AUTH_LABEL}><span><LocalizedText value={"Country or region"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.countryCode} onChange={(event) => { const market = marketByCode(event.target.value); setOrgState((current) => ({ ...current, countryCode: event.target.value, currency: event.target.value === "ZZ" ? "" : market?.currency ?? current.currency, timezone: market?.timezone ?? current.timezone })); }}>{MARKETS.map((market) => <option key={market.code} value={market.code}>{market.name}</option>)}</NativeSelect></label>
+      <label className={AUTH_LABEL}><span><LocalizedText value={"Country or region"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.countryCode} onChange={(event) => { const market = marketByCode(event.target.value); setOrgState((current) => ({ ...current, countryCode: event.target.value, currency: market?.currency ?? current.currency, timezone: market?.timezone ?? current.timezone, taxRegime: taxRegimeFor(event.target.value), gstin: "" })); }}>{MARKETS.map((market) => <option key={market.code} value={market.code}>{market.name}</option>)}</NativeSelect></label>
       <label className={AUTH_LABEL}><span><LocalizedText value={"Base currency"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.currency} onChange={(event) => setOrg("currency", event.target.value)}><option value=""><LocalizedText value={"Choose a currency"} /></option>{Object.values(CURRENCIES).map((currency) => <option key={currency.code} value={currency.code}>{currency.code} · {currency.name}</option>)}</NativeSelect><span className="text-xs font-normal leading-5 text-auth-muted"><LocalizedText value={"Suggested from your country. Amounts are recorded in this currency."} /></span></label>
+      <label className={AUTH_LABEL}><span><LocalizedText value={"Tax wording"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.taxRegime} onChange={(event) => setOrg("taxRegime", event.target.value)}><option value="VAT"><LocalizedText value={"VAT"} /></option><option value="GST"><LocalizedText value={"GST"} /></option><option value="TAX"><LocalizedText value={"Tax"} /></option></NativeSelect></label>
       <label className={AUTH_LABEL}><span><LocalizedText value={"Business type"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.businessType} onChange={(event) => setOrg("businessType", event.target.value)}><option value="RETAIL"><LocalizedText value={"Retail"} /></option><option value="GROCERY"><LocalizedText value={"Grocery"} /></option><option value="PHARMACY"><LocalizedText value={"Pharmacy"} /></option><option value="OTHER"><LocalizedText value={"Other"} /></option></NativeSelect></label>
-      {field("Organisation time zone", orgState.timezone, (value) => setOrg("timezone", value), { placeholder: "Asia/Kolkata" })}
-      <label className={AUTH_LABEL}><span><LocalizedText value={orgState.countryCode === "IN" ? "Are you registered for GST?" : "Tax registration"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.taxProfileStatus} onChange={(event) => setOrg("taxProfileStatus", event.target.value)}><option value=""><LocalizedText value={"Choose one"} /></option><option value="REGISTERED"><LocalizedText value={orgState.countryCode === "IN" ? "Yes, registered for GST" : "Registered for tax"} /></option><option value="NOT_REGISTERED"><LocalizedText value={orgState.countryCode === "IN" ? "No, not registered" : "Not registered / not applicable"} /></option><option value="UNSURE"><LocalizedText value={"Not sure yet"} /></option></NativeSelect></label>
+      {field("Organisation time zone", orgState.timezone, (value) => setOrg("timezone", value), { placeholder: "Asia/Muscat" })}
+      {storeIsOman ? <OmanAddressFields value={orgState.addressDetails} onChange={setOrgAddress} idPrefix="onboarding-org" /> : field("Registered address", orgState.address, (value) => setOrg("address", value), { autoComplete: "street-address" })}
+      <label className={AUTH_LABEL}><span><LocalizedText value={orgState.countryCode === "IN" ? "Are you registered for GST?" : vat ? "Are you registered for VAT?" : "Tax registration"} /></span><NativeSelect className={AUTH_SELECT} value={orgState.taxProfileStatus} onChange={(event) => setOrg("taxProfileStatus", event.target.value)}><option value=""><LocalizedText value={"Choose one"} /></option><option value="REGISTERED"><LocalizedText value={orgState.countryCode === "IN" ? "Yes, registered for GST" : vat ? "Yes, registered for VAT" : "Registered for tax"} /></option><option value="NOT_REGISTERED"><LocalizedText value={orgState.countryCode === "IN" ? "No, not registered" : "Not registered / not applicable"} /></option><option value="UNSURE"><LocalizedText value={"Not sure yet"} /></option></NativeSelect></label>
       {orgState.countryCode === "IN" && orgState.taxProfileStatus === "REGISTERED" && field("GSTIN", orgState.gstin, (value) => setOrg("gstin", value.toUpperCase()), { autoComplete: "off", maxLength: 15 })}
+      {orgState.countryCode === "OM" && orgState.taxProfileStatus === "REGISTERED" && field("VAT number", orgState.gstin, (value) => setOrg("gstin", value.toUpperCase()), { autoComplete: "off", maxLength: 12, placeholder: "OM1234567890" })}
+      {orgState.countryCode !== "OM" && orgState.countryCode !== "IN" && orgState.taxProfileStatus === "REGISTERED" && field("Tax number", orgState.gstin, (value) => setOrg("gstin", value.toUpperCase()), { autoComplete: "off", maxLength: 20 })}
       <div className="flex gap-3 rounded-[14px] bg-auth-canvas px-4 py-3 text-sm leading-5 text-auth-muted sm:col-span-2"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-auth-primary" /><p><span className="font-semibold text-auth-ink"><LocalizedText value={"Signed in as "} />{admin.email}.</span> <LocalizedText value={"Tax status is recorded here; tax rates are configured separately."} /></p></div>
     </CardContent></Card>
     {error && <p role="alert" className="rounded-[14px] border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>}
@@ -166,11 +200,18 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
     <Card className={AUTH_CARD}><CardContent className="grid gap-x-5 gap-y-5 p-5 sm:grid-cols-2 sm:p-7 lg:p-8">
       {field("Store name", storeState.name, (value) => setStore("name", value), { autoComplete: "organization" })}
       <div className={AUTH_LABEL}><span><LocalizedText value={"Country"} /></span><p className="flex h-12 items-center rounded-[14px] border border-auth-border bg-auth-canvas px-4 text-base font-normal text-auth-muted">{marketByCode(orgState.countryCode)?.name ?? "Same as organisation"}</p></div>
+      {storeIsOman ? <>
+        <label className={AUTH_LABEL}><span><LocalizedText value={"Governorate"} /></span><NativeSelect className={AUTH_SELECT} value={storeState.addressDetails.governorate ?? ""} onChange={(event) => setDetail("governorate", event.target.value)}><option value=""><LocalizedText value={"Choose a governorate"} /></option>{OMAN_GOVERNORATES.map((entry) => <option key={entry.name} value={entry.name}>{entry.name}</option>)}</NativeSelect></label>
+        {OMAN_ADDRESS_FIELDS.filter((entry) => entry.key !== "governorate").map((entry) => <label key={entry.key} className={entry.key === "landmark" ? `${AUTH_LABEL} sm:col-span-2` : AUTH_LABEL}><span><LocalizedText value={entry.label} />{entry.required ? "" : " "}{entry.required ? "" : <span className="font-normal text-auth-muted">(<LocalizedText value={"optional"} />)</span>}</span><Input className={AUTH_INPUT} value={storeState.addressDetails[entry.key] ?? ""} onChange={(event) => setDetail(entry.key, event.target.value)} maxLength={entry.maxLength} placeholder={entry.placeholder} inputMode={entry.inputMode} list={entry.key === "wilayat" ? "oman-wilayats" : undefined} autoComplete="off" /></label>)}
+        <datalist id="oman-wilayats">{(omanGovernorate(storeState.addressDetails.governorate)?.wilayats ?? []).map((name) => <option key={name} value={name} />)}</datalist>
+        {field("Store phone (optional)", storeState.phone, (value) => setStore("phone", value), { type: "tel", autoComplete: "tel", placeholder: "+968 9123 4567" })}
+      </> : <>
       <label className={`${AUTH_LABEL} sm:col-span-2`}><span><LocalizedText value={"Street address"} /></span><Textarea className="min-h-28 rounded-[14px] border-auth-border bg-auth-surface px-4 py-3 text-base text-auth-ink placeholder:text-auth-muted focus-visible:border-auth-primary focus-visible:ring-auth-primary/20" value={storeState.address} onChange={(event) => setStore("address", event.target.value)} autoComplete="street-address" /></label>
       {field("City", storeState.city, (value) => setStore("city", value), { autoComplete: "address-level2" })}
       {field("State, province or region", storeState.region, (value) => setStore("region", value), { autoComplete: "address-level1" })}
       {field("Postal code", storeState.postalCode, (value) => setStore("postalCode", value), { autoComplete: "postal-code" })}
       {field("Store phone (optional)", storeState.phone, (value) => setStore("phone", value), { type: "tel", autoComplete: "tel" })}
+      </>}
       {field("Store time zone", storeState.timezone, (value) => setStore("timezone", value), { placeholder: orgState.timezone })}
     </CardContent></Card>
     <p className="text-sm leading-6 text-auth-muted"><LocalizedText value={"A stockroom and a default register are created with your first store. You can add locations, registers, team members and devices from your workspace."} /></p>
