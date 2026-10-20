@@ -1,163 +1,64 @@
 {
   "schemaVersion": 2,
   "productKey": "POS",
-  "manifestVersion": "0.1.0",
+  "manifestVersion": "1.0.0",
   "minimumContractVersion": "2.2.0",
-  "displayName": "DeltPOS",
-  "description": "Point of sale, inventory, registers, and receipts",
+  "displayName": "DeltCRM POS",
+  "description": "Point-of-sale, catalogue, inventory, registers, sales and store operations",
   "audience": "pos-api",
-  "routes": {
-    "webPath": "/{locale}/app/pos",
-    "apiPrefix": "/api/pos/v1"
-  },
-  "navigation": {
-    "key": "pos",
-    "labelKey": "products.pos.name",
-    "iconKey": "store",
-    "order": 30,
-    "requiredPermission": "pos.sales.read",
-    "requiredCapability": "POS_CORE"
-  },
+  "routes": { "webPath": "/{locale}/app/pos", "apiPrefix": "/api/pos/v1" },
+  "navigation": { "key": "pos", "labelKey": "products.pos.name", "iconKey": "store", "order": 30, "requiredPermission": "pos.sales.read", "requiredCapability": "POS_CORE" },
   "permissions": [
-    {
-      "key": "pos.catalog.read",
-      "description": "Read the POS catalog",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.catalog.manage",
-      "description": "Manage catalog items",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.registers.read",
-      "description": "Read registers",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.registers.manage",
-      "description": "Manage registers",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.sales.read",
-      "description": "Read permitted sales",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.sales.create",
-      "description": "Create sales",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.reports.read",
-      "description": "Read POS reports",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.inventory.manage",
-      "description": "Manage inventory movements",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.refunds.create",
-      "description": "Create returns and refunds",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.customers.manage",
-      "description": "Manage customer and loyalty records",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    },
-    {
-      "key": "pos.transfers.manage",
-      "description": "Manage multi-location transfers",
-      "platformPermissionAliases": [],
-      "platformPermissionPrefixAliases": []
-    }
+    { "key": "pos.organization.read", "description": "View the POS organisation area", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.organization.manage", "description": "Manage POS organisation settings", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.users.read", "description": "View POS users", "platformPermissionAliases": ["identity.users.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.users.manage", "description": "Manage POS users", "platformPermissionAliases": ["identity.users.invite", "identity.users.roles.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.stores.read", "description": "View POS stores", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.stores.manage", "description": "Manage POS stores", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.catalog.read", "description": "View the product catalogue", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.catalog.manage", "description": "Manage the product catalogue", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.pricing.read", "description": "View POS prices", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.pricing.manage", "description": "Manage POS prices", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.tax.read", "description": "View POS tax groups", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.tax.manage", "description": "Manage POS tax groups", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.registers.read", "description": "View registers", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.registers.manage", "description": "Manage registers", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.sales.read", "description": "View sales and receipts", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.sales.create", "description": "Create sales", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.sales.manage", "description": "Void and manage sales", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.inventory.read", "description": "View inventory", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.inventory.manage", "description": "Manage inventory", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.customers.read", "description": "View customers", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.customers.manage", "description": "Manage customers", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.reports.read", "description": "View POS reports", "platformPermissionAliases": ["workspace.audit.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.reports.export", "description": "Export POS reports", "platformPermissionAliases": ["workspace.audit.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.refunds.read", "description": "View refunds", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.refunds.manage", "description": "Create refunds", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.refunds.create", "description": "Create returns and refunds", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.approvals.request", "description": "Request POS approvals", "platformPermissionAliases": ["workspace.modules.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.approvals.manage", "description": "Manage POS approvals", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.attendance.read", "description": "View POS attendance", "platformPermissionAliases": ["attendance.records.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.attendance.manage", "description": "Manage POS attendance", "platformPermissionAliases": ["attendance.config.manage"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.settings.manage", "description": "Manage POS store settings", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] },
+    { "key": "pos.audit.read", "description": "View POS audit activity", "platformPermissionAliases": ["workspace.audit.read"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_CORE"] }
+    ,{ "key": "pos.transfers.manage", "description": "Manage multi-location transfers", "platformPermissionAliases": ["workspace.settings.update"], "platformPermissionPrefixAliases": [], "requiredCapabilities": ["POS_MULTI_LOCATION"] }
   ],
   "capabilities": [
-    {
-      "key": "POS_CORE",
-      "description": "Core POS workspace: catalog, registers, sales, reports",
-      "required": true,
-      "commercialType": "CORE"
-    },
-    {
-      "key": "POS_INVENTORY",
-      "description": "Inventory ledger, stock conditions and adjustments",
-      "required": false,
-      "commercialType": "ADD_ON"
-    },
-    {
-      "key": "POS_REFUNDS",
-      "description": "Returns, refunds and credit notes",
-      "required": false,
-      "commercialType": "ADD_ON"
-    },
-    {
-      "key": "POS_CUSTOMERS",
-      "description": "Customers, store credit and loyalty",
-      "required": false,
-      "commercialType": "ADD_ON"
-    },
-    {
-      "key": "POS_MULTI_LOCATION",
-      "description": "Stock locations and transfers",
-      "required": false,
-      "commercialType": "ADD_ON"
-    }
+    { "key": "POS_CORE", "description": "Core POS operations", "required": true, "commercialType": "CORE" },
+    { "key": "POS_INVENTORY", "description": "Inventory ledger, stock conditions and adjustments", "required": false, "commercialType": "ADD_ON", "dependencyKeys": ["POS_CORE"] },
+    { "key": "POS_REFUNDS", "description": "Returns, refunds and credit notes", "required": false, "commercialType": "ADD_ON", "dependencyKeys": ["POS_CORE"] },
+    { "key": "POS_CUSTOMERS", "description": "Customers, store credit and loyalty", "required": false, "commercialType": "ADD_ON", "dependencyKeys": ["POS_CORE"] },
+    { "key": "POS_MULTI_LOCATION", "description": "Stock locations and transfers", "required": false, "commercialType": "ADD_ON", "dependencyKeys": ["POS_CORE"] }
   ],
   "limits": [
-    {
-      "key": "POS_REGISTERS",
-      "unit": "COUNT",
-      "enforcement": "HARD",
-      "description": "Maximum active registers"
-    },
-    {
-      "key": "POS_LOCATIONS",
-      "unit": "COUNT",
-      "enforcement": "HARD",
-      "description": "Maximum active stock locations"
-    }
+    { "key": "POS_REGISTERS", "unit": "COUNT", "enforcement": "HARD", "description": "Maximum active registers" },
+    { "key": "POS_LOCATIONS", "unit": "COUNT", "enforcement": "HARD", "description": "Maximum active stock locations" }
   ],
   "lifecycle": {
     "mode": "EVENT",
-    "consumes": [
-      "platform.product.activation-requested.v1",
-      "platform.product.suspension-requested.v1",
-      "platform.product.reactivation-requested.v1",
-      "platform.product.deletion-requested.v1"
-    ],
-    "publishes": [
-      "pos.product.activated.v1",
-      "pos.product.suspended.v1",
-      "pos.product.reactivated.v1",
-      "pos.product.deleted.v1"
-    ]
+    "consumes": ["platform.product.activation-requested.v1", "platform.product.suspension-requested.v1", "platform.product.reactivation-requested.v1", "platform.product.deletion-requested.v1"],
+    "publishes": ["pos.product.activated.v1", "pos.product.suspended.v1", "pos.product.reactivated.v1", "pos.product.deleted.v1"]
   },
-  "health": {
-    "livenessPath": "/healthz",
-    "readinessPath": "/readyz"
-  },
-  "localization": {
-    "supportedLocales": [
-      "en",
-      "ar"
-    ],
-    "namespaces": [
-      "pos"
-    ]
-  }
+  "health": { "livenessPath": "/healthz", "readinessPath": "/readyz" },
+  "localization": { "supportedLocales": ["en", "ar"], "namespaces": ["pos"] }
 }

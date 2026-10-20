@@ -132,7 +132,7 @@ export class AuthService {
         const roleIds = new Map<string, string>();
         for (const definition of SYSTEM_ROLES) {
           const role = await tx.role.create({
-            data: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true, storeAssignable: definition.storeAssignable ?? false },
+            data: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true, storeAssignable: definition.storeAssignable ?? false, templateKey: definition.templateKey, templateVersion: definition.templateVersion },
           });
           roleIds.set(definition.name, role.id);
           await tx.rolePermission.createMany({

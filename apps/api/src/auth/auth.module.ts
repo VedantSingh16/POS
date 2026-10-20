@@ -4,10 +4,11 @@ import { AuthGuard } from './auth.guard.js';
 import { AuthService } from './auth.service.js';
 import { AuthorizationService } from './authorization.service.js';
 import { PermissionsGuard } from './permissions.guard.js';
+import { PlatformAuthService } from './platform-auth.service.js';
 
 @Module({
   controllers: [AuthController],
-  providers: [AuthService, AuthorizationService, AuthGuard, PermissionsGuard],
-  exports: [AuthService, AuthorizationService, AuthGuard, PermissionsGuard],
+  providers: [AuthService, AuthorizationService, AuthGuard, PermissionsGuard, PlatformAuthService],
+  exports: [AuthService, AuthorizationService, AuthGuard, PermissionsGuard, PlatformAuthService],
 })
 export class AuthModule {}

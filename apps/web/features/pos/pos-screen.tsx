@@ -19,7 +19,7 @@ import { useMe } from "@/components/app/session-context";
 import { clientApi } from "@/features/client-api";
 import { useRouter } from "next/navigation";
 import { ConfigurableFieldValues, type ConfiguredField } from "@/features/settings/configurable-field-values";
-import { BrandMark } from "@/components/brand/brand-mark";
+import { LogoMark } from "@/components/brand/logo";
 import { useLocale } from "@/components/i18n/locale-provider";
 import { safeRandomUUID } from "@/lib/uuid";
 
@@ -443,7 +443,7 @@ export function PosScreen({ storeId, storeName, cashier, products: productsIn, c
     <div className="app-ui flex h-dvh min-h-[480px] flex-col bg-background">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-card px-3 sm:px-4">
         {canExit ? <Button variant="ghost" size="sm" aria-label="Exit point of sale" asChild><Link href={`/s/${storeId}`}><ArrowLeft className="rtl:rotate-180" /><span className="hidden sm:inline"><LocalizedText value={"Exit"} /></span></Link></Button> : null}
-        <BrandMark size="compact" className="rounded-[8px]" /><span className="hidden items-center gap-1.5 sm:inline-flex"><span className="font-sans text-sm font-bold tracking-tight"><LocalizedText value={"DeltPOS"} /></span><span className="rounded-[4px] bg-primary/10 px-1 py-0.5 text-[8px] font-bold leading-none tracking-[0.1em] text-primary"><LocalizedText value={"POS"} /></span></span><span className="h-5 border-s" /><span className="max-w-36 truncate text-sm font-medium">{storeName}</span>
+        <LogoMark tone="auto" height={32} /><span className="h-5 border-s" /><span className="max-w-36 truncate text-sm font-medium">{storeName}</span>
         <span className="hidden text-sm text-muted-foreground md:block"><LocalizedText value={"Point of sale"} /></span>
         <div className="ms-auto flex items-center gap-2"><span className="hidden text-sm text-muted-foreground sm:inline">{cashier}</span><IdleLock /><UserMenu /></div>
         <span className="hidden text-xs text-muted-foreground xl:block"><kbd className="rounded border bg-muted px-1">/</kbd> <LocalizedText value={"scan · "} /><kbd className="rounded border bg-muted px-1"><LocalizedText value={"F12"} /></kbd> <LocalizedText value={"pay"} /></span>

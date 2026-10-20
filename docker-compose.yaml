@@ -18,6 +18,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4100/api}
       # Server-side address of the API: the web app's login and proxy routes call this, the browser never does.
       API_INTERNAL_URL: http://api:4000
+      PLATFORM_API_URL: ${PLATFORM_API_URL:-http://host.docker.internal:4011}
 
     ports:
       - "${POS_WEB_PORT:-3100}:3000"
@@ -32,6 +33,11 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+    networks:
+      default: {}
+      integration:
+        aliases: [pos-web]
 
     restart: unless-stopped
 
@@ -63,9 +69,20 @@ services:
       POS_ORG_ADMIN_EMAIL: ${POS_ORG_ADMIN_EMAIL:-admin@pos.local}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-deltcrm_pos}
       REDIS_URL: redis://redis:6379
+      PLATFORM_INTERNAL_BASE_URL: ${PLATFORM_INTERNAL_BASE_URL:-http://host.docker.internal:4011}
+      PLATFORM_JWKS_URL: ${PLATFORM_JWKS_URL:-http://host.docker.internal:4011/.well-known/jwks.json}
+      PRODUCT_TOKEN_ISSUER: ${PRODUCT_TOKEN_ISSUER:-https://auth.local.blufield.test}
+      POS_PLATFORM_AUDIENCE: ${POS_PLATFORM_AUDIENCE:-pos-api}
+      POS_PLATFORM_SERVICE_KEY: ${POS_PLATFORM_SERVICE_KEY:-local-pos-product-service-key}
+      POS_PLATFORM_AUTH_ENABLED: ${POS_PLATFORM_AUTH_ENABLED:-true}
 
     ports:
       - "${POS_API_PORT:-4100}:4000"
+
+    networks:
+      default: {}
+      integration:
+        aliases: [pos-api]
 
     depends_on:
       postgres:
@@ -142,3 +159,9 @@ volumes:
   postgres_data:
 
   redis_data:
+
+networks:
+  default: {}
+  integration:
+    name: deltcrm-local-integration
+    external: true

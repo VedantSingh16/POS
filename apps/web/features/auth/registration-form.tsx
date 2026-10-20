@@ -46,7 +46,7 @@ export function RegistrationForm() {
     <div className="mx-auto grid w-full gap-0 [&_label]:text-sm [&_label]:font-semibold [&_label]:text-auth-ink">
       <div className="mb-6">
         <p className="mb-2.5 text-xs font-bold uppercase tracking-[0.19em] text-auth-primary"><LocalizedText value={"Workspace setup"} /></p>
-        <h1 className="font-display text-[clamp(2.1rem,3vw,2.65rem)] font-bold leading-[1.04] tracking-[-0.06em] text-auth-ink"><LocalizedText value={"Create your organisation"} /></h1>
+        <h1 className="font-display text-[clamp(2.1rem,3vw,2.65rem)] font-bold leading-[1.04] tracking-[-0.035em] text-auth-ink"><LocalizedText value={"Create your organisation"} /></h1>
         <p className="mt-2.5 text-base leading-[1.55] text-auth-muted sm:text-[17px]"><LocalizedText value={"Set up your workspace and administrator account. You can add stores next."} /></p>
       </div>
       <form className="grid gap-x-5 gap-y-4 sm:grid-cols-2" noValidate onSubmit={handleSubmit(submit)}>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
 import localFont from "next/font/local";
 import { Toaster } from "sonner";
@@ -16,8 +16,13 @@ const manrope = localFont({
 const THEME_SCRIPT = `try{var t=localStorage.getItem("pos-theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}`;
 
 export const metadata: Metadata = {
-  title: { default: "DeltPOS", template: "%s · DeltPOS" },
+  title: { default: "Liqaa POS", template: "%s · Liqaa POS" },
   description: "Retail point of sale: organisation administration, store operations and checkout",
+  applicationName: "Liqaa POS",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#111b33",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

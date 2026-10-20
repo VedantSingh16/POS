@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Delete, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Logo } from "@/components/brand/logo";
 import { LocaleSwitch } from "@/components/i18n/locale-switch";
 
 export function LockScreen({ name, home }: { name: string; home: string }) {
@@ -38,7 +39,7 @@ export function LockScreen({ name, home }: { name: string; home: string }) {
   });
 
   return (
-    <div className="grid min-h-screen place-items-center bg-sidebar p-4"><div className="fixed end-4 top-4 z-50"><LocaleSwitch compact /></div><Card className="w-full max-w-xs"><CardContent className="grid gap-4 p-6 text-center">
+    <div className="grid min-h-screen place-items-center bg-sidebar p-4"><div className="fixed end-4 top-4 z-50"><LocaleSwitch compact /></div><div className="flex w-full max-w-xs flex-col items-center gap-6"><Logo tone="white" height={34} /><Card className="w-full"><CardContent className="grid gap-4 p-6 text-center">
       <Lock className="mx-auto size-6 text-muted-foreground" />
       <div><h1 className="text-lg font-semibold"><LocalizedText value={"Till locked"} /></h1><p className="text-sm text-muted-foreground">{name}<LocalizedText value={", enter your PIN"} /></p></div>
       <div role="status" aria-label={`${pin.length} digits entered`} className="flex min-h-3 justify-center gap-2">{Array.from({ length: Math.max(pin.length, 4) }, (_, i) => <span key={i} className={`size-3 rounded-full border ${i < pin.length ? "bg-primary" : ""}`} />)}</div>
@@ -50,6 +51,6 @@ export function LockScreen({ name, home }: { name: string; home: string }) {
         <Button size="touch" onClick={() => void unlock()} disabled={pin.length < 4 || busy}><LocalizedText value={"Unlock"} /></Button>
       </div>
       <button onClick={() => void signOut()} className="text-xs text-muted-foreground underline"><LocalizedText value={"Sign out instead"} /></button>
-    </CardContent></Card></div>
+    </CardContent></Card></div></div>
   );
 }

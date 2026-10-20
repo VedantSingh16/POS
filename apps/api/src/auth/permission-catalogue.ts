@@ -1,4 +1,4 @@
-import { PERMISSION_CODES } from '@pos/shared/permissions';
+import { PERMISSION_CODES, ROLE_TEMPLATES, type RoleTemplateKey } from '@pos/shared/permissions';
 
 /** Every permission code the API can enforce, with its description. Seeded into `permissions`. */
 export const PERMISSIONS: ReadonlyArray<readonly [string, string]> = [
@@ -52,6 +52,7 @@ export const PERMISSIONS: ReadonlyArray<readonly [string, string]> = [
   ['catalog.manage.store', 'Create and manage products in a store'],
   ['catalog.distribute', 'Distribute products from the organisation to a store'],
   ['store-catalog.verify', 'Verify or reject pending stock sent to a store'],
+  ['store.cashiers.manage', 'Add, rename, deactivate cashier names and manage the till login for this store'],
 ];
 
 // Keep the seed catalogue and the cross-app permission manifest tied to one source.
@@ -59,13 +60,17 @@ export const ALL_PERMISSION_CODES: string[] = [...PERMISSION_CODES];
 
 export const ORGANISATION_ADMINISTRATOR_ROLE = 'Organisation Administrator';
 
-export type SystemRoleDefinition = { name: string; description: string; permissions: string[]; storeAssignable?: boolean };
+export type SystemRoleDefinition = { name: string; description: string; permissions: string[]; storeAssignable?: boolean; templateKey: RoleTemplateKey; templateVersion: number };
 
-/** System roles created for every organisation. They are locked: they can be assigned but not edited. */
-export const SYSTEM_ROLES: SystemRoleDefinition[] = [
-  { name: ORGANISATION_ADMINISTRATOR_ROLE, description: 'Full organisation configuration access', permissions: ALL_PERMISSION_CODES },
-  { name: 'Store Manager', description: 'Manage assigned store operations', permissions: ['store.overview.view', 'store.settings.view', 'store.settings.manage', 'store.staff.view', 'store.staff.manage', 'registers.view', 'registers.manage', 'attendance.view', 'attendance.clock', 'attendance.manage', 'catalog.view', 'catalog.manage.store', 'store-catalog.verify', 'pricing.view', 'pricing.manage', 'tax.view', 'tax.manage', 'sale.view', 'sale.create', 'sale.hold', 'sale.discount', 'sale.void', 'register.open', 'register.close', 'cash.manage', 'inventory.view', 'inventory.manage', 'report.view', 'report.export', 'alert.manage', 'dayclose.manage', 'refund.view', 'refund.create', 'approval.manage', 'approval.request', 'customer.view', 'customer.manage'] },
-  { name: 'Supervisor', description: 'Operational support and permitted approvals', permissions: ['store.overview.view', 'store.staff.view', 'registers.view', 'attendance.view', 'attendance.clock', 'attendance.manage', 'catalog.view', 'pricing.view', 'sale.view', 'sale.create', 'register.open', 'register.close', 'refund.view', 'refund.create', 'approval.manage', 'approval.request', 'report.view', 'alert.manage', 'customer.view'], storeAssignable: true },
-  { name: 'Cashier', description: 'Normal sales and register operations', permissions: ['registers.view', 'attendance.clock', 'catalog.view', 'sale.view', 'sale.create', 'sale.hold', 'sale.discount', 'register.open', 'register.close', 'cash.manage', 'approval.request', 'customer.view', 'customer.manage'], storeAssignable: true },
-  { name: 'Inventory User', description: 'Catalogue and inventory-related tasks', permissions: ['inventory.view', 'inventory.manage', 'stores.view', 'catalog.view', 'catalog.manage', 'pricing.view', 'tax.view'] },
-];
+/** System roles created for every organisation, one per entry in the shared ROLE_TEMPLATES catalogue
+ * (the single source of truth for what each role's safe/default permission set is). They start out locked
+ * to that template; an administrator can customise one, after which startup stops reconciling it (see
+ * bootstrap/foundation.ts) until the admin reviews a template version bump. */
+export const SYSTEM_ROLES: SystemRoleDefinition[] = Object.values(ROLE_TEMPLATES).map((template) => ({
+  name: template.name,
+  description: template.description,
+  permissions: [...template.permissions],
+  storeAssignable: template.storeAssignable,
+  templateKey: template.key,
+  templateVersion: template.version,
+}));

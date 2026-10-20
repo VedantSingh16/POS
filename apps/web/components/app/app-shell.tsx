@@ -14,7 +14,7 @@ import { hasOrgScope, isOrganisationReadOnlyStoreView } from "@/lib/permissions"
 import { useMe } from "@/components/app/session-context";
 import { IdleLock, UserMenu } from "@/components/app/user-menu";
 import { cn } from "@/lib/utils";
-import { BrandMark } from "@/components/brand/brand-mark";
+import { Logo } from "@/components/brand/logo";
 import { LocaleSwitch } from "@/components/i18n/locale-switch";
 import { useTranslate } from "@/components/i18n/localized-text";
 
@@ -94,9 +94,8 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 function Brand({ home }: { home: string }) {
   const t = useTranslate();
   return (
-    <Link href={home} aria-label={t("DeltPOS home")} className="flex h-[4.5rem] items-center gap-3 border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
-      <BrandMark size="compact" className="bg-transparent text-sidebar-foreground shadow-none ring-0" />
-      <span className="inline-flex items-center gap-2"><span className="font-sans text-lg font-bold tracking-tight"><LocalizedText value={"DeltPOS"} /></span><span className="rounded-md border border-sidebar-border-soft bg-sidebar-surface px-1.5 py-0.5 text-xs font-bold leading-none tracking-[0.06em] text-sidebar-foreground"><LocalizedText value={"POS"} /></span></span>
+    <Link href={home} aria-label={t("Liqaa POS home")} className="flex h-[4.5rem] items-center border-b border-sidebar-border-soft px-5 text-sidebar-foreground">
+      <Logo tone="white" height={34} decorative />
     </Link>
   );
 }

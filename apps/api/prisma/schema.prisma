@@ -42,6 +42,13 @@ enum ScopeType {
   STORE
 }
 
+enum UserAccountType {
+  /// An individual person's login.
+  PERSON
+  /// A shared login for one store's till. Cashiers (StoreCashier) are picked at billing time; the till never holds an organisation-scope role.
+  STORE_TILL
+}
+
 enum ProductStatus {
   DRAFT
   ACTIVE
@@ -184,6 +191,8 @@ model Organization {
   /// NOT_REVIEWED blocks checkout; LEGACY preserves the behavior of organisations created before tax profiles existed.
   taxProfileStatus String       @default("NOT_REVIEWED") @map("tax_profile_status")
   slug             String       @unique
+  /// CRM tenant identity; local POS tables remain the system of record for POS data.
+  platformTenantId String?      @unique @map("platform_tenant_id") @db.Uuid
   status           RecordStatus @default(ACTIVE)
   currency         String       @default("OMR")
   timezone         String       @default("Asia/Muscat")
@@ -229,6 +238,9 @@ model Organization {
   priceRules         PriceRule[]
   discountReasons    DiscountReason[]
   paymentAttempts    PaymentAttempt[]
+  rolePermissionChanges RolePermissionChange[]
+  storeCashiers      StoreCashier[]
+  cashierTokens      CashierToken[]
   attendance         StaffAttendance[]
   dayCloses          StoreDayClose[]
   dayCloseRevisions  DayCloseRevision[]
@@ -274,12 +286,21 @@ model Role {
   /// Organisation-approved for assignment by store managers, within that manager's own store.
   storeAssignable Boolean      @default(false) @map("store_assignable")
   status          RecordStatus @default(ACTIVE)
+  /// Stable template key this role follows (e.g. 'cashier', 'store_manager') for system roles, or the template a custom role was started from. Null for a custom role started blank.
+  templateKey     String?      @map("template_key")
+  /// Set once an admin edits this role's permissions away from its template. While set, startup no longer overwrites its permissions.
+  customizedAt    DateTime?    @map("customized_at") @db.Timestamptz(3)
+  customizedById  String?      @map("customized_by_id") @db.Uuid
+  /// The template version this role was last synced to or reviewed against (see ROLE_TEMPLATES).
+  templateVersion Int          @default(0) @map("template_version")
   createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customizedBy User?                @relation("roleCustomizer", fields: [customizedById], references: [id], onDelete: SetNull)
   permissions  RolePermission[]
   assignments  UserRole[]
+  changes      RolePermissionChange[]
 
   @@unique([organizationId, name])
   @@map("roles")
@@ -294,6 +315,28 @@ model RolePermission {
 
   @@id([roleId, permissionCode])
   @@map("role_permissions")
+}
+
+/// A recorded change to a role's permission set: what changed, who changed it, and why (required above Medium risk).
+model RolePermissionChange {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  actorUserId    String   @map("actor_user_id") @db.Uuid
+  /// { code: effect } before and after the change.
+  before         Json     @default("{}")
+  after          Json     @default("{}")
+  /// Permission codes that went above the role's safe (template) level in this change.
+  elevated       Json     @default("[]")
+  reason         String   @default("")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  actor        User         @relation("rolePermissionChangeActor", fields: [actorUserId], references: [id], onDelete: NoAction)
+
+  @@index([roleId, createdAt(sort: Desc)])
+  @@map("role_permission_changes")
 }
 
 model Store {
@@ -328,6 +371,9 @@ model Store {
   userStores            UserStore[]
   userRoles             UserRole[]
   defaultFor            User[]             @relation("userDefaultStore")
+  tillUsers             User[]             @relation("storeTillUser")
+  cashiers              StoreCashier[]
+  cashierTokens         CashierToken[]
   prices                VariantPrice[]
   registerSessions      RegisterSession[]
   sales                 Sale[]
@@ -383,6 +429,10 @@ model User {
   lastName       String     @default("") @map("last_name")
   status         UserStatus @default(ACTIVE)
   defaultStoreId String?    @map("default_store_id") @db.Uuid
+  /// PERSON (default) is an individual login. STORE_TILL is a shared till login scoped to tillStoreId.
+  accountType    UserAccountType @default(PERSON) @map("account_type")
+  /// Set only when accountType = STORE_TILL: the single store this till belongs to.
+  tillStoreId    String?    @map("till_store_id") @db.Uuid
   failedAttempts Int        @default(0) @map("failed_attempts")
   lockedUntil    DateTime?  @map("locked_until") @db.Timestamptz(3)
   lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(3)
@@ -391,7 +441,11 @@ model User {
   updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization             Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// CRM identity projection used when a user enters POS through Product Contract SSO.
+  platformUserId           String?             @map("platform_user_id") @db.Uuid
+  platformMembershipId     String?             @map("platform_membership_id") @db.Uuid
   defaultStore             Store?              @relation("userDefaultStore", fields: [defaultStoreId], references: [id], onDelete: SetNull)
+  tillStore                Store?              @relation("storeTillUser", fields: [tillStoreId], references: [id], onDelete: SetNull)
   roles                    UserRole[]
   stores                   UserStore[]
   sessions                 Session[]
@@ -418,10 +472,78 @@ model User {
   dayClosesCreated         StoreDayClose[]     @relation("dayCloseCreator")
   dayCloseRevisionsCreated DayCloseRevision[]  @relation("dayCloseRevisionCreator")
   reportExportsCreated     ReportExportJob[]   @relation("reportExportRequester")
+  roleCustomizations       Role[]              @relation("roleCustomizer")
+  rolePermissionChanges    RolePermissionChange[] @relation("rolePermissionChangeActor")
+  storeCashiersCreated     StoreCashier[]      @relation("storeCashierCreator")
+  cashierLinkedTo          StoreCashier[]      @relation("storeCashierLinkedUser")
+  cashierTokensAsTill      CashierToken[]      @relation("cashierTokenTillUser")
 
   @@unique([organizationId, email])
+  @@unique([organizationId, platformUserId])
   @@index([email])
+  @@index([tillStoreId])
   @@map("users")
+}
+
+/// A named cashier at one store's till. Not a login: the till account authenticates the device, and the
+/// cashier name is selected at billing time (with an optional PIN) to attribute the sale without a
+/// logout/login cycle. `linkedUserId` records the PERSON user this name was imported from, if any.
+model StoreCashier {
+  id               String       @id @default(uuid()) @db.Uuid
+  organizationId   String       @map("organization_id") @db.Uuid
+  storeId          String       @map("store_id") @db.Uuid
+  displayName      String       @map("display_name")
+  employeeCode     String       @default("") @map("employee_code")
+  pinHash          String?      @map("pin_hash")
+  status           RecordStatus @default(ACTIVE)
+  linkedUserId     String?      @map("linked_user_id") @db.Uuid
+  createdById      String       @map("created_by_id") @db.Uuid
+  lastSelectedAt   DateTime?    @map("last_selected_at") @db.Timestamptz(3)
+  failedPinAttempts Int         @default(0) @map("failed_pin_attempts")
+  pinLockedUntil   DateTime?    @map("pin_locked_until") @db.Timestamptz(3)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  linkedUser   User?        @relation("storeCashierLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  createdBy    User         @relation("storeCashierCreator", fields: [createdById], references: [id], onDelete: NoAction)
+  sales        Sale[]
+  heldSales    HeldSale[]
+  cashMovements CashMovement[]
+  returns      SaleReturn[]
+  approvals    Approval[]
+  sessionsOpened RegisterSession[] @relation("registerSessionOpenedCashier")
+  sessionsClosed RegisterSession[] @relation("registerSessionClosedCashier")
+  tokens       CashierToken[]
+
+  @@index([organizationId, storeId])
+  @@map("store_cashiers")
+}
+
+/// A short-lived, opaque bearer token (like Session, but scoped to one cashier rather than a login) proving
+/// a till device verified this cashier's PIN (or that no PIN was required). Issued by POST
+/// /pos/v1/stores/:storeId/cashiers/:id/verify and checked on every till write path via resolveCashier.
+model CashierToken {
+  id             String       @id @default(uuid()) @db.Uuid
+  tokenHash      String       @unique @map("token_hash")
+  organizationId String       @map("organization_id") @db.Uuid
+  storeId        String       @map("store_id") @db.Uuid
+  cashierId      String       @map("cashier_id") @db.Uuid
+  /// The till login that verified the cashier; the token is only honoured for a request authenticated as this same user.
+  tillUserId     String       @map("till_user_id") @db.Uuid
+  expiresAt      DateTime     @map("expires_at") @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cashier      StoreCashier @relation(fields: [cashierId], references: [id], onDelete: Cascade)
+  tillUser     User         @relation("cashierTokenTillUser", fields: [tillUserId], references: [id], onDelete: Cascade)
+
+  @@index([cashierId])
+  @@index([tillUserId])
+  @@index([expiresAt])
+  @@map("cashier_tokens")
 }
 
 /// A role granted to a user, either organisation-wide or for one store.
@@ -688,12 +810,16 @@ model RegisterSession {
   storeId           String        @map("store_id") @db.Uuid
   registerId        String        @map("register_id") @db.Uuid
   openedById        String        @map("opened_by_id") @db.Uuid
+  /// Cashier selected on the till at open time (StoreCashier), when opened from a shared till login.
+  openedByCashierId String?       @map("opened_by_cashier_id") @db.Uuid
   status            SessionStatus @default(OPEN)
   openingFloatCents Int           @default(0) @map("opening_float_cents")
   expectedCashCents Int           @default(0) @map("expected_cash_cents")
   countedCashCents  Int?          @map("counted_cash_cents")
   varianceCents     Int?          @map("variance_cents")
   closedById        String?       @map("closed_by_id") @db.Uuid
+  /// Cashier selected on the till at close time (StoreCashier).
+  closedByCashierId String?       @map("closed_by_cashier_id") @db.Uuid
   closeApprovedById String?       @map("close_approved_by_id") @db.Uuid
   closeReason       String        @default("") @map("close_reason")
   forcedClosed      Boolean       @default(false) @map("forced_closed")
@@ -704,7 +830,9 @@ model RegisterSession {
   store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
   register        Register       @relation(fields: [registerId], references: [id], onDelete: Cascade)
   openedBy        User           @relation(fields: [openedById], references: [id], onDelete: NoAction)
+  openedByCashier StoreCashier?  @relation("registerSessionOpenedCashier", fields: [openedByCashierId], references: [id], onDelete: SetNull)
   closedBy        User?          @relation("registerSessionCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  closedByCashier StoreCashier?  @relation("registerSessionClosedCashier", fields: [closedByCashierId], references: [id], onDelete: SetNull)
   closeApprovedBy User?          @relation("registerSessionApprover", fields: [closeApprovedById], references: [id], onDelete: SetNull)
   cashMovements   CashMovement[]
   sales           Sale[]
@@ -724,6 +852,8 @@ model CashMovement {
   amountCents      Int              @map("amount_cents")
   reason           String           @default("")
   actorUserId      String           @map("actor_user_id") @db.Uuid
+  /// Cashier selected on the till when this movement was recorded (StoreCashier).
+  cashierId        String?          @map("cashier_id") @db.Uuid
   approvedById     String?          @map("approved_by_id") @db.Uuid
   clientMovementId String?          @map("client_movement_id")
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -731,6 +861,7 @@ model CashMovement {
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   session      RegisterSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   actor        User            @relation(fields: [actorUserId], references: [id], onDelete: NoAction)
+  cashier      StoreCashier?   @relation(fields: [cashierId], references: [id], onDelete: SetNull)
   approvedBy   User?           @relation("cashMovementApprover", fields: [approvedById], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, clientMovementId])
@@ -767,6 +898,8 @@ model Sale {
   createdById      String     @map("created_by_id") @db.Uuid
   /// Employee selected as the person handling the bill; createdById remains the authenticated actor.
   handledById      String?    @map("handled_by_id") @db.Uuid
+  /// Cashier selected on a shared till login when this sale was completed (StoreCashier). Mutually exclusive in practice with handledById, which is used for PERSON logins.
+  cashierId        String?    @map("cashier_id") @db.Uuid
   createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -776,6 +909,7 @@ model Sale {
   customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   createdBy    User                  @relation(fields: [createdById], references: [id], onDelete: NoAction)
   handledBy    User?                 @relation("saleHandler", fields: [handledById], references: [id], onDelete: SetNull)
+  cashier      StoreCashier?         @relation(fields: [cashierId], references: [id], onDelete: SetNull)
   lines        SaleLine[]
   payments     SalePayment[]
   returns      SaleReturn[]
@@ -838,14 +972,17 @@ model HeldSale {
   clientHoldId   String    @map("client_hold_id")
   payload        Json
   createdById    String    @map("created_by_id") @db.Uuid
+  /// Cashier selected on the till when this bill was held (StoreCashier).
+  cashierId      String?   @map("cashier_id") @db.Uuid
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   /// A hold past this time is listed as expired and cannot be resumed.
   expiresAt      DateTime? @map("expires_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  store        Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  register     Register     @relation(fields: [registerId], references: [id], onDelete: Cascade)
-  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  store        Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  register     Register      @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  createdBy    User          @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  cashier      StoreCashier? @relation(fields: [cashierId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, clientHoldId])
   @@index([organizationId, storeId, createdAt(sort: Desc)])
@@ -872,6 +1009,8 @@ model Approval {
   action         String
   referenceId    String         @map("reference_id")
   requestedById  String         @map("requested_by_id") @db.Uuid
+  /// Cashier selected on the till when this approval was requested (StoreCashier).
+  requestedByCashierId String?  @map("requested_by_cashier_id") @db.Uuid
   approvedById   String?        @map("approved_by_id") @db.Uuid
   reason         String
   storeId        String?        @map("store_id") @db.Uuid
@@ -883,10 +1022,11 @@ model Approval {
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   decidedAt      DateTime?      @map("decided_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  requestedBy  User         @relation("approvalRequester", fields: [requestedById], references: [id], onDelete: NoAction)
-  approvedBy   User?        @relation("approvalDecider", fields: [approvedById], references: [id], onDelete: NoAction)
-  store        Store?       @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedBy     User          @relation("approvalRequester", fields: [requestedById], references: [id], onDelete: NoAction)
+  requestedByCashier StoreCashier? @relation(fields: [requestedByCashierId], references: [id], onDelete: SetNull)
+  approvedBy      User?         @relation("approvalDecider", fields: [approvedById], references: [id], onDelete: NoAction)
+  store           Store?        @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, action])
   @@map("approvals")
@@ -1011,12 +1151,15 @@ model SaleReturn {
   totalCents       Int          @map("total_cents")
   reason           String
   createdById      String       @map("created_by_id") @db.Uuid
+  /// Cashier selected on the till when this return was created (StoreCashier).
+  cashierId        String?      @map("cashier_id") @db.Uuid
   createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  originalSale Sale         @relation(fields: [originalSaleId], references: [id], onDelete: NoAction)
-  store        Store        @relation(fields: [storeId], references: [id], onDelete: NoAction)
-  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  originalSale Sale          @relation(fields: [originalSaleId], references: [id], onDelete: NoAction)
+  store        Store         @relation(fields: [storeId], references: [id], onDelete: NoAction)
+  createdBy    User          @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  cashier      StoreCashier? @relation(fields: [cashierId], references: [id], onDelete: SetNull)
   lines        ReturnLine[]
 
   @@unique([storeId, creditNoteNumber])

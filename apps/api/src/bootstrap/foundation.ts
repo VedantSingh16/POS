@@ -1,5 +1,5 @@
 import type { PrismaClient } from '../generated/prisma/client.js';
-import { ALL_PERMISSION_CODES, ORGANISATION_ADMINISTRATOR_ROLE, PERMISSIONS, SYSTEM_ROLES } from '../auth/permission-catalogue.js';
+import { ORGANISATION_ADMINISTRATOR_ROLE, PERMISSIONS, SYSTEM_ROLES } from '../auth/permission-catalogue.js';
 import { hashPassword } from '../security/password.js';
 
 export type FoundationConfig = {
@@ -71,25 +71,35 @@ export async function seedFoundation(prisma: PrismaClient, config: FoundationCon
 
     const roleIds = new Map<string, string>();
     for (const definition of SYSTEM_ROLES) {
+      const existing = await tx.role.findUnique({ where: { organizationId_name: { organizationId: organization.id, name: definition.name } } });
+      // Once an admin customises a system role's permissions away from its template (customizedAt is set),
+      // startup stops overwriting it: an edit must survive the next restart or deploy. It still gets a
+      // template/storeAssignable backfill on first upgrade to this version (existing is null -> create path),
+      // but an already-customised role's storeAssignable and permissions are left exactly as set.
+      const isCustomized = Boolean(existing?.customizedAt);
       const role = await tx.role.upsert({
         where: { organizationId_name: { organizationId: organization.id, name: definition.name } },
-        create: { organizationId: organization.id, name: definition.name, description: definition.description, isSystem: true, storeAssignable: definition.storeAssignable ?? false },
-        update: { storeAssignable: definition.storeAssignable ?? false },
+        create: {
+          organizationId: organization.id,
+          name: definition.name,
+          description: definition.description,
+          isSystem: true,
+          storeAssignable: definition.storeAssignable ?? false,
+          templateKey: definition.templateKey,
+          templateVersion: definition.templateVersion,
+        },
+        update: isCustomized
+          ? { templateKey: existing?.templateKey ?? definition.templateKey }
+          : { storeAssignable: definition.storeAssignable ?? false, templateKey: definition.templateKey, templateVersion: definition.templateVersion },
       });
       roleIds.set(definition.name, role.id);
-      // System roles are immutable in the app, so startup may safely reconcile their permissions
-      // to the current definitions when the permission manifest changes.
+      if (isCustomized) continue;
       await tx.rolePermission.deleteMany({ where: { roleId: role.id } });
       await tx.rolePermission.createMany({
         data: definition.permissions.map((permissionCode) => ({ roleId: role.id, permissionCode })),
         skipDuplicates: true,
       });
     }
-    // The administrator role always holds the full catalogue, including permissions added later.
-    await tx.rolePermission.createMany({
-      data: ALL_PERMISSION_CODES.map((permissionCode) => ({ roleId: roleIds.get(ORGANISATION_ADMINISTRATOR_ROLE)!, permissionCode })),
-      skipDuplicates: true,
-    });
 
     const admin = await tx.user.findUnique({
       where: { organizationId_email: { organizationId: organization.id, email: config.adminEmail } },

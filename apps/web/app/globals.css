@@ -1,103 +1,122 @@
 @import "tailwindcss";
 
-/* DeltPOS: cream work areas, white surfaces, and a clear Delt green navigation rail.
-   muted semantic status colours. Every component reads these tokens; do not hardcode colours in components.
-   Table rows and touch controls share a 44px minimum for consistent scanning and input. */
+/* Liqaa POS: navy structure, white work surfaces and POS Blue for actions (Liqaa POS brand guidelines, Oct 2026).
+   Brand palette: Midnight Navy #111B33, POS Blue #2563EB, Deep Blue #1D4ED8, Light Blue #DBEAFE, neutrals from the
+   slate scale. Status colours (success, warning, danger) are functional, muted and kept out of brand areas; info uses
+   a cyan-blue so it never reads as a brand or action colour. Every component reads these tokens; do not hardcode
+   colours in components. Table rows and touch controls share a 44px minimum for consistent scanning and input. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light;
   --background: var(--auth-canvas);
   --foreground: var(--auth-ink);
-  --auth-canvas: #f7f5ef;
-  --auth-canvas-rgb: 247, 245, 239;
-  --auth-surface: #fffdf9;
-  --auth-border: #c1bdb6;
-  --auth-outline: rgb(98 90 78 / 10%);
-  --auth-ink: #111a24;
-  --auth-muted: #526171;
-  --auth-primary: #047857;
-  --auth-primary-hover: #065f46;
+  --auth-canvas: #f8fafc;
+  --auth-canvas-rgb: 248, 250, 252;
+  --auth-surface: #ffffff;
+  --auth-border: #cbd5e1;
+  --auth-outline: rgb(17 27 51 / 10%);
+  --auth-ink: #111827;
+  --auth-muted: #64748b;
+  --auth-primary: #2563eb;
+  --auth-primary-hover: #1d4ed8;
   --auth-on-primary: #ffffff;
   --card: var(--auth-surface);
   --card-foreground: var(--foreground);
   --popover: var(--auth-surface);
   --popover-foreground: var(--foreground);
   --primary: var(--auth-primary);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: #eeeae2;
+  --primary-hover: var(--auth-primary-hover);
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
   --secondary-foreground: var(--auth-ink);
-  --muted: #f0eee8;
-  --muted-foreground: var(--auth-muted);
-  --accent: #e5f2eb;
-  --accent-foreground: #07553e;
-  --border: #e3ddd3;
+  --muted: #f1f5f9;
+  /* Slightly deeper than Muted Gray #64748b so secondary text passes WCAG AA on the light grey muted surface too. */
+  --muted-foreground: #5d6b80;
+  --accent: #dbeafe;
+  --accent-foreground: #1e40af;
+  --border: #e2e8f0;
   --input: var(--auth-border);
   --ring: var(--auth-primary);
-  --success: oklch(0.45 0.1 150);
-  --success-soft: oklch(0.945 0.035 150);
-  --warning: oklch(0.48 0.1 75);
-  --warning-soft: oklch(0.95 0.05 85);
-  --danger: oklch(0.46 0.15 30);
-  --danger-soft: oklch(0.95 0.03 30);
-  --info: oklch(0.42 0.09 255);
-  --info-soft: oklch(0.94 0.02 255);
-  --sidebar: #065F46;
-  --sidebar-foreground: #fffdf9;
-  --sidebar-muted: #c8ead9;
+  --success: oklch(0.47 0.11 152);
+  --success-soft: oklch(0.955 0.035 152);
+  --warning: oklch(0.5 0.11 70);
+  --warning-soft: oklch(0.96 0.05 85);
+  --danger: oklch(0.5 0.17 27);
+  --danger-soft: oklch(0.96 0.025 20);
+  --info: oklch(0.48 0.085 222);
+  --info-soft: oklch(0.955 0.025 215);
+  --chart-1: #2563eb;
+  --chart-2: #111b33;
+  --chart-3: #60a5fa;
+  --chart-4: #bfdbfe;
+  --chart-5: #1d4ed8;
+  --sidebar: #111b33;
+  --sidebar-foreground: #ffffff;
+  --sidebar-muted: #cbd5e1;
   --sidebar-heading-bg: transparent;
-  --sidebar-heading-foreground: #c8ead9;
-  --sidebar-accent: #fffdf9;
-  --sidebar-border: rgb(255 253 249 / 18%);
-  --sidebar-primary: #c8ead9;
-  --sidebar-active: #07553e;
-  --sidebar-overlay: rgb(255 253 249 / 9%);
-  --sidebar-surface: rgb(255 253 249 / 7%);
-  --sidebar-border-soft: rgb(255 253 249 / 18%);
+  --sidebar-heading-foreground: #93c5fd;
+  --sidebar-accent: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 14%);
+  --sidebar-primary: #93c5fd;
+  --sidebar-active: #2563eb;
+  --sidebar-overlay: rgb(255 255 255 / 8%);
+  --sidebar-surface: rgb(255 255 255 / 6%);
+  --sidebar-border-soft: rgb(255 255 255 / 12%);
   --radius: 0.75rem;
   --table-row-height: 3rem;
   --target-touch: 3rem;
 }
 
+/* Dark mode is not defined by the brand kit; it is derived from the same navy and blue scale.
+   POS Blue is too dark to read as text on navy, so the primary colour lightens to Sky with dark text on it. */
 .dark {
   color-scheme: dark;
-  --background: oklch(0.2 0.004 90);
-  --foreground: oklch(0.95 0.004 90);
-  --card: oklch(0.24 0.005 90);
-  --popover: oklch(0.26 0.006 90);
-  --primary: oklch(0.72 0.12 168);
-  --primary-foreground: oklch(0.16 0.02 170);
-  --secondary: oklch(0.29 0.006 90);
-  --secondary-foreground: oklch(0.95 0.004 90);
-  --muted: oklch(0.29 0.006 90);
-  --muted-foreground: oklch(0.72 0.008 90);
-  --accent: oklch(0.31 0.03 172);
-  --accent-foreground: oklch(0.9 0.05 168);
-  --border: oklch(0.33 0.006 90);
-  --input: oklch(0.38 0.008 90);
-  --ring: oklch(0.72 0.12 168);
-  --success: oklch(0.76 0.13 150);
-  --success-soft: oklch(0.3 0.045 150);
-  --warning: oklch(0.8 0.12 80);
-  --warning-soft: oklch(0.32 0.05 80);
-  --danger: oklch(0.74 0.14 28);
-  --danger-soft: oklch(0.31 0.06 28);
-  --info: oklch(0.76 0.1 250);
-  --info-soft: oklch(0.3 0.04 250);
-  --sidebar: #064E3B;
-  --sidebar-foreground: oklch(0.99 0.004 90);
-  --sidebar-muted: oklch(0.88 0.04 160);
+  --background: #0b1220;
+  --foreground: #f8fafc;
+  --card: #111b33;
+  --popover: #16223f;
+  --primary: #60a5fa;
+  --primary-hover: #93c5fd;
+  --primary-foreground: #0b1220;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #172554;
+  --accent-foreground: #bfdbfe;
+  --border: #263449;
+  --input: #475569;
+  --ring: #60a5fa;
+  --success: oklch(0.78 0.13 152);
+  --success-soft: oklch(0.3 0.05 152);
+  --warning: oklch(0.82 0.12 80);
+  --warning-soft: oklch(0.32 0.055 75);
+  --danger: oklch(0.75 0.14 25);
+  --danger-soft: oklch(0.31 0.065 25);
+  --info: oklch(0.8 0.09 215);
+  --info-soft: oklch(0.31 0.045 220);
+  --chart-1: #60a5fa;
+  --chart-2: #dbeafe;
+  --chart-3: #2563eb;
+  --chart-4: #93c5fd;
+  --chart-5: #3b82f6;
+  --sidebar: #111b33;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-muted: #cbd5e1;
   --sidebar-heading-bg: transparent;
-  --sidebar-heading-foreground: oklch(0.88 0.04 160);
-  --sidebar-accent: oklch(0.99 0.004 90);
-  --sidebar-border: rgb(255 253 249 / 20%);
-  --sidebar-primary: oklch(0.88 0.04 160);
-  --sidebar-active: oklch(0.3 0.08 164);
-  --sidebar-overlay: rgb(255 253 249 / 9%);
-  --sidebar-surface: rgb(255 253 249 / 7%);
-  --sidebar-border-soft: rgb(255 253 249 / 18%);
+  --sidebar-heading-foreground: #93c5fd;
+  --sidebar-accent: #f8fafc;
+  --sidebar-border: rgb(255 255 255 / 14%);
+  --sidebar-primary: #93c5fd;
+  --sidebar-active: #2563eb;
+  --sidebar-overlay: rgb(255 255 255 / 8%);
+  --sidebar-surface: rgb(255 255 255 / 6%);
+  --sidebar-border-soft: rgb(255 255 255 / 12%);
 }
 
 @theme inline {
-  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --color-auth-canvas: var(--auth-canvas);
@@ -117,6 +136,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -134,6 +154,11 @@
   --color-danger-soft: var(--danger-soft);
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
@@ -149,7 +174,7 @@
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -180,7 +205,7 @@
   body {
     background: var(--background);
     color: var(--foreground);
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 16px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
@@ -204,7 +229,7 @@
 .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--sidebar-border); border-radius: 9999px; }
 .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--sidebar-muted); }
 
-/* Arabic needs an Arabic-capable system font; the English brand font remains unchanged. */
+/* Manrope (the brand typeface) has no Arabic glyphs, so Arabic uses an Arabic-capable system font. */
 html[lang="ar"] body,
 html[lang="ar"] .font-sans,
 html[lang="ar"] .font-display {
@@ -227,8 +252,8 @@ html[dir="rtl"] .sidebar-scroll {
   direction: rtl;
 }
 
-/* Apply the product typography only to signed-in work surfaces. Auth and onboarding
-   continue to use their existing styles from the sign-in and registration pages. */
+/* Manrope is the default everywhere (see body). Signed-in work surfaces additionally use the
+   larger product text scale below; auth and onboarding keep their own sizes. */
 .app-ui {
   font-family: var(--font-manrope), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 16px;

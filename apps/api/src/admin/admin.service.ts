@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +13,7 @@ import { AuthorizationService } from '../auth/authorization.service.js';
 import { UserContext } from '../auth/auth.types.js';
 import { ORGANISATION_ADMINISTRATOR_ROLE, PERMISSIONS } from '../auth/permission-catalogue.js';
 import { JsonObject, money, oneOf, optionalString, requiredString, stringArray, uuid } from '../common/input.js';
+import { assessRoleChange, ROLE_TEMPLATES, type RoleChangeAssessment, type RoleTemplateKey } from '@pos/shared/permissions';
 import { validateTaxNumber } from '@pos/shared/tax-id';
 import { composeOmanAddress, isOmanCountry, normalizeOmanPhone, type OmanAddressDetails } from '@pos/shared/address-formats';
 import { validateStoreHours, type StoreOperatingHours } from '@pos/shared/store-hours';
@@ -21,9 +24,18 @@ import { applyBillingPatch, BILLING_KEYS, DEFAULT_BILLING_SETTINGS } from '../co
 import { cleanFieldSet, cleanFieldValues, objectField } from '../common/field-config.js';
 import { isUniqueViolation, Tx } from '../database/db.js';
 import { PrismaService } from '../database/prisma.service.js';
-import { PermissionEffect, Prisma, ProductStatus, RecordStatus, UserStatus } from '../generated/prisma/client.js';
+import { PermissionEffect, Prisma, ProductStatus, RecordStatus, StoreCashier, UserStatus } from '../generated/prisma/client.js';
 
 type RoleAssignmentInput = { roleId: string; scopeType: 'ORGANIZATION' | 'STORE'; storeId: string | null };
+
+/** 409: the requested permission change goes above the role's safe level and needs explicit acknowledgement
+ * (and, above Medium risk, a reason) before it is saved. The client resends the same request with
+ * `acknowledgedPermissions` covering every flagged code, and a `reason` when one is required. */
+export class RoleElevationConfirmationRequiredException extends HttpException {
+  constructor(assessment: RoleChangeAssessment) {
+    super({ statusCode: 409, code: 'ROLE_ELEVATION_CONFIRMATION_REQUIRED', message: 'This change grants access above the role’s safe level and needs confirmation.', assessment }, HttpStatus.CONFLICT);
+  }
+}
 
 const USER_STATUSES: readonly string[] = Object.values(UserStatus);
 const RECORD_STATUSES: readonly string[] = Object.values(RecordStatus);
@@ -486,8 +498,17 @@ export class AdminService {
     this.requireOrganizationPermission(context, 'roles.manage');
     const name = requiredString(input.name, 'name');
     const description = optionalString(input.description) ?? '';
+    const storeAssignable = input.storeAssignable === true;
+    const templateKey = this.templateKeyFrom(input.templateKey);
     const permissions = stringArray(input.permissions);
     await this.ensurePermissions(permissions);
+
+    const after = Object.fromEntries([...new Set(permissions)].map((code) => [code, this.permissionEffect(input, code)]));
+    const assessment = assessRoleChange({ templateKey, before: {}, after, storeAssignable, isTillRole: false });
+    if (assessment.blocked.length > 0) throw new BadRequestException(assessment.blocked.join(' '));
+    this.assertNoOverreach(context, after);
+    const { reason } = this.requireConfirmationIfNeeded(input, assessment);
+
     try {
       const role = await this.prisma.$transaction(async (tx) => {
         const created = await tx.role.create({
@@ -495,12 +516,27 @@ export class AdminService {
             organizationId: context.organizationId,
             name,
             description,
-            storeAssignable: input.storeAssignable === true,
+            storeAssignable,
+            templateKey,
+            templateVersion: templateKey ? ROLE_TEMPLATES[templateKey].version : 0,
+            customizedAt: new Date(),
+            customizedById: context.userId,
             permissions: { create: [...new Set(permissions)].map((permissionCode) => ({ permissionCode, effect: this.permissionEffect(input, permissionCode) })) },
           },
           include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
         });
-        await this.audit.record(context, 'role.created', 'Role', created.id, { name, permissions }, tx);
+        await tx.rolePermissionChange.create({
+          data: {
+            organizationId: context.organizationId,
+            roleId: created.id,
+            actorUserId: context.userId,
+            before: {},
+            after: after as Prisma.InputJsonValue,
+            elevated: [...assessment.elevated, ...assessment.newlyHighRisk].map((flag) => flag.code) as Prisma.InputJsonValue,
+            reason,
+          },
+        });
+        await this.audit.record(context, 'role.created', 'Role', created.id, { name, permissions, templateKey }, tx);
         return created;
       });
       return this.roleDto(role);
@@ -512,22 +548,45 @@ export class AdminService {
 
   async updateRole(context: UserContext, roleId: string, input: JsonObject) {
     this.requireOrganizationPermission(context, 'roles.manage');
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, organizationId: context.organizationId } });
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, organizationId: context.organizationId },
+      include: { permissions: { select: { permissionCode: true, effect: true } } },
+    });
     if (!role) throw new NotFoundException('Role not found');
-    if (role.isSystem) throw new BadRequestException('System roles cannot be edited');
+    const templateKey = role.templateKey as RoleTemplateKey | null;
+    if (templateKey === 'org_admin') throw new BadRequestException('The administrator role always has every permission and cannot be edited');
 
     const status = typeof input.status === 'string' ? input.status.toUpperCase() : undefined;
     if (status && !RECORD_STATUSES.includes(status)) throw new BadRequestException('Invalid role status');
-    const storeAssignable = input.storeAssignable === undefined ? undefined : input.storeAssignable === true;
     if (input.storeAssignable !== undefined && typeof input.storeAssignable !== 'boolean') throw new BadRequestException('storeAssignable must be true or false');
-    if (storeAssignable === false && (await this.prisma.userRole.count({ where: { roleId, scopeType: 'STORE' } })) > 0) {
+    const storeAssignable = input.storeAssignable === undefined ? role.storeAssignable : input.storeAssignable === true;
+
+    if (role.isSystem) {
+      const renameTo = optionalString(input.name);
+      if (renameTo !== undefined && renameTo !== role.name) throw new BadRequestException('A system role cannot be renamed');
+      if (status !== undefined && status !== role.status) throw new BadRequestException('A system role cannot be disabled');
+    }
+    if (storeAssignable === false && role.storeAssignable && (await this.prisma.userRole.count({ where: { roleId, scopeType: 'STORE' } })) > 0) {
       throw new ConflictException('Reassign store users before removing this role from store-manager assignment');
     }
     if (status === 'DISABLED' && (await this.prisma.userRole.count({ where: { roleId } })) > 0) {
       throw new ConflictException('Reassign users before disabling this role');
     }
+
     const permissions = input.permissions === undefined ? undefined : stringArray(input.permissions);
-    if (permissions) await this.ensurePermissions(permissions);
+    let after: Record<string, PermissionEffect> | undefined;
+    let assessment: RoleChangeAssessment | undefined;
+    let reason = '';
+    if (permissions) {
+      await this.ensurePermissions(permissions);
+      after = Object.fromEntries([...new Set(permissions)].map((code) => [code, this.permissionEffect(input, code)])) as Record<string, PermissionEffect>;
+      const before = Object.fromEntries(role.permissions.map((permission) => [permission.permissionCode, permission.effect])) as Record<string, PermissionEffect>;
+      this.assertNoOverreach(context, after);
+      const isTillRole = await this.roleUsedByTill(roleId);
+      assessment = assessRoleChange({ templateKey, before, after, storeAssignable, isTillRole });
+      if (assessment.blocked.length > 0) throw new BadRequestException(assessment.blocked.join(' '));
+      reason = this.requireConfirmationIfNeeded(input, assessment).reason;
+    }
 
     try {
       const updated = await this.prisma.$transaction(async (tx) => {
@@ -537,14 +596,31 @@ export class AdminService {
             name: optionalString(input.name) || role.name,
             ...(optionalString(input.description) !== undefined ? { description: optionalString(input.description) } : {}),
             ...(status ? { status: status as RecordStatus } : {}),
-            ...(storeAssignable !== undefined ? { storeAssignable } : {}),
+            ...(storeAssignable !== role.storeAssignable ? { storeAssignable } : {}),
+            ...(after ? { customizedAt: new Date(), customizedById: context.userId } : {}),
           },
         });
-        if (permissions) {
+        if (after) {
+          const before = Object.fromEntries(role.permissions.map((permission) => [permission.permissionCode, permission.effect]));
           await tx.rolePermission.deleteMany({ where: { roleId } });
-          await tx.rolePermission.createMany({ data: [...new Set(permissions)].map((permissionCode) => ({ roleId, permissionCode, effect: this.permissionEffect(input, permissionCode) })) });
+          await tx.rolePermission.createMany({ data: Object.entries(after).map(([permissionCode, effect]) => ({ roleId, permissionCode, effect })) });
+          await tx.rolePermissionChange.create({
+            data: {
+              organizationId: context.organizationId,
+              roleId,
+              actorUserId: context.userId,
+              before: before as Prisma.InputJsonValue,
+              after: after as Prisma.InputJsonValue,
+              elevated: assessment ? [...assessment.elevated, ...assessment.newlyHighRisk].map((flag) => flag.code) as Prisma.InputJsonValue : [],
+              reason,
+            },
+          });
         }
-        await this.audit.record(context, 'role.updated', 'Role', roleId, { name: input.name, status, storeAssignable, permissionsChanged: Boolean(permissions) }, tx);
+        await this.audit.record(context, 'role.updated', 'Role', roleId, {
+          name: input.name, status, storeAssignable, permissionsChanged: Boolean(after),
+          elevated: assessment ? [...assessment.elevated, ...assessment.newlyHighRisk].map((flag) => flag.code) : undefined,
+          reason: after ? reason : undefined,
+        }, tx);
         return tx.role.findUniqueOrThrow({
           where: { id: roleId },
           include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
@@ -555,6 +631,383 @@ export class AdminService {
       if (isUniqueViolation(error)) throw new ConflictException('A role with this name already exists');
       throw error;
     }
+  }
+
+  /** Reverts a role's permissions (and storeAssignable) to its template default, and lets startup resume
+   * reconciling it automatically. Refuses for a role with no template (a from-scratch custom role). */
+  async resetRole(context: UserContext, roleId: string) {
+    this.requireOrganizationPermission(context, 'roles.manage');
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, organizationId: context.organizationId },
+      include: { permissions: { select: { permissionCode: true, effect: true } } },
+    });
+    if (!role) throw new NotFoundException('Role not found');
+    const templateKey = role.templateKey as RoleTemplateKey | null;
+    if (!templateKey) throw new BadRequestException('This role has no default to reset to');
+    const template = ROLE_TEMPLATES[templateKey];
+    const before = Object.fromEntries(role.permissions.map((permission) => [permission.permissionCode, permission.effect]));
+    const after = Object.fromEntries(template.permissions.map((code) => [code, 'ALLOW' as const]));
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.deleteMany({ where: { roleId } });
+      await tx.rolePermission.createMany({ data: template.permissions.map((code) => ({ roleId, permissionCode: code, effect: 'ALLOW' as const })) });
+      await tx.role.update({
+        where: { id: roleId },
+        data: { customizedAt: null, customizedById: null, templateVersion: template.version, storeAssignable: template.storeAssignable ?? role.storeAssignable },
+      });
+      await tx.rolePermissionChange.create({
+        data: { organizationId: context.organizationId, roleId, actorUserId: context.userId, before: before as Prisma.InputJsonValue, after: after as Prisma.InputJsonValue, elevated: [], reason: 'Reset to default' },
+      });
+      await this.audit.record(context, 'role.permissions.reset', 'Role', roleId, { templateKey }, tx);
+      return tx.role.findUniqueOrThrow({ where: { id: roleId }, include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } } });
+    });
+    return this.roleDto(updated);
+  }
+
+  /** A dry run of a proposed permission change: the same assessment `updateRole` would apply, plus how
+   * many people and stores it reaches, without saving anything. Lets the editor show live warnings. */
+  async assessRole(context: UserContext, roleId: string, input: JsonObject) {
+    this.requireOrganizationPermission(context, 'roles.view');
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, organizationId: context.organizationId },
+      include: { permissions: { select: { permissionCode: true, effect: true } } },
+    });
+    if (!role) throw new NotFoundException('Role not found');
+    const permissions = stringArray(input.permissions);
+    await this.ensurePermissions(permissions);
+    const after = Object.fromEntries([...new Set(permissions)].map((code) => [code, this.permissionEffect(input, code)]));
+    const before = Object.fromEntries(role.permissions.map((permission) => [permission.permissionCode, permission.effect]));
+    const storeAssignable = input.storeAssignable === undefined ? role.storeAssignable : input.storeAssignable === true;
+    const isTillRole = await this.roleUsedByTill(roleId);
+    const assessment = assessRoleChange({ templateKey: role.templateKey as RoleTemplateKey | null, before, after, storeAssignable, isTillRole });
+    const [assignedUserCount, assignedStores] = await Promise.all([
+      this.prisma.userRole.count({ where: { roleId } }),
+      this.prisma.userRole.findMany({ where: { roleId, scopeType: 'STORE' }, select: { storeId: true }, distinct: ['storeId'] }),
+    ]);
+    return { ...assessment, assignedUserCount, assignedStoreCount: assignedStores.length };
+  }
+
+  private templateKeyFrom(value: unknown): RoleTemplateKey | null {
+    if (typeof value !== 'string' || !value) return null;
+    if (!(value in ROLE_TEMPLATES)) throw new BadRequestException(`Unknown role template: ${value}`);
+    return value as RoleTemplateKey;
+  }
+
+  /** A non-administrator can never grant a permission they do not themselves hold organisation-wide. */
+  private assertNoOverreach(context: UserContext, after: Record<string, PermissionEffect>) {
+    if (context.isOrganisationAdministrator) return;
+    const overreach = Object.entries(after)
+      .filter(([, effect]) => effect !== 'DENY')
+      .filter(([code]) => !this.authorization.hasPermission(context, code))
+      .map(([code]) => code);
+    if (overreach.length) throw new ForbiddenException(`You cannot grant a permission you do not have yourself: ${overreach.join(', ')}`);
+  }
+
+  /** Throws 409 (with the full assessment) unless every elevated/newly-high-risk code has been acknowledged,
+   * and checks a reason was supplied when the change requires one. Returns the trimmed reason to persist. */
+  private requireConfirmationIfNeeded(input: JsonObject, assessment: RoleChangeAssessment): { reason: string } {
+    const acknowledged = new Set(stringArray(input.acknowledgedPermissions));
+    const mustAcknowledge = [...assessment.elevated, ...assessment.newlyHighRisk].map((flag) => flag.code as string);
+    const unacknowledged = mustAcknowledge.filter((code) => !acknowledged.has(code));
+    if (unacknowledged.length > 0) throw new RoleElevationConfirmationRequiredException(assessment);
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (assessment.requiresReason && reason.length < 10) {
+      throw new BadRequestException('A reason of at least 10 characters is required for this change');
+    }
+    return { reason };
+  }
+
+  /** Whether any shared till login currently holds this role — a till may never be elevated to CRITICAL access. */
+  private async roleUsedByTill(roleId: string): Promise<boolean> {
+    const count = await this.prisma.userRole.count({ where: { roleId, user: { accountType: 'STORE_TILL' } } });
+    return count > 0;
+  }
+
+  // ───────────── Store cashiers & till logins (Plan 13, Part A) ─────────────
+
+  async listCashiers(context: UserContext, storeId: string) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.staff.view'], id);
+    await this.ensureStore(context.organizationId, id);
+    const cashiers = await this.prisma.storeCashier.findMany({
+      where: { organizationId: context.organizationId, storeId: id },
+      orderBy: [{ status: 'asc' }, { displayName: 'asc' }],
+    });
+    return cashiers.map((cashier) => this.cashierDto(cashier));
+  }
+
+  async createCashier(context: UserContext, storeId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.cashiers.manage'], id);
+    await this.ensureStore(context.organizationId, id);
+    const displayName = requiredString(input.displayName, 'displayName');
+    if (displayName.length > 80) throw new BadRequestException('Cashier name must be 80 characters or fewer');
+    const employeeCode = optionalString(input.employeeCode) ?? '';
+    const pin = optionalString(input.pin);
+    if (pin && !/^\d{4,8}$/.test(pin)) throw new BadRequestException('PIN must contain 4 to 8 digits');
+
+    try {
+      const cashier = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.storeCashier.create({
+          data: {
+            organizationId: context.organizationId,
+            storeId: id,
+            displayName,
+            employeeCode,
+            pinHash: pin ? this.auth.hashPassword(pin) : null,
+            createdById: context.userId,
+          },
+        });
+        await this.audit.record(context, 'cashier.created', 'StoreCashier', created.id, { storeId: id, displayName, pinSet: Boolean(pin) }, tx);
+        return created;
+      });
+      return this.cashierDto(cashier);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('A cashier with this name already exists at this store');
+      throw error;
+    }
+  }
+
+  async updateCashier(context: UserContext, storeId: string, cashierId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    const targetId = uuid(cashierId, 'cashierId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.cashiers.manage'], id);
+    const cashier = await this.prisma.storeCashier.findFirst({ where: { id: targetId, organizationId: context.organizationId, storeId: id } });
+    if (!cashier) throw new NotFoundException('Cashier not found');
+
+    const displayName = input.displayName === undefined ? undefined : requiredString(input.displayName, 'displayName');
+    if (displayName && displayName.length > 80) throw new BadRequestException('Cashier name must be 80 characters or fewer');
+    const employeeCode = input.employeeCode === undefined ? undefined : (optionalString(input.employeeCode) ?? '');
+    const status = input.status === undefined ? undefined : (oneOf(input.status, RECORD_STATUSES, 'status') as RecordStatus);
+
+    let pinHash: string | null | undefined;
+    if (input.pin !== undefined) {
+      const pin = optionalString(input.pin) ?? '';
+      if (pin === '') pinHash = null;
+      else if (/^\d{4,8}$/.test(pin)) pinHash = this.auth.hashPassword(pin);
+      else throw new BadRequestException('PIN must contain 4 to 8 digits');
+    }
+
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const result = await tx.storeCashier.update({
+          where: { id: targetId },
+          data: {
+            ...(displayName !== undefined ? { displayName } : {}),
+            ...(employeeCode !== undefined ? { employeeCode } : {}),
+            ...(status !== undefined ? { status } : {}),
+            ...(pinHash !== undefined ? { pinHash, failedPinAttempts: 0, pinLockedUntil: null } : {}),
+          },
+        });
+        if (pinHash !== undefined || status !== undefined) {
+          // A changed PIN or a deactivation invalidates any cashier token already issued for this name.
+          await tx.cashierToken.deleteMany({ where: { cashierId: targetId } });
+        }
+        await this.audit.record(context, 'cashier.updated', 'StoreCashier', targetId, { storeId: id, displayName, employeeCode, status, pinChanged: pinHash !== undefined }, tx);
+        return result;
+      });
+      return this.cashierDto(updated);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('A cashier with this name already exists at this store');
+      throw error;
+    }
+  }
+
+  /** Creates cashier names from this store's existing PERSON logins that hold the Cashier role, linked via
+   * linkedUserId. Pass userIds to import only those; omit it to import every qualifying login not already
+   * imported. The web staff page shows the qualifying list first and lets the manager confirm the picks. */
+  async importCashiers(context: UserContext, storeId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.cashiers.manage'], id);
+    await this.ensureStore(context.organizationId, id);
+
+    const candidateUserIds = input.userIds === undefined ? undefined : stringArray(input.userIds).map((value) => uuid(value, 'userId'));
+    const users = await this.prisma.user.findMany({
+      where: {
+        organizationId: context.organizationId,
+        accountType: 'PERSON',
+        status: 'ACTIVE',
+        ...(candidateUserIds ? { id: { in: candidateUserIds } } : {}),
+        roles: { some: { scopeType: 'STORE', storeId: id, role: { templateKey: 'cashier' } } },
+      },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (users.length === 0) return { imported: [] };
+
+    const alreadyLinked = new Set(
+      (await this.prisma.storeCashier.findMany({ where: { storeId: id, linkedUserId: { in: users.map((user) => user.id) } }, select: { linkedUserId: true } }))
+        .map((row) => row.linkedUserId),
+    );
+    const toImport = users.filter((user) => !alreadyLinked.has(user.id));
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const rows: StoreCashier[] = [];
+      for (const user of toImport) {
+        const displayName = `${user.firstName} ${user.lastName}`.trim() || 'Cashier';
+        try {
+          rows.push(await tx.storeCashier.create({ data: { organizationId: context.organizationId, storeId: id, displayName, linkedUserId: user.id, createdById: context.userId } }));
+        } catch (error) {
+          if (!isUniqueViolation(error)) throw error;
+          // An active cashier with this exact name already exists; skip rather than fail the whole batch.
+        }
+      }
+      if (rows.length > 0) await this.audit.record(context, 'cashier.imported', 'StoreCashier', id, { storeId: id, count: rows.length }, tx);
+      return rows;
+    });
+    return { imported: created.map((row) => this.cashierDto(row)) };
+  }
+
+  /** Whether and how this store's shared till login is set up, with its login id and active session count. */
+  async getTill(context: UserContext, storeId: string) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.staff.view'], id);
+    const store = await this.ensureStore(context.organizationId, id);
+    const organization = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { slug: true } });
+    const till = await this.prisma.user.findFirst({ where: { organizationId: context.organizationId, accountType: 'STORE_TILL', tillStoreId: id } });
+    if (!till) return { exists: false, loginId: this.tillLoginId(store.code, organization.slug) };
+    const activeSessions = await this.prisma.session.count({ where: { userId: till.id, expiresAt: { gt: new Date() } } });
+    return this.tillSummary(till, activeSessions);
+  }
+
+  async createTill(context: UserContext, storeId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.cashiers.manage'], id);
+    const store = await this.ensureStore(context.organizationId, id);
+
+    const existing = await this.prisma.user.findFirst({ where: { organizationId: context.organizationId, accountType: 'STORE_TILL', tillStoreId: id, status: { not: 'DISABLED' } } });
+    if (existing) throw new ConflictException('This store already has an active till login');
+
+    const password = typeof input.password === 'string' ? input.password : '';
+    if (password.length < 12 || password.length > 200) throw new BadRequestException('Till password must be between 12 and 200 characters');
+    const pin = optionalString(input.pin);
+    if (pin && !/^\d{4,8}$/.test(pin)) throw new BadRequestException('PIN must contain 4 to 8 digits');
+
+    const organization = await this.prisma.organization.findUniqueOrThrow({ where: { id: context.organizationId }, select: { slug: true } });
+    const loginId = this.tillLoginId(store.code, organization.slug);
+    // A till may hold only the organisation's Cashier role, store-scoped: never an organisation-scope role,
+    // and never another role (Phase 1.4 hard block is enforced again in assessRoleChange via isTillRole).
+    const cashierRole = await this.prisma.role.findFirst({ where: { organizationId: context.organizationId, templateKey: 'cashier', status: 'ACTIVE' } });
+    if (!cashierRole) throw new BadRequestException('The organisation has no active Cashier role to assign to the till');
+
+    try {
+      const till = await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            organizationId: context.organizationId,
+            email: loginId,
+            passwordHash: this.auth.hashPassword(password),
+            pinHash: pin ? this.auth.hashPassword(pin) : null,
+            firstName: `${store.name} till`,
+            lastName: '',
+            accountType: 'STORE_TILL',
+            tillStoreId: id,
+            defaultStoreId: id,
+          },
+        });
+        await tx.userStore.create({ data: { userId: user.id, storeId: id, isDefault: true } });
+        await tx.userRole.create({ data: { organizationId: context.organizationId, userId: user.id, roleId: cashierRole.id, scopeType: 'STORE', storeId: id } });
+        await this.audit.record(context, 'till.created', 'User', user.id, { storeId: id, loginId }, tx);
+        return user;
+      });
+      return this.tillSummary(till, 0);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('This store already has a till login');
+      throw error;
+    }
+  }
+
+  /** Sets a new password and/or PIN and always revokes every session and cashier token for this till, so
+   * it also serves as "sign out all tills" when called with neither credential. */
+  async resetTill(context: UserContext, storeId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.cashiers.manage'], id);
+    const till = await this.prisma.user.findFirst({ where: { organizationId: context.organizationId, accountType: 'STORE_TILL', tillStoreId: id } });
+    if (!till) throw new NotFoundException('This store has no till login yet');
+
+    const password = optionalString(input.password);
+    if (password !== undefined && password !== '' && (password.length < 12 || password.length > 200)) {
+      throw new BadRequestException('Till password must be between 12 and 200 characters');
+    }
+    const pin = optionalString(input.pin);
+    if (pin !== undefined && pin !== '' && !/^\d{4,8}$/.test(pin)) throw new BadRequestException('PIN must contain 4 to 8 digits');
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id: till.id },
+        data: {
+          ...(password ? { passwordHash: this.auth.hashPassword(password) } : {}),
+          ...(pin !== undefined ? { pinHash: pin ? this.auth.hashPassword(pin) : null } : {}),
+          failedAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+      await tx.session.deleteMany({ where: { userId: till.id } });
+      await tx.cashierToken.deleteMany({ where: { tillUserId: till.id } });
+      await this.audit.record(context, 'till.reset', 'User', till.id, { storeId: id, passwordChanged: Boolean(password), pinChanged: pin !== undefined }, tx);
+      return result;
+    });
+    return this.tillSummary(updated, 0);
+  }
+
+  /** Disables or re-enables the till login. Disabling signs it out everywhere; re-enabling can fail with
+   * a conflict if another till was created for this store in the meantime. */
+  async setTillStatus(context: UserContext, storeId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.cashiers.manage'], id);
+    const till = await this.prisma.user.findFirst({ where: { organizationId: context.organizationId, accountType: 'STORE_TILL', tillStoreId: id } });
+    if (!till) throw new NotFoundException('This store has no till login yet');
+    const status = oneOf(input.status, RECORD_STATUSES, 'status') as UserStatus;
+    if (status !== 'ACTIVE' && status !== 'DISABLED') throw new BadRequestException('Till status must be ACTIVE or DISABLED');
+
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const result = await tx.user.update({ where: { id: till.id }, data: { status } });
+        if (status === 'DISABLED') {
+          await tx.session.deleteMany({ where: { userId: till.id } });
+          await tx.cashierToken.deleteMany({ where: { tillUserId: till.id } });
+        }
+        await this.audit.record(context, 'till.status.updated', 'User', till.id, { storeId: id, status }, tx);
+        return result;
+      });
+      const activeSessions = status === 'DISABLED' ? 0 : await this.prisma.session.count({ where: { userId: till.id, expiresAt: { gt: new Date() } } });
+      return this.tillSummary(updated, activeSessions);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('This store already has an active till login');
+      throw error;
+    }
+  }
+
+  private cashierDto(cashier: { id: string; displayName: string; employeeCode: string; pinHash: string | null; status: RecordStatus; linkedUserId: string | null; lastSelectedAt: Date | null; createdAt: Date; updatedAt: Date }) {
+    return {
+      id: cashier.id,
+      displayName: cashier.displayName,
+      employeeCode: cashier.employeeCode,
+      status: cashier.status,
+      hasPin: Boolean(cashier.pinHash),
+      linkedUserId: cashier.linkedUserId,
+      lastSelectedAt: cashier.lastSelectedAt,
+      createdAt: cashier.createdAt,
+      updatedAt: cashier.updatedAt,
+    };
+  }
+
+  private tillSummary(till: { id: string; email: string; status: UserStatus; lastLoginAt: Date | null }, activeSessions: number) {
+    return { exists: true as const, id: till.id, loginId: till.email, status: till.status, lastLoginAt: till.lastLoginAt, activeSessions };
+  }
+
+  /** Login id shaped like an email so the existing login form works unchanged; the `.till` suffix can
+   * never collide with a real mailbox. */
+  private tillLoginId(storeCode: string, organizationSlug: string): string {
+    const slugPart = storeCode.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'store';
+    return `till.${slugPart}@${organizationSlug}.till`;
   }
 
   // ───────────── Stores & registers ─────────────
@@ -1934,6 +2387,8 @@ export class AdminService {
   }
 
   private roleDto(role: Prisma.RoleGetPayload<{ include: { permissions: { select: { permissionCode: true; effect: true } } } }>) {
+    const templateKey = role.templateKey as RoleTemplateKey | null;
+    const template = templateKey ? ROLE_TEMPLATES[templateKey] : undefined;
     return {
       id: role.id,
       name: role.name,
@@ -1945,6 +2400,12 @@ export class AdminService {
       updatedAt: role.updatedAt,
       permissions: role.permissions.map((permission) => permission.permissionCode),
       permissionEffects: Object.fromEntries(role.permissions.map((permission) => [permission.permissionCode, permission.effect])),
+      templateKey,
+      customized: role.customizedAt !== null,
+      customizedAt: role.customizedAt,
+      templateVersion: role.templateVersion,
+      templateUpdateAvailable: Boolean(template && role.customizedAt !== null && template.version > role.templateVersion),
+      defaultPermissionEffects: template ? Object.fromEntries(template.permissions.map((code) => [code, 'ALLOW'])) : {},
     };
   }
 

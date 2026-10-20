@@ -14,12 +14,33 @@ export default async function RoleDetail({ params }: PageProps<"/org/roles/[id]"
   const { data: role } = await api.role(id);
   if (!role) notFound();
   const { data: groups } = await api.permissionGroups();
+  const isAdministratorTemplate = role.templateKey === "org_admin";
+  const statusLabel = isAdministratorTemplate
+    ? "Administrator role: always has every permission"
+    : role.system
+      ? role.customized ? "System role · modified from default" : "System role · follows default"
+      : "Custom role";
+  const readOnly = isAdministratorTemplate || !me.permissions.organization.includes("roles.manage");
   return (
     <>
       <PageHeader title={role.name} description={role.description} crumbs={[{ label: "Organisation", href: "/org" }, { label: "Roles", href: "/org/roles" }, { label: role.name }]} backHref="/org/roles" backLabel="Back to roles" />
       <Card>
-        <CardHeader><CardTitle><LocalizedText value={"Permissions"} /></CardTitle><span className="text-xs text-muted-foreground"><LocalizedText value={role.system ? "System role: read only" : "Custom role"} /></span></CardHeader>
-        <CardContent><PermissionMatrix groups={groups} roleId={role.id} initialEffects={role.permissionEffects} initialStoreAssignable={role.storeAssignable} readOnly={role.system || !me.permissions.organization.includes("roles.manage")} /></CardContent>
+        <CardHeader><CardTitle><LocalizedText value={"Permissions"} /></CardTitle><span className="text-xs text-muted-foreground"><LocalizedText value={statusLabel} /></span></CardHeader>
+        <CardContent>
+          <PermissionMatrix
+            key={`${role.id}:${role.updatedAt}`}
+            groups={groups}
+            roleId={role.id}
+            roleName={role.name}
+            initialEffects={role.permissionEffects}
+            initialStoreAssignable={role.storeAssignable}
+            readOnly={readOnly}
+            templateKey={role.templateKey}
+            defaultPermissionEffects={role.defaultPermissionEffects}
+            customized={role.customized}
+            templateUpdateAvailable={role.templateUpdateAvailable}
+          />
+        </CardContent>
       </Card>
     </>
   );

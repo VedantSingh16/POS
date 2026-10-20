@@ -99,7 +99,7 @@ export default async function Onboarding({ params }: PageProps<"/onboarding/[ste
         <main className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-col justify-center px-5 py-8 sm:px-8 lg:min-h-svh lg:px-12 lg:py-12 xl:px-16">
           <div className="mx-auto w-full max-w-5xl">
             <p className="mb-2 hidden text-xs font-bold uppercase tracking-[0.18em] text-auth-primary lg:mb-3 lg:block"><LocalizedText value={"Step "} />{index + 1} <LocalizedText value={"of "} />{STEPS.length}</p>
-            <h1 className="font-display text-[clamp(1.875rem,2.3vw,2.25rem)] font-medium leading-[1.1] tracking-[-0.045em] text-auth-ink"><LocalizedText value={current.label} /></h1>
+            <h1 className="font-display text-[clamp(1.875rem,2.3vw,2.25rem)] font-medium leading-[1.1] tracking-[-0.03em] text-auth-ink"><LocalizedText value={current.label} /></h1>
             <p className="mb-6 mt-2 max-w-2xl text-[15px] leading-[1.55] text-auth-muted sm:mb-8"><LocalizedText value={current.text} /></p>
             <OnboardingStep currentStep={index} initialData={initialData} organization={organization} admin={{ email: me.user.email }} complete={complete} />
           </div>

@@ -10,7 +10,8 @@ import type { Locale } from "@pos/shared/locale";
 
 const axisTick = (minor: number, locale: Locale) => { const major = minor / minorPerUnit(); return Math.abs(major) >= 1000 ? `${formatNumber(Math.round(major / 100) / 10, locale)}k` : formatNumber(Math.round(major), locale); };
 
-const COLORS = ["var(--primary)", "var(--success)", "var(--warning)", "var(--info)"];
+// Brand chart palette: one blue family with alternating light and dark steps so adjacent slices stay distinct.
+const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 function EmptyChart({ children }: { children: React.ReactNode }) {
   return <div className="grid h-28 place-items-center px-6 text-center text-sm text-muted-foreground">{children}</div>;
 }

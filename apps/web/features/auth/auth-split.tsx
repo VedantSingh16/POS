@@ -21,7 +21,7 @@ export function AuthSplit({ children }: { children: ReactNode }) {
           <p className="mb-5 flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.2em] text-auth-primary sm:text-xs">
             <span aria-hidden="true" className="size-2 rounded-full bg-auth-primary" />
             <LocalizedText value={"Multi-store point of sale"} /></p>
-          <h1 className="font-display text-[clamp(3.45rem,5.35vw,5.7rem)] font-extrabold leading-[0.98] tracking-[-0.075em] text-auth-ink">
+          <h1 className="font-display text-[clamp(3.45rem,5.35vw,5.7rem)] font-bold leading-[0.98] tracking-[-0.04em] text-auth-ink">
             <LocalizedText value={"Keep every store"} /><br />
             <span className="text-auth-primary"><LocalizedText value={"in sync."} /></span>
           </h1>
@@ -31,7 +31,7 @@ export function AuthSplit({ children }: { children: ReactNode }) {
 
         <div aria-hidden="true" className="auth-hero-visual pointer-events-none relative z-0 -mx-6 mt-auto h-[260px] sm:-mx-10 sm:h-[320px] lg:absolute lg:start-0 lg:end-[-160px] lg:bottom-0 lg:top-[37%] lg:mx-0 lg:mt-0 lg:h-auto">
           <Image
-            src="/images/pos-auth-hero.png"
+            src="/images/liqaa-pos-auth-hero.png"
             alt=""
             fill
             priority

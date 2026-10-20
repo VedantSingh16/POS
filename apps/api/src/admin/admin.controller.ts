@@ -155,6 +155,18 @@ export class AdminController {
     return this.admin.updateRole(request.user!, roleId, body);
   }
 
+  @Post('roles/:roleId/reset')
+  @RequirePermissions('roles.manage')
+  resetRole(@Req() request: AuthenticatedRequest, @Param('roleId') roleId: string) {
+    return this.admin.resetRole(request.user!, roleId);
+  }
+
+  @Post('roles/:roleId/assess')
+  @RequirePermissions('roles.view')
+  assessRole(@Req() request: AuthenticatedRequest, @Param('roleId') roleId: string, @Body() body: JsonObject) {
+    return this.admin.assessRole(request.user!, roleId, body);
+  }
+
   @Get('stores')
   @RequirePermissions('stores.view')
   async stores(@Req() request: AuthenticatedRequest) {
@@ -206,6 +218,54 @@ export class AdminController {
   @RequirePermissions('store.staff.manage')
   assignStoreRole(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('userId') userId: string, @Body() body: JsonObject) {
     return this.admin.assignStoreRole(request.user!, storeId, userId, body);
+  }
+
+  @Get('stores/:storeId/cashiers')
+  @RequirePermissions('store.staff.view')
+  async storeCashiers(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) {
+    return { cashiers: await this.admin.listCashiers(request.user!, storeId) };
+  }
+
+  @Post('stores/:storeId/cashiers')
+  @RequirePermissions('store.cashiers.manage')
+  createCashier(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
+    return this.admin.createCashier(request.user!, storeId, body);
+  }
+
+  @Patch('stores/:storeId/cashiers/:cashierId')
+  @RequirePermissions('store.cashiers.manage')
+  updateCashier(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('cashierId') cashierId: string, @Body() body: JsonObject) {
+    return this.admin.updateCashier(request.user!, storeId, cashierId, body);
+  }
+
+  @Post('stores/:storeId/cashiers/import')
+  @RequirePermissions('store.cashiers.manage')
+  importCashiers(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
+    return this.admin.importCashiers(request.user!, storeId, body);
+  }
+
+  @Get('stores/:storeId/till')
+  @RequirePermissions('store.staff.view')
+  getTill(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) {
+    return this.admin.getTill(request.user!, storeId);
+  }
+
+  @Post('stores/:storeId/till')
+  @RequirePermissions('store.cashiers.manage')
+  createTill(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
+    return this.admin.createTill(request.user!, storeId, body);
+  }
+
+  @Post('stores/:storeId/till/reset')
+  @RequirePermissions('store.cashiers.manage')
+  resetTill(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
+    return this.admin.resetTill(request.user!, storeId, body);
+  }
+
+  @Patch('stores/:storeId/till')
+  @RequirePermissions('store.cashiers.manage')
+  updateTill(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
+    return this.admin.setTillStatus(request.user!, storeId, body);
   }
 
   @Get('registers')

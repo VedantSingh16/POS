@@ -53,7 +53,11 @@ export function RolesTable({ data }: { data: Role[] }) {
     { accessorKey: "description", header: "Description" },
     { accessorKey: "users", header: "Assigned to", cell: (c) => { const count = c.getValue() as number; return Number.isFinite(count) ? <span className="tabular"><LocalizedNumber value={count} /> <LocalizedText value={count === 1 ? "person" : "people"} /></span> : <span>—</span>; } },
     { accessorKey: "permissions", header: "Permissions", cell: (c) => Number.isFinite(c.getValue() as number) ? num(c.getValue() as number) : <span className="text-muted-foreground">—</span> },
-    { accessorKey: "system", header: "Type", cell: (c) => <Badge tone={c.getValue() ? "brand" : "neutral"}><LocalizedText value={c.getValue() ? "System" : "Custom"} /></Badge> },
+    { accessorKey: "system", header: "Type", cell: (c) => {
+      const row = c.row.original;
+      const label = row.system ? (row.customized ? "System · Modified" : "System") : "Custom";
+      return <Badge tone={row.system ? (row.customized ? "warning" : "brand") : "neutral"}><LocalizedText value={label} /></Badge>;
+    } },
   ];
   return <DataTable columns={cols} data={data} rowHref={(r) => `/org/roles/${r.id}`} searchPlaceholder="Search roles…" />;
 }

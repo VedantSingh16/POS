@@ -19,4 +19,9 @@ export type UserContext = {
   storeIds: string[];
   grants: PermissionGrant[];
   isOrganisationAdministrator: boolean;
+  /** Set when the request was authenticated by the CRM Product Contract. */
+  authSource?: 'POS_SESSION' | 'CRM_PRODUCT_TOKEN';
+  platformTenantId?: string;
+  platformMembershipId?: string;
+  platformCapabilities?: string[];
 };
