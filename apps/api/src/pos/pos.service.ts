@@ -938,7 +938,7 @@ export class PosService {
           storeId,
           registerId,
           clientHoldId: clientHoldId ?? randomUUID(),
-          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+          payload: this.cleanHoldPayload(input.payload) as Prisma.InputJsonValue,
           createdById: context.userId,
           cashierId: cashier.cashierId,
           expiresAt: new Date(Date.now() + ttlHours * 3_600_000),
@@ -949,6 +949,44 @@ export class PosService {
       if (isUniqueViolation(error)) throw new ConflictException('A held sale with this clientHoldId already exists');
       throw error;
     }
+  }
+
+  /** Keeps the cart payload as sent, but bounds the cashier-entered description and the display-only total estimate. */
+  private cleanHoldPayload(raw: unknown): JsonObject {
+    const payload: JsonObject = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as JsonObject) } : {};
+    const description = typeof payload.description === 'string' ? payload.description.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+    if (description) payload.description = description; else delete payload.description;
+    const estimate = Number(payload.estimatedTotalCents);
+    if (Number.isSafeInteger(estimate) && estimate >= 0) payload.estimatedTotalCents = estimate; else delete payload.estimatedTotalCents;
+    return payload;
+  }
+
+  /** Item names for the held-sales list, so a cashier can tell holds apart without resuming them. */
+  private async holdItemPreviews(organizationId: string, payloads: unknown[]): Promise<Map<string, string>> {
+    const ids = new Set<string>();
+    for (const payload of payloads) {
+      const lines = payload && typeof payload === 'object' && Array.isArray((payload as JsonObject).lines) ? (payload as { lines: unknown[] }).lines : [];
+      for (const line of lines) {
+        const variantId = line && typeof line === 'object' ? (line as JsonObject).variantId : undefined;
+        if (typeof variantId === 'string' && isUuid(variantId)) ids.add(variantId);
+      }
+    }
+    if (!ids.size) return new Map();
+    const variants = await this.prisma.productVariant.findMany({ where: { id: { in: [...ids] }, product: { organizationId } }, select: { id: true, name: true, product: { select: { name: true } } } });
+    return new Map(variants.map((variant) => [variant.id, variant.name ? `${variant.product.name} · ${variant.name}` : variant.product.name]));
+  }
+
+  private holdSummary(payload: unknown, names: Map<string, string>) {
+    const value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as JsonObject : {};
+    const lines = Array.isArray(value.lines) ? value.lines.filter((line): line is JsonObject => Boolean(line) && typeof line === 'object' && !Array.isArray(line)) : [];
+    const items = lines.map((line) => ({ name: names.get(String(line.variantId)) ?? 'Item no longer available', quantity: Number(line.quantity) || 0 }));
+    return {
+      description: typeof value.description === 'string' ? value.description : null,
+      lineCount: lines.length,
+      itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+      itemsPreview: items.slice(0, 3).map((item) => `${item.name} × ${item.quantity}`).join(', ') + (items.length > 3 ? ` +${items.length - 3} more` : ''),
+      estimatedTotalCents: typeof value.estimatedTotalCents === 'number' ? value.estimatedTotalCents : null,
+    };
   }
 
   /** Active holds only: a hold past its expiry time is not offered for resume. */
@@ -964,7 +1002,8 @@ export class PosService {
       include: { cashier: { select: { displayName: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    return holds.map((held) => ({ id: held.id, clientHoldId: held.clientHoldId, registerId: held.registerId, payload: held.payload, cashierName: held.cashier?.displayName ?? null, createdAt: held.createdAt, expiresAt: held.expiresAt }));
+    const names = await this.holdItemPreviews(context.organizationId, holds.map((held) => held.payload));
+    return holds.map((held) => ({ id: held.id, clientHoldId: held.clientHoldId, registerId: held.registerId, payload: held.payload, ...this.holdSummary(held.payload, names), cashierName: held.cashier?.displayName ?? null, createdAt: held.createdAt, expiresAt: held.expiresAt }));
   }
 
   async resumeHold(context: UserContext, holdId: string) {

@@ -7,7 +7,7 @@ import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/input";
 import { useMe } from "@/components/app/session-context";
 
 
@@ -50,7 +50,7 @@ function SetPinDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
         <DialogTitle><LocalizedText value={"Set till PIN"} /></DialogTitle>
         <DialogDescription><LocalizedText value={"4 to 8 digits. Used to unlock a shared till without signing in again."} /></DialogDescription>
         <form onSubmit={save} className="grid gap-3">
-          <Input aria-label="PIN" type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 8)); setError(""); }} />
+          <PasswordInput secret="PIN" aria-label="PIN" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 8)); setError(""); }} />
           {error && <p role="alert" className="text-xs text-danger">{error}</p>}
           <div className="flex justify-end gap-2"><DialogClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></DialogClose><Button type="submit" disabled={!valid}><LocalizedText value={"Save PIN"} /></Button></div>
         </form>

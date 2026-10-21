@@ -6,9 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
+import { LockKeyhole, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, NativeSelect } from "@/components/ui/input";
+import { Input, NativeSelect, PasswordInput } from "@/components/ui/input";
 import { Field } from "@/components/form/field";
 
 const schema = z.object({
@@ -24,7 +24,6 @@ export function LoginForm() {
   const next = useSearchParams().get("next");
   const [error, setError] = React.useState("");
   const [orgs, setOrgs] = React.useState<Org[]>([]);
-  const [showPassword, setShowPassword] = React.useState(false);
   const [showRecoveryHint, setShowRecoveryHint] = React.useState(false);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<In>({ resolver: zodResolver(schema), defaultValues: { email: "", password: "", organizationSlug: "" } });
 
@@ -58,11 +57,8 @@ export function LoginForm() {
         </Field>
         <Field label="Password" htmlFor="password" error={errors.password?.message}>
           <div className="relative">
-            <LockKeyhole aria-hidden="true" className="pointer-events-none absolute start-4 top-1/2 size-[18px] -translate-y-1/2 text-auth-muted" strokeWidth={1.9} />
-            <Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="Enter your password" className="h-14 rounded-[15px] border-auth-border bg-auth-surface ps-12 pe-12 text-base text-auth-ink placeholder:text-auth-muted" aria-invalid={!!errors.password} {...register("password")} />
-            <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((visible) => !visible)} className="absolute end-3 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-lg text-auth-muted hover:bg-auth-canvas hover:text-auth-ink">
-              {showPassword ? <EyeOff aria-hidden="true" className="size-[18px]" /> : <Eye aria-hidden="true" className="size-[18px]" />}
-            </button>
+            <LockKeyhole aria-hidden="true" className="pointer-events-none absolute start-4 z-10 top-1/2 size-[18px] -translate-y-1/2 text-auth-muted" strokeWidth={1.9} />
+            <PasswordInput id="password" autoComplete="current-password" placeholder="Enter your password" className="h-14 rounded-[15px] border-auth-border bg-auth-surface ps-12 text-base text-auth-ink placeholder:text-auth-muted" toggleClassName="end-3 rounded-lg text-auth-muted hover:bg-auth-canvas hover:text-auth-ink" aria-invalid={!!errors.password} {...register("password")} />
           </div>
           <div className="mt-1 flex justify-end">
             <button type="button" aria-expanded={showRecoveryHint} aria-controls="password-recovery-hint" onClick={() => setShowRecoveryHint((visible) => !visible)} className="text-sm font-semibold text-auth-primary hover:text-auth-primary-hover hover:underline hover:underline-offset-4"><LocalizedText value={"Forgot password?"} /></button>

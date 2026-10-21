@@ -174,7 +174,13 @@ export const api = {
   },
   async storeStaff(id: string) {
     const value = await read<any>(`/admin/stores/${id}/users`, { storeId: id });
-    return real((value.users ?? []).map((user: any) => ({ id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role: (user.roles ?? []).map((role: any) => role.name).join(", ") || "No store role", storeRoleId: user.roles?.[0]?.id ?? "", scope: "This store", status: user.status, lastLogin: user.lastLoginAt ?? "" })) as (UserRow & { storeRoleId: string })[]);
+    return real((value.users ?? []).map((user: any) => {
+      const storeRoles: string[] = (user.roles ?? []).map((role: any) => role.name);
+      const organizationRoles: string[] = (user.organizationRoles ?? []).map((role: any) => role.name);
+      // The role the person actually holds here: their store role, or an organisation-wide role that also applies in this store.
+      const role = storeRoles.join(", ") || organizationRoles.join(", ") || "No store role";
+      return { id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role, storeRoleId: user.roles?.[0]?.id ?? "", storeRoleName: storeRoles[0] ?? "", organizationRoles, roleEditable: user.roleEditable === true, accountManageable: user.accountManageable === true, scope: "This store", status: user.status, lastLogin: user.lastLoginAt ?? "" };
+    }) as (UserRow & { storeRoleId: string })[]);
   },
   async storeCashiers(id: string) {
     const value = await read<any>(`/admin/stores/${id}/cashiers`, { storeId: id });

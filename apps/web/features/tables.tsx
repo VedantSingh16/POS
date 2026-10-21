@@ -298,12 +298,13 @@ function AuditDetail({ value }: { value: string }) {
     return separator < 0 ? ["Detail", item] : [readableAuditKey(item.slice(0, separator)), item.slice(separator + 2)];
   });
   return (
-    <details className="min-w-32 max-w-[28rem]">
+    <details className="w-56 max-w-[28rem] sm:w-72">
       <summary className="min-h-9 cursor-pointer content-center text-sm font-semibold text-primary marker:text-muted-foreground hover:underline"><LocalizedText value={"View details"} /></summary>
-      <dl className="mt-2 grid gap-x-4 gap-y-1.5 rounded-lg bg-muted/70 p-3 text-sm sm:grid-cols-[minmax(6rem,auto)_minmax(0,1fr)]">
-        {fields.map(([label, detail], index) => <div key={`${label}-${index}`} className="contents">
-          <dt className="font-medium text-muted-foreground">{label}</dt>
-          <dd className="min-w-0 break-words text-foreground">{detail}</dd>
+      {/* One label/value pair per stacked block: a side-by-side grid collapsed to a one-character value column inside narrow table cells. */}
+      <dl className="mt-2 grid gap-2 rounded-lg bg-muted/70 p-3 text-sm">
+        {fields.map(([label, detail], index) => <div key={`${label}-${index}`} className="grid min-w-0 gap-0.5">
+          <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+          <dd className="min-w-0 whitespace-normal [overflow-wrap:anywhere] text-foreground">{detail}</dd>
         </div>)}
       </dl>
     </details>
@@ -319,4 +320,22 @@ export function AuditTable({ data }: { data: Aud[] }) {
     { accessorKey: "detail", header: "Details", cell: (c) => <AuditDetail value={c.getValue() as string} /> },
   ];
   return <DataTable columns={cols} data={data} searchPlaceholder="Search audit log…" />;
+}
+
+/** Compact activity feed for dashboards: no search, no expandable metadata. The full detail stays on the audit log page. */
+export function RecentActivityList({ data }: { data: Aud[] }) {
+  if (!data.length) return <p className="rounded-xl border border-dashed bg-card p-6 text-center text-sm text-muted-foreground"><LocalizedText value={"No activity yet."} /></p>;
+  return (
+    <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+      {data.map((entry) => (
+        <li key={entry.id} className="flex min-w-0 items-start justify-between gap-4 px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate font-medium">{readableAuditAction(entry.action)}</p>
+            <p className="mt-0.5 truncate text-sm text-muted-foreground" title={`${entry.actor} · ${entry.entity}`}>{entry.actor} · {entry.entity}</p>
+          </div>
+          <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{entry.at ? <RelativeTime value={entry.at} /> : "—"}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }

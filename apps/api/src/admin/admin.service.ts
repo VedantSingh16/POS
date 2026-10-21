@@ -315,33 +315,141 @@ export class AdminService {
       include: userInclude,
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { email: 'asc' }],
     });
-    return users.map((user) => ({
-      ...this.userDto(user),
-      // The store staff view must not disclose the user's other store assignments.
-      defaultStoreId: user.defaultStoreId === id ? id : null,
-      storeIds: [id],
-      roles: user.roles.filter((assignment) => assignment.scopeType === 'STORE' && assignment.storeId === id).map((assignment) => ({
-        id: assignment.role.id,
-        name: assignment.role.name,
-        scopeType: assignment.scopeType,
-        scopeId: id,
-      })),
-    }));
+    const canManage = this.authorization.hasPermission(context, 'store.staff.manage', id);
+    const assignable = canManage ? new Set((await this.assignableStoreRoles(context, id)).map((role) => role.id)) : new Set<string>();
+    return users.map((user) => {
+      const access = this.storeStaffAccess(context, id, user, canManage, assignable);
+      return {
+        ...this.userDto(user),
+        // The store staff view must not disclose the user's other store assignments.
+        defaultStoreId: user.defaultStoreId === id ? id : null,
+        storeIds: [id],
+        roles: user.roles.filter((assignment) => assignment.scopeType === 'STORE' && assignment.storeId === id).map((assignment) => ({
+          id: assignment.role.id,
+          name: assignment.role.name,
+          scopeType: assignment.scopeType,
+          scopeId: id,
+        })),
+        // Organisation-wide roles also apply in this store; they are shown read-only and only the organisation can change them.
+        organizationRoles: user.roles.filter((assignment) => assignment.scopeType === 'ORGANIZATION').map((assignment) => ({ id: assignment.role.id, name: assignment.role.name })),
+        roleEditable: access.roleEditable,
+        accountManageable: access.accountManageable,
+      };
+    });
+  }
+
+  /**
+   * What the caller may do to one person from a store's staff screen.
+   *  - roleEditable: change their store role. Never yourself, never someone with an organisation-wide role, and never
+   *    someone whose current store role is above what the caller may hand out.
+   *  - accountManageable: also disable/enable them or reset their password. Additionally requires that this store is the
+   *    only place the person has access, so a store manager can never lock someone out of another store.
+   */
+  private storeStaffAccess(context: UserContext, storeId: string, user: UserWithAccess, canManage: boolean, assignable: Set<string>) {
+    const storeRoles = user.roles.filter((assignment) => assignment.scopeType === 'STORE' && assignment.storeId === storeId);
+    const hasOrganizationRole = user.roles.some((assignment) => assignment.scopeType === 'ORGANIZATION');
+    const hasOtherAccess = user.roles.some((assignment) => assignment.scopeType === 'STORE' && assignment.storeId !== storeId) || user.stores.some((store) => store.storeId !== storeId);
+    const withinAuthority = storeRoles.every((assignment) => assignable.has(assignment.role.id));
+    const roleEditable = canManage && user.id !== context.userId && user.accountType === 'PERSON' && !hasOrganizationRole && withinAuthority;
+    return { roleEditable: roleEditable && user.status === 'ACTIVE', accountManageable: roleEditable && !hasOtherAccess };
+  }
+
+  /** Roles the caller may hand out in this store: active, approved for store assignment, and entirely within the caller's own store-level authority. */
+  private async assignableStoreRoles(context: UserContext, storeId: string) {
+    const roles = await this.prisma.role.findMany({
+      where: { organizationId: context.organizationId, status: 'ACTIVE', storeAssignable: true },
+      include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+    });
+    return roles.filter((role) => role.permissions.every((permission) =>
+      permission.effect === 'DENY' || this.authorization.hasPermission(context, permission.permissionCode, storeId),
+    ));
   }
 
   async listStoreAssignableRoles(context: UserContext, storeId: string) {
     const id = uuid(storeId, 'storeId');
     this.authorizationStoreAccess(context, id);
     this.authorization.assertPermissions(context, ['store.staff.manage'], id);
-    const roles = await this.prisma.role.findMany({
-      where: { organizationId: context.organizationId, status: 'ACTIVE', storeAssignable: true },
-      include: { permissions: { select: { permissionCode: true, effect: true }, orderBy: { permissionCode: 'asc' } } },
-      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+    return (await this.assignableStoreRoles(context, id)).map((role) => ({ id: role.id, name: role.name, description: role.description, isSystem: role.isSystem }));
+  }
+
+  /** Loads a person in this store's staff list and checks the caller may manage them. */
+  private async manageableStoreStaff(context: UserContext, storeId: string, userId: string, need: 'role' | 'account') {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        organizationId: context.organizationId,
+        OR: [{ stores: { some: { storeId } } }, { roles: { some: { scopeType: 'STORE', storeId } } }],
+      },
+      include: userInclude,
     });
-    // A manager can only assign a role whose allowed permissions are already within their own store-level authority.
-    return roles.filter((role) => role.permissions.every((permission) =>
-      permission.effect === 'DENY' || this.authorization.hasPermission(context, permission.permissionCode, id),
-    )).map((role) => ({ id: role.id, name: role.name, description: role.description, isSystem: role.isSystem }));
+    if (!user) throw new NotFoundException('Staff member not found in this store');
+    const assignable = new Set((await this.assignableStoreRoles(context, storeId)).map((role) => role.id));
+    const access = this.storeStaffAccess(context, storeId, user, true, assignable);
+    if (user.id === context.userId) throw new ForbiddenException('You cannot change your own access');
+    if (user.accountType === 'STORE_TILL') return { user, assignable };
+    if (need === 'role' && !access.roleEditable && user.status === 'ACTIVE') throw new ForbiddenException('This person’s access is managed by the organisation');
+    if (need === 'account' && !access.accountManageable) throw new ForbiddenException('This person’s account is managed by the organisation');
+    return { user, assignable };
+  }
+
+  /** A store manager adds a person who can only ever work in this store, with a role they are allowed to assign. */
+  async createStoreStaff(context: UserContext, storeId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.staff.manage'], id);
+    const store = await this.prisma.store.findFirst({ where: { id, organizationId: context.organizationId }, select: { id: true, status: true } });
+    if (!store) throw new NotFoundException('Store not found');
+    if (store.status !== 'ACTIVE') throw new BadRequestException('Staff can only be added to an active store');
+    const email = this.email(input.email);
+    const password = requiredString(input.password, 'password');
+    if (password.length < 12) throw new BadRequestException('Password must be at least 12 characters');
+    const firstName = requiredString(input.firstName, 'firstName');
+    const lastName = optionalString(input.lastName) ?? '';
+    const roleId = uuid(input.roleId, 'roleId');
+    const role = (await this.assignableStoreRoles(context, id)).find((candidate) => candidate.id === roleId);
+    if (!role) throw new BadRequestException('Choose a role you are allowed to assign in this store');
+    try {
+      const userId = await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({ data: { organizationId: context.organizationId, email, passwordHash: this.auth.hashPassword(password), firstName, lastName, defaultStoreId: id } });
+        await tx.userStore.create({ data: { userId: user.id, storeId: id, isDefault: true } });
+        await tx.userRole.create({ data: { organizationId: context.organizationId, userId: user.id, roleId: role.id, scopeType: 'STORE', storeId: id } });
+        await this.audit.record(context, 'store.staff.created', 'User', user.id, { storeId: id, email, roleId: role.id, roleName: role.name }, tx);
+        return user.id;
+      });
+      return { id: userId, email, firstName, lastName, storeId: id, role: { id: role.id, name: role.name } };
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException('A user with this email already exists');
+      throw error;
+    }
+  }
+
+  /** Disable/enable a store-only person or give them a new temporary password. */
+  async updateStoreStaff(context: UserContext, storeId: string, userId: string, input: JsonObject) {
+    const id = uuid(storeId, 'storeId');
+    const targetId = uuid(userId, 'userId');
+    this.authorizationStoreAccess(context, id);
+    this.authorization.assertPermissions(context, ['store.staff.manage'], id);
+    await this.ensureStore(context.organizationId, id);
+    const nextStatus = input.status === undefined ? undefined : oneOf(String(input.status).toUpperCase(), ['ACTIVE', 'DISABLED'], 'status') as UserStatus;
+    const newPassword = typeof input.password === 'string' && input.password.length ? input.password : undefined;
+    if (newPassword && newPassword.length < 12) throw new BadRequestException('Password must be at least 12 characters');
+    if (!nextStatus && !newPassword) throw new BadRequestException('Nothing to update');
+    const { user } = await this.manageableStoreStaff(context, id, targetId, 'account');
+    if (user.accountType !== 'PERSON') throw new BadRequestException('Manage the shared till login from the till section');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: targetId },
+        data: {
+          ...(nextStatus ? { status: nextStatus } : {}),
+          ...(newPassword ? { passwordHash: this.auth.hashPassword(newPassword), failedAttempts: 0, lockedUntil: null } : {}),
+        },
+      });
+      // Disabling or resetting the password signs the person out everywhere.
+      if ((nextStatus && nextStatus !== 'ACTIVE') || newPassword) await tx.session.deleteMany({ where: { userId: targetId } });
+      await this.audit.record(context, 'store.staff.updated', 'User', targetId, { storeId: id, status: nextStatus, passwordReset: Boolean(newPassword) }, tx);
+    });
+    return { userId: targetId, storeId: id, status: nextStatus ?? user.status };
   }
 
   async assignStoreRole(context: UserContext, storeId: string, userId: string, input: JsonObject) {
@@ -360,6 +468,8 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('Staff member not found in this store');
     if (user.status !== 'ACTIVE') throw new BadRequestException('Only active staff can be assigned a store role');
+    // The person's current access must also be within the caller's authority (no changing yourself, an organisation-wide user, or a peer above you).
+    await this.manageableStoreStaff(context, id, targetId, 'role');
 
     const roleId = input.roleId === null || input.roleId === '' ? null : uuid(input.roleId, 'roleId');
     const role = roleId ? await this.prisma.role.findFirst({
@@ -1052,8 +1162,20 @@ export class AdminService {
     return this.getStore(context, id);
   }
 
+  /** Next free STORE-NN code for the organisation. Call inside a transaction that holds the organisation row lock. */
+  private async nextStoreCode(tx: Tx, organizationId: string): Promise<string> {
+    const existing = await tx.store.findMany({ where: { organizationId, code: { startsWith: 'STORE-' } }, select: { code: true } });
+    const taken = new Set(existing.map((store) => store.code));
+    for (let sequence = 1; sequence <= 999; sequence += 1) {
+      const code = `STORE-${String(sequence).padStart(2, '0')}`;
+      if (!taken.has(code)) return code;
+    }
+    throw new ConflictException('Could not generate a unique store code');
+  }
+
   async createStore(context: UserContext, input: JsonObject) {
-    const code = requiredString(input.code, 'code').toUpperCase();
+    // Store codes are generated by the server. An explicit code is still accepted from older API clients and imports.
+    const requestedCode = optionalString(input.code)?.trim().toUpperCase() || null;
     const name = requiredString(input.name, 'name');
     const address = optionalString(input.address) ?? '';
     const city = optionalString(input.city) ?? '';
@@ -1081,6 +1203,7 @@ export class AdminService {
         if (!entitlement || current >= entitlement.maxStores) {
           throw new ConflictException(`Store limit reached (${entitlement?.maxStores ?? 0})`);
         }
+        const code = requestedCode ?? await this.nextStoreCode(tx, context.organizationId);
         const store = await tx.store.create({ data: { organizationId: context.organizationId, code, name, address: structured?.address ?? address, city: structured?.city ?? city, region: structured?.region ?? region, postalCode: structured?.postalCode ?? postalCode, phone: storePhone, timezone, closeHour, ...(operatingHours ? { operatingHours: operatingHours as Prisma.InputJsonValue } : {}), addressDetails: (structured?.addressDetails ?? {}) as Prisma.InputJsonObject, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
         await tx.stockLocation.create({
           data: { organizationId: context.organizationId, storeId: store.id, code: `${code}-STOCKROOM`, name: `${name} Stockroom` },
@@ -1344,7 +1467,7 @@ export class AdminService {
   async updateCategory(context: UserContext, categoryId: string, input: JsonObject) {
     this.requireOrganizationPermission(context, 'catalog.manage');
     const id = uuid(categoryId, 'categoryId');
-    const categories = await this.prisma.category.findMany({ where: { organizationId: context.organizationId }, select: { id: true, parentId: true } });
+    const categories = await this.prisma.category.findMany({ where: { organizationId: context.organizationId }, select: { id: true, parentId: true, status: true } });
     const current = categories.find((category) => category.id === id);
     if (!current) throw new NotFoundException('Category not found');
     const parentId = input.parentId === undefined ? current.parentId : input.parentId === null || input.parentId === '' ? null : uuid(input.parentId, 'parentId');
@@ -1356,14 +1479,62 @@ export class AdminService {
       visited.add(ancestor);
     }
     const name = input.name === undefined ? undefined : requiredString(input.name, 'name');
-    const status = input.status === undefined ? undefined : oneOf(input.status, RECORD_STATUSES, 'status') as RecordStatus;
+    const requestedStatus = input.status === undefined ? undefined : oneOf(input.status, RECORD_STATUSES, 'status') as RecordStatus;
+    if (input.includeSubcategories !== undefined && typeof input.includeSubcategories !== 'boolean') throw new BadRequestException('includeSubcategories must be true or false');
+    // A subcategory can never be active while its parent is disabled.
+    const parentDisabled = parentId !== null && byId.get(parentId)?.status === 'DISABLED';
+    if (parentDisabled && requestedStatus === 'ACTIVE') throw new BadRequestException('Enable the parent category first. A subcategory cannot be active while its parent is disabled.');
+    const status: RecordStatus | undefined = parentDisabled && (requestedStatus ?? current.status) !== 'DISABLED' ? 'DISABLED' : requestedStatus;
+    const descendants = this.categoryDescendants(categories, id);
+    // Disabling cascades to every subcategory. Re-enabling only touches subcategories when explicitly asked.
+    const cascadeStatus: RecordStatus | null = status === 'DISABLED' ? 'DISABLED' : status === 'ACTIVE' && input.includeSubcategories === true ? 'ACTIVE' : null;
     const category = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.category.update({ where: { id }, data: { ...(name ? { name } : {}), parentId, ...(status ? { status } : {}) } });
-      await this.audit.record(context, 'category.updated', 'Category', id, { fields: Object.keys(input) }, tx);
+      const cascaded = cascadeStatus && descendants.length
+        ? (await tx.category.updateMany({ where: { organizationId: context.organizationId, id: { in: descendants }, status: { not: cascadeStatus } }, data: { status: cascadeStatus } })).count
+        : 0;
+      await this.audit.record(context, 'category.updated', 'Category', id, { fields: Object.keys(input), ...(status ? { status } : {}), ...(cascaded ? { subcategoriesUpdated: cascaded } : {}) }, tx);
       return updated;
     });
     const { organizationId: _organizationId, ...dto } = category;
     return dto;
+  }
+
+  /** Every category below `rootId`, at any depth. Cycle-safe. */
+  private categoryDescendants(categories: { id: string; parentId: string | null }[], rootId: string): string[] {
+    const children = new Map<string, string[]>();
+    for (const category of categories) if (category.parentId) children.set(category.parentId, [...(children.get(category.parentId) ?? []), category.id]);
+    const found = new Set<string>();
+    const queue = [...(children.get(rootId) ?? [])];
+    while (queue.length) {
+      const next = queue.shift()!;
+      if (next === rootId || found.has(next)) continue;
+      found.add(next);
+      queue.push(...(children.get(next) ?? []));
+    }
+    return [...found];
+  }
+
+  /** Deletes an unused category together with its (equally unused) subcategories. Anything still in use must be moved or disabled instead. */
+  async deleteCategory(context: UserContext, categoryId: string) {
+    this.requireOrganizationPermission(context, 'catalog.manage');
+    const id = uuid(categoryId, 'categoryId');
+    const categories = await this.prisma.category.findMany({ where: { organizationId: context.organizationId }, select: { id: true, parentId: true, name: true } });
+    const current = categories.find((category) => category.id === id);
+    if (!current) throw new NotFoundException('Category not found');
+    const subtree = [id, ...this.categoryDescendants(categories, id)];
+    const [products, priceRules, promotions] = await Promise.all([
+      this.prisma.product.count({ where: { organizationId: context.organizationId, categoryId: { in: subtree } } }),
+      this.prisma.priceRule.count({ where: { organizationId: context.organizationId, scope: 'CATEGORY', scopeId: { in: subtree } } }),
+      this.prisma.promotion.count({ where: { organizationId: context.organizationId, scope: 'CATEGORY', scopeId: { in: subtree } } }),
+    ]);
+    if (products > 0) throw new ConflictException(`This category${subtree.length > 1 ? ' or its subcategories' : ''} still has ${products} product${products === 1 ? '' : 's'}. Move them to another category, or disable the category instead.`);
+    if (priceRules + promotions > 0) throw new ConflictException('Price rules or offers still target this category. Remove them first, or disable the category instead.');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.category.deleteMany({ where: { organizationId: context.organizationId, id: { in: subtree } } });
+      await this.audit.record(context, 'category.deleted', 'Category', id, { name: current.name, subcategoriesDeleted: subtree.length - 1 }, tx);
+    });
+    return { id, deleted: subtree.length };
   }
 
   async listUoms(context: UserContext) {
@@ -2007,11 +2178,7 @@ export class AdminService {
         } else {
           const activeCount = await tx.store.count({ where: { organizationId: context.organizationId, status: 'ACTIVE' } });
           if (activeCount >= entitlement.maxStores) throw new ConflictException(`Store limit reached (${entitlement.maxStores})`);
-          let code = 'STORE-01';
-          for (let sequence = 1; await tx.store.findUnique({ where: { organizationId_code: { organizationId: context.organizationId, code } }, select: { id: true } }); sequence += 1) {
-            code = `STORE-${String(sequence + 1).padStart(2, '0')}`;
-            if (sequence >= 999) throw new ConflictException('Could not generate a unique store code');
-          }
+          const code = await this.nextStoreCode(tx, context.organizationId);
           store = await tx.store.create({ data: { organizationId: context.organizationId, code, name: storeName, address, city, region, postalCode, phone, timezone: storeTimezone, addressDetails, billingSettings: DEFAULT_BILLING_SETTINGS as Prisma.InputJsonObject } });
         }
 

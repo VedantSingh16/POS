@@ -8,7 +8,7 @@ import { z } from "zod";
 import { toast } from "@/lib/i18n/toast";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, NativeSelect } from "@/components/ui/input";
+import { Input, NativeSelect, PasswordInput } from "@/components/ui/input";
 import { Field } from "@/components/form/field";
 import { FormSheet } from "@/components/form/dialogs";
 import { SheetClose } from "@/components/ui/sheet";
@@ -73,7 +73,7 @@ export function InviteUserSheet({ roles, stores = [], fixedStore }: { roles: Rol
             </NativeSelect>
           </Field>
         )}
-        <Field label="Temporary password" htmlFor="u-password" error={errors.password?.message} hint="At least 12 characters. Share it securely."><Input id="u-password" type="password" autoComplete="new-password" aria-invalid={!!errors.password} {...register("password")} /></Field>
+        <Field label="Temporary password" htmlFor="u-password" error={errors.password?.message} hint="At least 12 characters. Share it securely."><PasswordInput id="u-password" autoComplete="new-password" aria-invalid={!!errors.password} {...register("password")} /></Field>
         <div className="flex justify-end gap-2 pt-2">
           <SheetClose asChild><Button type="button" variant="outline"><LocalizedText value={"Cancel"} /></Button></SheetClose>
           <Button type="submit" disabled={isSubmitting}><LocalizedText value={isSubmitting ? "Creating…" : "Create user"} /></Button>
@@ -84,7 +84,6 @@ export function InviteUserSheet({ roles, stores = [], fixedStore }: { roles: Rol
 }
 
 const storeSchema = z.object({
-  code: z.string().trim().min(2, "At least 2 characters").max(10, "At most 10 characters").toUpperCase(),
   name: z.string().trim().min(2, "Enter a store name"),
   address: z.string().trim().min(2, "Enter the store address"),
   city: z.string().trim().optional(),
@@ -100,12 +99,12 @@ type StoreInput = z.input<typeof storeSchema>;
 export function NewStoreSheet({ used, max }: { used: number; max: number }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<StoreInput>({ resolver: zodResolver(storeSchema), defaultValues: { code: "", name: "", address: "", city: "", region: "", postalCode: "", phone: "", registerCode: "REG-01", registerName: "Front Till", createRegister: true } });
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<StoreInput>({ resolver: zodResolver(storeSchema), defaultValues: { name: "", address: "", city: "", region: "", postalCode: "", phone: "", registerCode: "REG-01", registerName: "Front Till", createRegister: true } });
   const full = used >= max;
   const withRegister = watch("createRegister");
   async function submit(value: StoreInput) {
     try {
-      const created = await clientApi<{ id: string }>("/admin/stores", { method: "POST", body: JSON.stringify({ code: value.code, name: value.name, address: value.address, city: value.city, region: value.region, postalCode: value.postalCode, phone: value.phone, ...(value.createRegister ? { register: { code: value.registerCode || "REG-01", name: value.registerName || "Front Till" } } : {}) }) });
+      const created = await clientApi<{ id: string }>("/admin/stores", { method: "POST", body: JSON.stringify({ name: value.name, address: value.address, city: value.city, region: value.region, postalCode: value.postalCode, phone: value.phone, ...(value.createRegister ? { register: { code: value.registerCode || "REG-01", name: value.registerName || "Front Till" } } : {}) }) });
       toast.success("Store created. Next, assign its manager.");
       reset(); setOpen(false);
       router.push(`/org/stores/${created.id}`);
@@ -115,7 +114,7 @@ export function NewStoreSheet({ used, max }: { used: number; max: number }) {
   return (
     <FormSheet open={open} onOpenChange={setOpen} trigger={<Button disabled={full} title={full ? "Store limit reached" : undefined}><Plus /> <LocalizedText value={"New store"} /></Button>} title="New store" description={`${used} of ${max} stores used. You will assign a manager on the next screen.`}>
       <form className="grid gap-4" onSubmit={handleSubmit(submit)} noValidate>
-        <Field label="Store code" htmlFor="s-code" error={errors.code?.message} hint="Short and unique, for example MUM01."><Input id="s-code" {...register("code")} /></Field>
+        <p className="rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground"><LocalizedText value={"The store code is generated automatically, for example STORE-02."} /></p>
         <Field label="Store name" htmlFor="s-name" error={errors.name?.message}><Input id="s-name" {...register("name")} /></Field>
         <Field label="Address" htmlFor="s-address" error={errors.address?.message}><Input id="s-address" {...register("address")} /></Field>
         <Field label="City / town" htmlFor="s-city"><Input id="s-city" {...register("city")} /></Field>

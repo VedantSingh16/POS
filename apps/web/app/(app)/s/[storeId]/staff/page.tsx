@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { StoreStaffTable } from "@/features/store/store-tables";
 import { api } from "@/features/api";
 import { StoreCashiersPanel } from "@/features/store/store-cashiers-panel";
+import { StoreStaffInviteSheet } from "@/features/store/store-staff-actions";
 
 export async function generateMetadata() { return { title: await getLocalizedPageTitle("Staff") }; }
 
@@ -13,6 +14,7 @@ export default async function Page({ params }: PageProps<"/s/[storeId]/staff">) 
   const permissions = me.permissions.stores[storeId] ?? [];
   const canManageStaff = permissions.includes("store.staff.manage");
   const canManageCashiers = permissions.includes("store.cashiers.manage");
+  const storeName = me.stores.find((store) => store.id === storeId)?.name ?? "This store";
   const [{ data }, { data: roleOptions }, { data: cashiers }, { data: till }] = await Promise.all([
     api.storeStaff(storeId),
     canManageStaff ? api.storeAssignableRoles(storeId) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -21,7 +23,7 @@ export default async function Page({ params }: PageProps<"/s/[storeId]/staff">) 
   ]);
   return (
     <>
-      <PageHeader title="Staff" description="People assigned to this store." crumbs={[{ label: "Store", href: `/s/${storeId}` }, { label: "Staff" }]} />
+      <PageHeader title="Staff" description="People assigned to this store." crumbs={[{ label: "Store", href: `/s/${storeId}` }, { label: "Staff" }]} actions={canManageStaff ? <StoreStaffInviteSheet storeId={storeId} storeName={storeName} roles={roleOptions} /> : undefined} />
       <StoreCashiersPanel storeId={storeId} initialCashiers={cashiers} initialTill={till} canManage={canManageCashiers} />
       <StoreStaffTable data={data} storeId={storeId} roleOptions={roleOptions} canManage={canManageStaff} />
     </>

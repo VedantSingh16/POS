@@ -8,7 +8,7 @@ import { ChevronDown, ChevronUp, CircleHelp, Landmark, ShoppingCart } from "luci
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input, NativeSelect } from "@/components/ui/input";
+import { Input, NativeSelect, PasswordInput } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
 import { formatDateTime, formatMoney as formatMoneyValue, currencyCode, currencyNotes, minorPerUnit, toMinor } from "@/lib/format";
 import { useLocale } from "@/components/i18n/locale-provider";
@@ -205,7 +205,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
           <p className="text-sm font-medium"><LocalizedText value={"Record cash moved in or out of the drawer"} /></p>
           <label className="grid gap-1 text-sm"><LocalizedText value={"What happened"} /><NativeSelect value={type} onChange={(e) => setType(e.target.value as typeof type)}>{MOVEMENTS.map(([value, label]) => <option key={value} value={value}><LocalizedText value={label} /></option>)}</NativeSelect><span className="text-xs text-muted-foreground"><LocalizedText value={MOVEMENTS.find(([value]) => value === type)?.[2] ?? ""} /></span></label>
           <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm"><LocalizedText value={"Amount ("} />{currencyCode()})<Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label><label className="grid gap-1 text-sm"><LocalizedText value={"Reason"} /><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Tea for staff" /></label></div>
-          <label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN (required above the configured amount)"} /><Input type="password" inputMode="numeric" autoComplete="off" value={managerPin} onChange={(e) => setManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label>
+          <label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN (required above the configured amount)"} /><PasswordInput secret="PIN" inputMode="numeric" autoComplete="off" value={managerPin} onChange={(e) => setManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label>
           <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPanel("")}><LocalizedText value={"Cancel"} /></Button><Button disabled={busy} onClick={record}><LocalizedText value={"Record"} /></Button></div>
         </div>}
 
@@ -216,7 +216,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{NOTES.map((note) => <label key={note} className="grid gap-1 text-xs font-medium">{formatMoney(Math.round(note * minorPerUnit()))} <LocalizedText value={"notes"} /><Input aria-label={`Number of ${note} ${currencyCode()} notes`} inputMode="numeric" value={counts[note] ?? ""} onChange={(e) => setCounts((c) => ({ ...c, [note]: e.target.value }))} placeholder="0" /></label>)}<label className="grid gap-1 text-xs font-medium"><LocalizedText value={"Coins, total ("} />{currencyCode()})<Input aria-label="Coins total" inputMode="decimal" value={coins} onChange={(e) => setCoins(e.target.value)} placeholder="0" /></label></div>
           </div> : <label className="grid gap-1 text-sm"><LocalizedText value={"Total counted ("} />{currencyCode()})<Input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" /></label>}
           <p className="text-sm"><LocalizedText value={"Counted total: "} /><b className="tabular">{formatMoney(countedCents)}</b></p>
-          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm"><LocalizedText value={"Reason for variance (if any)"} /><Input value={closeReason} onChange={(e) => setCloseReason(e.target.value)} /></label><label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN (required outside tolerance)"} /><Input type="password" inputMode="numeric" autoComplete="off" value={closeManagerPin} onChange={(e) => setCloseManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label></div>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm"><LocalizedText value={"Reason for variance (if any)"} /><Input value={closeReason} onChange={(e) => setCloseReason(e.target.value)} /></label><label className="grid gap-1 text-sm"><LocalizedText value={"Manager PIN (required outside tolerance)"} /><PasswordInput secret="PIN" inputMode="numeric" autoComplete="off" value={closeManagerPin} onChange={(e) => setCloseManagerPin(e.target.value.replace(/\D/g, "").slice(0, 8))} /></label></div>
           <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPanel("")}><LocalizedText value={"Cancel"} /></Button><Button disabled={busy} onClick={() => void close()}><LocalizedText value={"Close register"} /></Button></div>
         </div>}
       </CardContent>

@@ -179,7 +179,7 @@ function ThemeToggle() {
   // The initial theme is applied by a script in the root layout; the icon follows the `dark` class via CSS.
   const toggle = () => {
     const d = document.documentElement.classList.toggle("dark");
-    try { localStorage.setItem("pos-theme", d ? "dark" : "light"); } catch { /* storage unavailable */ }
+    try { localStorage.setItem("liqaa-theme", d ? "dark" : "light"); } catch { /* storage unavailable */ }
   };
   return (
     <Button variant="ghost" size="icon" onClick={toggle} aria-label={t("Toggle theme")}>

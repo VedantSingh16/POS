@@ -8,7 +8,7 @@ import { KpiTile, StatusBadge } from "@/components/data/primitives";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AuditTable } from "@/features/tables";
+import { RecentActivityList } from "@/features/tables";
 import { api } from "@/features/api";
 import { hasPermission } from "@/lib/permissions";
 
@@ -55,6 +55,10 @@ export default async function OrgOverview() {
     { label: "Invite your team (optional)", done: users.filter((user) => user.status === "ACTIVE").length > 1, href: "/org/users" },
   ];
   const done = checklist.filter((c) => c.done).length;
+  const openItems = checklist.filter((c) => !c.done);
+  // One open item links straight to where it is fixed; several scroll to the checklist that lists them all.
+  const attentionHref = openItems.length === 1 ? openItems[0].href : openItems.length > 1 ? "#setup-progress" : undefined;
+  const attentionHint = openItems.length === 0 ? "Setup is complete" : `Next: ${openItems[0].label}`;
   return (
     <>
       <PageHeader title="Organisation overview" description={`Organisation-wide view for ${org.name}. Open a store to see its own operations.`} crumbs={[{ label: "Organisation" }, { label: "Overview" }]} />
@@ -62,7 +66,7 @@ export default async function OrgOverview() {
         <KpiTile label="Active stores" value={`${activeStores.length} / ${org.maxStores}`} hint="Plan limit across the organisation" icon={Store} />
         <KpiTile label="Stores ready to sell" value={`${ready.length} / ${activeStores.length}`} hint="Register, product and tax setup ready" icon={CheckCircle2} tone={ready.length === activeStores.length && activeStores.length > 0 ? "success" : "warning"} />
         <KpiTile label="Active team members" value={users.filter((u) => u.status === "ACTIVE").length} hint={`${users.length} accounts in total`} icon={Users} />
-        <KpiTile label="Needs attention" value={checklist.length - done} hint="Open setup items" icon={AlertTriangle} tone={checklist.length - done ? "warning" : "success"} />
+        <KpiTile label="Needs attention" value={openItems.length} hint={attentionHint} icon={AlertTriangle} tone={openItems.length ? "warning" : "success"} href={attentionHref} linkLabel={openItems.length === 1 ? "Resolve now" : openItems.length > 1 ? `View ${openItems.length} open setup items` : undefined} />
       </div>
       <Card className="mb-6 overflow-hidden">
         <CardHeader><CardTitle><LocalizedText value={"Your stores"} /></CardTitle><Link href="/org/stores" className="text-sm font-semibold text-primary hover:underline"><LocalizedText value={"Manage stores"} /></Link></CardHeader>
@@ -86,7 +90,7 @@ export default async function OrgOverview() {
         </CardContent>
       </Card>
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]">
-        <Card className="overflow-hidden">
+        <Card id="setup-progress" className="scroll-mt-24 overflow-hidden">
           <CardHeader><CardTitle><LocalizedText value={"Setup progress "} /><span className="ms-1 font-sans text-sm font-medium text-muted-foreground">{done} <LocalizedText value={"of "} />{checklist.length}</span></CardTitle><Link href="/onboarding/optional" className="text-sm font-semibold text-primary hover:underline"><LocalizedText value={"Continue setup"} /></Link></CardHeader>
           <CardContent>
             <ul className="grid gap-3">
@@ -106,7 +110,7 @@ export default async function OrgOverview() {
             <div><h2 className="text-lg font-semibold tracking-tight"><LocalizedText value={"Recent activity"} /></h2><p className="mt-1 text-sm text-muted-foreground"><LocalizedText value={"A short view of changes across your organisation."} /></p></div>
             <Link href="/org/audit" className="shrink-0 text-sm font-semibold text-primary hover:underline"><LocalizedText value={"View audit log"} /></Link>
           </div>
-          <AuditTable data={audit.slice(0, 4)} />
+          <RecentActivityList data={audit.slice(0, 5)} />
         </div>
       </div>
     </>

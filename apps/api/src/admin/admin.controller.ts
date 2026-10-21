@@ -214,6 +214,18 @@ export class AdminController {
     return { roles: await this.admin.listStoreAssignableRoles(request.user!, storeId) };
   }
 
+  @Post('stores/:storeId/users')
+  @RequirePermissions('store.staff.manage')
+  createStoreStaff(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Body() body: JsonObject) {
+    return this.admin.createStoreStaff(request.user!, storeId, body);
+  }
+
+  @Patch('stores/:storeId/users/:userId')
+  @RequirePermissions('store.staff.manage')
+  updateStoreStaff(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('userId') userId: string, @Body() body: JsonObject) {
+    return this.admin.updateStoreStaff(request.user!, storeId, userId, body);
+  }
+
   @Patch('stores/:storeId/users/:userId/role')
   @RequirePermissions('store.staff.manage')
   assignStoreRole(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('userId') userId: string, @Body() body: JsonObject) {
@@ -312,6 +324,12 @@ export class AdminController {
   @RequirePermissions('catalog.manage')
   updateCategory(@Req() request: AuthenticatedRequest, @Param('categoryId') categoryId: string, @Body() body: JsonObject) {
     return this.admin.updateCategory(request.user!, categoryId, body);
+  }
+
+  @Delete('catalog/categories/:categoryId')
+  @RequirePermissions('catalog.manage')
+  deleteCategory(@Req() request: AuthenticatedRequest, @Param('categoryId') categoryId: string) {
+    return this.admin.deleteCategory(request.user!, categoryId);
   }
 
   @Get('catalog/uoms')

@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, PasswordInput } from "@/components/ui/input";
 import { Field } from "@/components/form/field";
 
 const schema = z.object({
@@ -60,7 +60,7 @@ export function RegistrationForm() {
         <Field label="First name" htmlFor="register-first" error={errors.firstName?.message}><Input id="register-first" autoComplete="given-name" className="h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink" aria-invalid={!!errors.firstName} {...register("firstName")} /></Field>
         <Field label="Last name" htmlFor="register-last" error={errors.lastName?.message}><Input id="register-last" autoComplete="family-name" className="h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink" aria-invalid={!!errors.lastName} {...register("lastName")} /></Field>
         <Field label="Work email" htmlFor="register-email" error={errors.email?.message}><Input id="register-email" type="email" autoComplete="email" className="h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink" aria-invalid={!!errors.email} {...register("email")} /></Field>
-        <Field label="Password" htmlFor="register-password" hint="At least 12 characters." error={errors.password?.message}><Input id="register-password" type="password" autoComplete="new-password" className="h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink" aria-invalid={!!errors.password} {...register("password")} /></Field>
+        <Field label="Password" htmlFor="register-password" hint="At least 12 characters." error={errors.password?.message}><PasswordInput id="register-password" autoComplete="new-password" className="h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink" aria-invalid={!!errors.password} {...register("password")} /></Field>
         {serverError && <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger sm:col-span-2">{serverError}</p>}
         <div className="pt-1 sm:col-span-2">
           <Button type="submit" disabled={isSubmitting} className="relative h-14 w-full justify-center rounded-[15px] bg-auth-primary px-4 text-base font-bold text-auth-on-primary shadow-md hover:bg-auth-primary-hover sm:px-5"><span><LocalizedText value={isSubmitting ? "Creating…" : "Create organisation"} /></span><span aria-hidden="true" className="absolute end-5 text-xl">→</span></Button>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { clientApi } from "@/features/client-api";
 import { CURRENCIES } from "@pos/shared/currency";
 import { MARKETS, marketByCode, taxRegimeFor } from "@pos/shared/markets";
@@ -39,6 +40,8 @@ const AUTH_CARD = "rounded-[24px] border-auth-outline bg-auth-surface shadow-sm 
 const AUTH_INPUT = "h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink placeholder:text-auth-muted focus-visible:border-auth-primary focus-visible:ring-auth-primary/20";
 const AUTH_SELECT = "h-12 rounded-[14px] border-auth-border bg-auth-surface px-4 text-base text-auth-ink focus-visible:border-auth-primary focus-visible:ring-3 focus-visible:ring-auth-primary/20";
 const AUTH_LABEL = "grid content-start gap-2 text-sm font-medium text-auth-ink";
+// cn() resolves the clash with the outline variant's own background (bg-card), so these links stay white with dark text in every theme.
+const AUTH_ACTION_LINK = cn(buttonVariants({ variant: "outline" }), "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-start font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface hover:text-auth-primary");
 const AUTH_PRIMARY_BUTTON = "h-12 rounded-[14px] bg-auth-primary px-5 text-base font-bold text-auth-on-primary shadow-sm hover:bg-auth-primary-hover";
 
 export function OnboardingStep({ currentStep, initialData, organization, admin, complete }: Props) {
@@ -135,23 +138,23 @@ export function OnboardingStep({ currentStep, initialData, organization, admin, 
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary"><LocalizedText value={"Catalogue"} /></h2>
         <div className="grid gap-2">
-          <Link href="/org/catalog/products" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-start font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}><LocalizedText value={"Add your first product "} /><ArrowRight className="rtl:rotate-180" /></Link>
-          <Link href="/org/catalog/import" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-start font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}><LocalizedText value={"Import a product CSV "} /><ArrowRight className="rtl:rotate-180" /></Link>
+          <Link href="/org/catalog/products" className={AUTH_ACTION_LINK}><LocalizedText value={"Add your first product "} /><ArrowRight className="rtl:rotate-180" /></Link>
+          <Link href="/org/catalog/import" className={AUTH_ACTION_LINK}><LocalizedText value={"Import a product CSV "} /><ArrowRight className="rtl:rotate-180" /></Link>
         </div>
       </section>
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary"><LocalizedText value={"Checkout"} /></h2>
         <div className="grid gap-2">
-          <Link href="/org/settings/billing" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-start font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}><LocalizedText value={"Review payments and receipts "} /><ArrowRight className="rtl:rotate-180" /></Link>
+          <Link href="/org/settings/billing" className={AUTH_ACTION_LINK}><LocalizedText value={"Review payments and receipts "} /><ArrowRight className="rtl:rotate-180" /></Link>
         </div>
       </section>
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary"><LocalizedText value={"People"} /></h2>
-        <Link href="/org/users" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-start font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}><LocalizedText value={"Invite staff and assign roles "} /><ArrowRight className="rtl:rotate-180" /></Link>
+        <Link href="/org/users" className={AUTH_ACTION_LINK}><LocalizedText value={"Invite staff and assign roles "} /><ArrowRight className="rtl:rotate-180" /></Link>
       </section>
       <section className="grid content-start gap-3">
         <h2 className="text-sm font-bold uppercase tracking-[0.12em] text-auth-primary"><LocalizedText value={"Devices"} /></h2>
-        <Link href="/org/stores" className={buttonVariants({ variant: "outline", className: "h-12 justify-between rounded-[14px] border-auth-border bg-auth-surface px-4 text-start font-medium text-auth-ink hover:border-auth-primary hover:bg-auth-surface" })}><LocalizedText value={"Manage registers and devices "} /><ArrowRight className="rtl:rotate-180" /></Link>
+        <Link href="/org/stores" className={AUTH_ACTION_LINK}><LocalizedText value={"Manage registers and devices "} /><ArrowRight className="rtl:rotate-180" /></Link>
       </section>
     </CardContent></Card>
     <p className="text-sm leading-6 text-auth-muted"><LocalizedText value={"These settings are available from your dashboard whenever you need them. Configure products and tax groups before processing those sales."} /></p>

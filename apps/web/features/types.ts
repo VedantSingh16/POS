@@ -1,7 +1,7 @@
 /* Row shapes used by the tables and pages. Money is in paise. These describe API-mapped data, never fixtures. */
 export type Product = { id: string; sku: string; barcode: string; name: string; category: string; priceMinor: number; taxRate: number; stock: number; status: "ACTIVE" | "INACTIVE"; hot: boolean; inStore?: boolean; includesTax?: boolean; sellWithoutStock?: boolean; openPrice?: boolean; floorPriceCents?: number };
 export type StoreBase = { id: string; code: string; name: string; city: string; status: string; registers: number; staff: number };
-export type UserRow = { id: string; name: string; email: string; role: string; scope: string; scopeDetails?: string; status: string; lastLogin: string; storeRoleId?: string };
+export type UserRow = { id: string; name: string; email: string; role: string; scope: string; scopeDetails?: string; status: string; lastLogin: string; storeRoleId?: string; storeRoleName?: string; organizationRoles?: string[]; roleEditable?: boolean; accountManageable?: boolean };
 export type RoleRow = { id: string; name: string; description: string; users: number; permissions: number; system: boolean; customized?: boolean; templateKey?: string | null; templateUpdateAvailable?: boolean };
 export type CategoryRow = { id: string; name: string; parentId?: string | null; status?: string; products: number };
 export type BrandRow = { id: string; name: string; products: number };

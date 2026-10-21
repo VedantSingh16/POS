@@ -13,7 +13,11 @@ const manrope = localFont({
   display: "swap",
 });
 
-const THEME_SCRIPT = `try{var t=localStorage.getItem("pos-theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}`;
+/** Light is the default. Dark mode applies only after someone explicitly picks it with the theme toggle; the
+ * operating-system colour preference is deliberately ignored. The key was renamed from "pos-theme" so every
+ * browser starts again from light once. Keep the key in sync with ThemeToggle in components/app/app-shell.tsx. */
+const THEME_STORAGE_KEY = "liqaa-theme";
+const THEME_SCRIPT = `try{localStorage.removeItem("pos-theme");if(localStorage.getItem("${THEME_STORAGE_KEY}")==="dark")document.documentElement.classList.add("dark")}catch(e){}`;
 
 export const metadata: Metadata = {
   title: { default: "Liqaa POS", template: "%s · Liqaa POS" },

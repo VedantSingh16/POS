@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/lib/i18n/toast";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, NativeSelect } from "@/components/ui/input";
+import { Input, NativeSelect, PasswordInput } from "@/components/ui/input";
 import { SheetClose } from "@/components/ui/sheet";
 import { ConfirmDialog, FormSheet } from "@/components/form/dialogs";
 import { Can } from "@/components/app/session-context";
@@ -154,17 +154,17 @@ export function AccountForms({ firstName, lastName, email }: { firstName: string
       </form>
       <form className="grid gap-4 rounded-lg border bg-card p-5 sm:grid-cols-2" onSubmit={async (e) => { e.preventDefault(); if (pw.next.length < 12) { toast.error("The new password must be at least 12 characters."); return; } if (pw.next !== pw.confirm) { toast.error("The two passwords do not match."); return; } if (await run(() => send("/auth/profile", "PATCH", { password: pw.next, currentPassword: pw.current }), "Password changed")) setPw({ current: "", next: "", confirm: "" }); }}>
         <h2 className="font-semibold sm:col-span-2"><LocalizedText value={"Change password"} /></h2>
-        <L label="Current password"><Input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw((c) => ({ ...c, current: e.target.value }))} /></L>
+        <L label="Current password"><PasswordInput autoComplete="current-password" value={pw.current} onChange={(e) => setPw((c) => ({ ...c, current: e.target.value }))} /></L>
         <div className="hidden sm:block" />
-        <L label="New password" hint="At least 12 characters."><Input type="password" autoComplete="new-password" value={pw.next} onChange={(e) => setPw((c) => ({ ...c, next: e.target.value }))} /></L>
-        <L label="Confirm new password"><Input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw((c) => ({ ...c, confirm: e.target.value }))} /></L>
+        <L label="New password" hint="At least 12 characters."><PasswordInput autoComplete="new-password" value={pw.next} onChange={(e) => setPw((c) => ({ ...c, next: e.target.value }))} /></L>
+        <L label="Confirm new password"><PasswordInput autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw((c) => ({ ...c, confirm: e.target.value }))} /></L>
         <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={busy || !pw.current || !pw.next}><LocalizedText value={"Change password"} /></Button></div>
       </form>
       <form className="grid gap-4 rounded-lg border bg-card p-5 sm:grid-cols-2" onSubmit={async (e) => { e.preventDefault(); if (!/^\d{4,8}$/.test(pin.value)) { toast.error("The PIN must be 4 to 8 digits."); return; } if (pin.value !== pin.confirm) { toast.error("The two PIN entries do not match."); return; } if (await run(() => send("/auth/profile", "PATCH", { pin: pin.value }), "PIN changed")) setPin({ value: "", confirm: "" }); }}>
         <h2 className="font-semibold sm:col-span-2"><LocalizedText value={"Approval PIN"} /></h2>
         <p className="text-sm text-muted-foreground sm:col-span-2"><LocalizedText value={"Unlocks a till and confirms controlled actions. 4 to 8 digits."} /></p>
-        <L label="New PIN"><Input type="password" inputMode="numeric" autoComplete="off" value={pin.value} onChange={(e) => setPin((c) => ({ ...c, value: e.target.value.replace(/\D/g, "").slice(0, 8) }))} /></L>
-        <L label="Confirm PIN"><Input type="password" inputMode="numeric" autoComplete="off" value={pin.confirm} onChange={(e) => setPin((c) => ({ ...c, confirm: e.target.value.replace(/\D/g, "").slice(0, 8) }))} /></L>
+        <L label="New PIN"><PasswordInput secret="PIN" inputMode="numeric" autoComplete="off" value={pin.value} onChange={(e) => setPin((c) => ({ ...c, value: e.target.value.replace(/\D/g, "").slice(0, 8) }))} /></L>
+        <L label="Confirm PIN"><PasswordInput secret="PIN" inputMode="numeric" autoComplete="off" value={pin.confirm} onChange={(e) => setPin((c) => ({ ...c, confirm: e.target.value.replace(/\D/g, "").slice(0, 8) }))} /></L>
         <div className="flex justify-end sm:col-span-2"><Button type="submit" disabled={busy || !pin.value}><LocalizedText value={"Change PIN"} /></Button></div>
       </form>
     </div>
@@ -216,7 +216,7 @@ export function UserAdminActions({ id, name, status, self }: { id: string; name:
       <ConfirmDialog trigger={<Button variant="outline" disabled={busy || self} title={self ? "You cannot deactivate your own account" : undefined}><LocalizedText value={active ? "Deactivate" : "Reactivate"} /></Button>} title={`${active ? "Deactivate" : "Reactivate"} ${name}?`} description={active ? "They will be signed out of new sessions and cannot sign in until reactivated. Their history is kept." : "They will be able to sign in again with their existing password."} confirmLabel={active ? "Deactivate" : "Reactivate"} destructive={active} onConfirm={() => void run(() => send(`/admin/users/${id}`, "PATCH", { status: active ? "SUSPENDED" : "ACTIVE" }), active ? "User deactivated" : "User reactivated")} />
       <FormSheet open={open} onOpenChange={setOpen} trigger={<Button variant="outline"><LocalizedText value={"Reset password"} /></Button>} title={`Reset password for ${name}`} description="Set a new password and tell them securely. It also clears any sign-in lockout.">
         <form className="grid gap-4 pb-6" onSubmit={async (e) => { e.preventDefault(); if (password.length < 12) { toast.error("The password must be at least 12 characters."); return; } if (await run(() => send(`/admin/users/${id}`, "PATCH", { password }), "Password reset")) { setOpen(false); setPassword(""); } }}>
-          <L label="New password" hint="At least 12 characters."><Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></L><SheetFooter busy={busy} label="Reset password" />
+          <L label="New password" hint="At least 12 characters."><PasswordInput autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></L><SheetFooter busy={busy} label="Reset password" />
         </form>
       </FormSheet>
     </Can>
