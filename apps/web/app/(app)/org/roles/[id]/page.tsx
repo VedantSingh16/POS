@@ -17,7 +17,7 @@ export default async function RoleDetail({ params }: PageProps<"/org/roles/[id]"
   const isAdministratorTemplate = role.templateKey === "org_admin";
   const statusLabel = isAdministratorTemplate
     ? "Administrator role: always has every permission"
-    : role.system
+    : role.isSystem
       ? role.customized ? "System role · modified from default" : "System role · follows default"
       : "Custom role";
   const readOnly = isAdministratorTemplate || !me.permissions.organization.includes("roles.manage");

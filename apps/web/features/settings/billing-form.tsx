@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
 import { currencyCode, toInput, toMinor } from "@/lib/format";
 
@@ -15,6 +15,7 @@ type Values = {
   holdTtlHours?: number; pointValueCents?: number; cashMovementApprovalCents?: number; cashVarianceToleranceCents?: number;
   requireBillHandler?: boolean; lineDiscountEnabled?: boolean; billDiscountEnabled?: boolean;
   lineDiscountMaxPercent?: number; billDiscountMaxPercent?: number; allowDiscountStacking?: boolean;
+  cashierSelection?: "STICKY" | "EVERY_BILL"; cashierPinRequired?: boolean; cashierAutoClearOnIdleLock?: boolean;
 };
 type Key = keyof Values;
 function SettingsGroup({ title, children, initiallyOpen = false }: { title: string; children: React.ReactNode; initiallyOpen?: boolean }) {
@@ -27,6 +28,7 @@ const DEFAULTS: Required<Values> = {
   holdTtlHours: 24, pointValueCents: 1, cashMovementApprovalCents: 0, cashVarianceToleranceCents: 0,
   requireBillHandler: false, lineDiscountEnabled: true, billDiscountEnabled: true,
   lineDiscountMaxPercent: 100, billDiscountMaxPercent: 100, allowDiscountStacking: true,
+  cashierSelection: "STICKY", cashierPinRequired: false, cashierAutoClearOnIdleLock: true,
 };
 
 /** Every value is configured and stored by this store. */
@@ -47,6 +49,9 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
   const [lineMax, setLineMax] = React.useState(String(value("lineDiscountMaxPercent")));
   const [billMax, setBillMax] = React.useState(String(value("billDiscountMaxPercent")));
   const [stacking, setStacking] = React.useState(Boolean(value("allowDiscountStacking")));
+  const [cashierSelection, setCashierSelection] = React.useState<"STICKY" | "EVERY_BILL">(value("cashierSelection") as "STICKY" | "EVERY_BILL");
+  const [cashierPinRequired, setCashierPinRequired] = React.useState(Boolean(value("cashierPinRequired")));
+  const [cashierAutoClearOnIdleLock, setCashierAutoClearOnIdleLock] = React.useState(Boolean(value("cashierAutoClearOnIdleLock")));
   const [busy, setBusy] = React.useState(false);
 
   async function save() {
@@ -58,6 +63,7 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
       cashVarianceToleranceCents: toMinor(varianceTolerance || "0"), requireBillHandler: requireHandler,
       lineDiscountEnabled: lineEnabled, billDiscountEnabled: billEnabled, lineDiscountMaxPercent,
       billDiscountMaxPercent, allowDiscountStacking: stacking,
+      cashierSelection, cashierPinRequired, cashierAutoClearOnIdleLock,
     };
     if (!billing.enabledTenders.length) { toast.error("Keep at least one payment method on."); return; }
     if (!Number.isInteger(billing.cashRounding) || billing.cashRounding < 0) { toast.error("Cash rounding must be 0 or a positive amount."); return; }
@@ -86,6 +92,9 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
         <div className="grid gap-2"><span className="text-sm font-medium"><LocalizedText value={"Payment methods offered"} /></span><div className="grid gap-2 sm:grid-cols-2">{TENDERS.map(([key, name]) => <label key={key} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={tenders.includes(key)} onChange={(event) => setTenders((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))} /> <LocalizedText value={name} /></label>)}</div></div>
         {setting(`Cash rounding (${currencyCode()}, 0 = off)`, "Rounds cash totals to this amount.", textInput(rounding, setRounding, { inputMode: "decimal" }))}
         {toggle("Require a bill handler selection", requireHandler, setRequireHandler, "When off, the signed-in cashier is recorded by default.")}
+        {setting("Shared till cashier selection", "Sticky keeps the selected cashier until changed; every bill asks again.", <NativeSelect value={cashierSelection} onChange={(event) => setCashierSelection(event.target.value as "STICKY" | "EVERY_BILL")}><option value="STICKY">Keep selected cashier</option><option value="EVERY_BILL">Choose for every bill</option></NativeSelect>)}
+        {toggle("Require a named cashier PIN", cashierPinRequired, setCashierPinRequired, "The shared till must verify the selected cashier before billing.")}
+        {toggle("Clear cashier on idle lock", cashierAutoClearOnIdleLock, setCashierAutoClearOnIdleLock, "Require a fresh cashier selection after the till is locked.")}
       </>, true)}
       {details("Discount rules", <>
         {toggle("Allow line-item discounts", lineEnabled, setLineEnabled, "Cashiers can discount an individual product on the bill.")}

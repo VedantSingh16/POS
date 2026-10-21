@@ -1,5 +1,6 @@
 import { getLocalizedPageTitle } from "@/lib/i18n/server";
 import { requireSession } from "@/lib/server/session";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/app/page-header";
 import { AccountForms } from "@/features/actions";
 
@@ -7,6 +8,7 @@ export async function generateMetadata() { return { title: await getLocalizedPag
 
 export default async function Page() {
   const me = await requireSession();
+  if (me.user.accountType === "STORE_TILL" && me.user.tillStoreId) redirect(`/s/${me.user.tillStoreId}/pos`);
   const [first, ...rest] = me.user.displayName.trim().split(/\s+/);
   return (
     <>

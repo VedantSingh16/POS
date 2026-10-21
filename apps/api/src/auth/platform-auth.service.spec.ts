@@ -108,7 +108,7 @@ function createFakePrisma() {
         let org = organizations.find((o) => o.platformTenantId === where.platformTenantId);
         if (org) { Object.assign(org, update); return org; }
         org = { id: id('org'), ...create };
-        organizations.push(org);
+        organizations.push(org!);
         return org;
       },
     },
@@ -207,7 +207,7 @@ describe('PlatformAuthService.authenticateToken', () => {
   it('links a brand-new CRM sign-in to a pre-existing POS account with the same email, instead of duplicating it', async () => {
     const { service, prisma } = makeService({ tenantMembers: { data: [{ userId: 'user-1', membershipId: 'm', email: 'alex@example.com', status: 'ACTIVE' }], nextCursor: null } });
     const org = await prisma.organization.upsert({ where: { platformTenantId: 'tenant-1' }, update: {}, create: { name: 'Pre-existing Org', slug: 'pre-existing', platformTenantId: 'tenant-1', taxProfileStatus: 'LEGACY' } });
-    const manualUser = prisma._seedUser({ organizationId: org.id, email: 'alex@example.com', firstName: 'Alex', lastName: 'Original' });
+    const manualUser = prisma._seedUser({ organizationId: org!.id, email: 'alex@example.com', firstName: 'Alex', lastName: 'Original' });
 
     const ctx = await service.authenticateToken('token');
     expect(ctx.userId).toBe(manualUser.id);
@@ -224,27 +224,27 @@ describe('PlatformAuthService.authenticateToken', () => {
 
   it('rejects a suspended tenant', async () => {
     const { service } = makeService({ identity: identityFor({ tenantStatus: 'SUSPENDED' }) });
-    await expect(service.authenticateToken('token')).rejects.toMatchObject({ body: { code: 'TENANT_ACCESS_SUSPENDED' } });
+    await expect(service.authenticateToken('token')).rejects.toMatchObject({ response: { code: 'TENANT_ACCESS_SUSPENDED' } });
   });
 
   it('rejects when POS is not entitled for the tenant', async () => {
     const { service } = makeService({ entitlements: entitlementsFor({ active: false }) });
-    await expect(service.authenticateToken('token')).rejects.toMatchObject({ body: { code: 'PRODUCT_NOT_ENTITLED' } });
+    await expect(service.authenticateToken('token')).rejects.toMatchObject({ response: { code: 'PRODUCT_NOT_ENTITLED' } });
   });
 
   it('rejects when the subscription itself is suspended', async () => {
     const { service } = makeService({ entitlements: entitlementsFor({ subscriptionStatus: 'SUSPENDED' }) });
-    await expect(service.authenticateToken('token')).rejects.toMatchObject({ body: { code: 'PRODUCT_NOT_ENTITLED' } });
+    await expect(service.authenticateToken('token')).rejects.toMatchObject({ response: { code: 'PRODUCT_NOT_ENTITLED' } });
   });
 
   it('rejects when POS provisioning for the tenant is not yet active', async () => {
     const { service } = makeService({ provisioning: provisioningFor('PROVISIONING') });
-    await expect(service.authenticateToken('token')).rejects.toMatchObject({ body: { code: 'PRODUCT_NOT_PROVISIONED' } });
+    await expect(service.authenticateToken('token')).rejects.toMatchObject({ response: { code: 'PRODUCT_NOT_PROVISIONED' } });
   });
 
   it('rejects a stale product token once CRM entitlements have moved on', async () => {
     const { service } = makeService({ entitlements: entitlementsFor({ version: 999 }) });
-    await expect(service.authenticateToken('token')).rejects.toMatchObject({ body: { code: 'STALE_PRODUCT_TOKEN' } });
+    await expect(service.authenticateToken('token')).rejects.toMatchObject({ response: { code: 'STALE_PRODUCT_TOKEN' } });
   });
 
   it('fails fast on a tenant mismatch without calling Platform at all', async () => {
@@ -256,6 +256,6 @@ describe('PlatformAuthService.authenticateToken', () => {
   it('reports a clear, typed error when Platform is unreachable', async () => {
     const { service } = makeService();
     (service as unknown as { platform: Record<string, unknown> }).platform.identityStatus = async () => { throw new Error('ECONNREFUSED'); };
-    await expect(service.authenticateToken('token')).rejects.toMatchObject({ body: { code: 'PLATFORM_CONTRACT_UNAVAILABLE' } });
+    await expect(service.authenticateToken('token')).rejects.toMatchObject({ response: { code: 'PLATFORM_CONTRACT_UNAVAILABLE' } });
   });
 });

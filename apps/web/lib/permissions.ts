@@ -3,7 +3,7 @@ import type { Locale } from "@pos/shared/locale";
 
 // Pure permission helpers shared by server and client code. The API enforces every rule again; this only decides what to show and where to land.
 export type Me = {
-  user: { userId: string; email: string; displayName: string; defaultStoreId: string | null; isOrganisationAdministrator: boolean; preferredLocale?: Locale };
+  user: { userId: string; email: string; displayName: string; defaultStoreId: string | null; isOrganisationAdministrator: boolean; preferredLocale?: Locale; accountType?: "PERSON" | "STORE_TILL"; tillStoreId?: string | null };
   hasPin: boolean;
   /** Minutes of inactivity before a till with a PIN locks; set under Settings → Security. */
   idleLockMinutes?: number;
@@ -40,6 +40,7 @@ export function canAccessStore(me: Me, storeId: string): boolean {
 /** Where a user lands after sign-in: org admins → /org, cashiers → POS, everyone else → their store dashboard. */
 export function landingPath(me: Me): string {
   if (me.onboardingRequired && me.user.isOrganisationAdministrator) return "/onboarding/welcome";
+  if (me.user.accountType === "STORE_TILL" && me.user.tillStoreId) return `/s/${me.user.tillStoreId}/pos`;
   if (hasOrgScope(me) && hasPermission(me, "org.overview.view")) return "/org";
   const store = me.stores.find((s) => s.id === me.user.defaultStoreId) ?? me.stores[0];
   if (!store) return hasOrgScope(me) ? "/org" : "/forbidden";

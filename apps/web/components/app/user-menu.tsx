@@ -17,19 +17,19 @@ export async function lockTill(router: ReturnType<typeof useRouter>) {
   else toast.error((await res.json().catch(() => ({ message: "Could not lock" }))).message);
 }
 
-export function IdleLock() {
+export function IdleLock({ onLock, lockSession = true }: { onLock?: () => void; lockSession?: boolean } = {}) {
   const me = useMe();
   const router = useRouter();
   const idleMinutes = me.idleLockMinutes ?? 15;
   React.useEffect(() => {
     if (!me.hasPin) return;
     let timer: ReturnType<typeof setTimeout>;
-    const arm = () => { clearTimeout(timer); timer = setTimeout(() => void lockTill(router), idleMinutes * 60_000); };
+    const arm = () => { clearTimeout(timer); timer = setTimeout(() => { onLock?.(); if (lockSession) void lockTill(router); }, idleMinutes * 60_000); };
     const events = ["pointerdown", "keydown", "scroll"] as const;
     events.forEach((e) => window.addEventListener(e, arm, { passive: true }));
     arm();
     return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, arm)); };
-  }, [me.hasPin, idleMinutes, router]);
+  }, [me.hasPin, idleMinutes, lockSession, onLock, router]);
   return null;
 }
 
@@ -59,9 +59,10 @@ function SetPinDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v:
   );
 }
 
-export function UserMenu() {
+export function UserMenu({ onLock }: { onLock?: () => void } = {}) {
   const me = useMe();
   const router = useRouter();
+  const isTill = me.user.accountType === "STORE_TILL";
   const [pinOpen, setPinOpen] = React.useState(false);
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -78,9 +79,9 @@ export function UserMenu() {
             <span className="block">{[...new Set(me.roles.map((r) => r.name))].join(", ")}</span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {me.hasPin && <DropdownMenuItem onSelect={() => void lockTill(router)}><Lock /> <LocalizedText value={"Lock till"} /></DropdownMenuItem>}
-          <DropdownMenuItem onSelect={() => router.push("/account")}><User /> <LocalizedText value={"My account"} /></DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setPinOpen(true)}><KeyRound /> <LocalizedText value={me.hasPin ? "Change PIN" : "Set PIN"} /></DropdownMenuItem>
+          {me.hasPin && <DropdownMenuItem onSelect={() => { onLock?.(); void lockTill(router); }}><Lock /> <LocalizedText value={"Lock till"} /></DropdownMenuItem>}
+          {!isTill && <DropdownMenuItem onSelect={() => router.push("/account")}><User /> <LocalizedText value={"My account"} /></DropdownMenuItem>}
+          {!isTill && <DropdownMenuItem onSelect={() => setPinOpen(true)}><KeyRound /> <LocalizedText value={me.hasPin ? "Change PIN" : "Set PIN"} /></DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => void signOut()}><LogOut /> <LocalizedText value={"Sign out"} /></DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

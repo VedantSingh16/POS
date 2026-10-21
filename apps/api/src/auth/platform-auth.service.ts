@@ -191,6 +191,8 @@ export class PlatformAuthService {
       storeIds: projection.storeIds,
       grants,
       isOrganisationAdministrator,
+      accountType: 'PERSON',
+      tillStoreId: null,
       authSource: 'CRM_PRODUCT_TOKEN',
       platformTenantId: claims.tenantId,
       platformMembershipId: claims.membershipId,

@@ -51,6 +51,8 @@ export class AuthorizationService {
       isOrganisationAdministrator: user.roles.some((assignment) =>
         assignment.role.name === ORGANISATION_ADMINISTRATOR_ROLE && assignment.scopeType === 'ORGANIZATION',
       ),
+      accountType: user.accountType,
+      tillStoreId: user.tillStoreId,
     };
   }
 

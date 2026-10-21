@@ -169,6 +169,16 @@ export class PosController {
   @RequirePermissions('sale.create')
   checkoutConfig(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) { return this.pos.checkoutConfig(request.user!, storeId); }
 
+  @Get('stores/:storeId/cashiers/active')
+  @RequirePermissions('sale.create')
+  async activeCashiers(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string) { return this.pos.activeCashierConfig(request.user!, storeId); }
+
+  @Post('stores/:storeId/cashiers/:cashierId/verify')
+  @RequirePermissions('sale.create')
+  verifyCashier(@Req() request: AuthenticatedRequest, @Param('storeId') storeId: string, @Param('cashierId') cashierId: string, @Body() body: JsonObject) {
+    return this.pos.verifyCashier(request.user!, storeId, cashierId, body);
+  }
+
   @Post('sales/quote')
   @RequirePermissions('sale.create')
   quote(@Req() request: AuthenticatedRequest, @Body() body: JsonObject) { return this.pos.quoteSale(request.user!, body); }

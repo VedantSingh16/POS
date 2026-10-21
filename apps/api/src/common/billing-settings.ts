@@ -5,7 +5,7 @@ import type { JsonObject } from './input.js';
 /**
  * Billing settings owned by one store. Every store starts from these system defaults.
  */
-export const BILLING_KEYS = ['receiptFooter', 'enabledTenders', 'cashRounding', 'requireDiscountReasonCode', 'holdTtlHours', 'pointValueCents', 'cashMovementApprovalCents', 'cashVarianceToleranceCents', 'requireBillHandler', 'lineDiscountEnabled', 'billDiscountEnabled', 'lineDiscountMaxPercent', 'billDiscountMaxPercent', 'allowDiscountStacking'] as const;
+export const BILLING_KEYS = ['receiptFooter', 'enabledTenders', 'cashRounding', 'requireDiscountReasonCode', 'holdTtlHours', 'pointValueCents', 'cashMovementApprovalCents', 'cashVarianceToleranceCents', 'requireBillHandler', 'lineDiscountEnabled', 'billDiscountEnabled', 'lineDiscountMaxPercent', 'billDiscountMaxPercent', 'allowDiscountStacking', 'cashierSelection', 'cashierPinRequired', 'cashierAutoClearOnIdleLock'] as const;
 export type BillingKey = (typeof BILLING_KEYS)[number];
 
 export const DEFAULT_BILLING_SETTINGS: Record<BillingKey, unknown> = {
@@ -14,6 +14,7 @@ export const DEFAULT_BILLING_SETTINGS: Record<BillingKey, unknown> = {
   cashMovementApprovalCents: 0, cashVarianceToleranceCents: 0, requireBillHandler: false,
   lineDiscountEnabled: true, billDiscountEnabled: true, lineDiscountMaxPercent: 100,
   billDiscountMaxPercent: 100, allowDiscountStacking: true,
+  cashierSelection: 'STICKY', cashierPinRequired: false, cashierAutoClearOnIdleLock: true,
 };
 
 const TENDERS = Object.values(TenderType) as string[];
@@ -39,6 +40,13 @@ export function cleanBillingValue(key: BillingKey, value: unknown): unknown {
     case 'billDiscountEnabled':
     case 'allowDiscountStacking':
       if (typeof value !== 'boolean') throw new BadRequestException(`${key} must be true or false`);
+      return value;
+    case 'cashierPinRequired':
+    case 'cashierAutoClearOnIdleLock':
+      if (typeof value !== 'boolean') throw new BadRequestException(`${key} must be true or false`);
+      return value;
+    case 'cashierSelection':
+      if (value !== 'STICKY' && value !== 'EVERY_BILL') throw new BadRequestException('cashierSelection must be STICKY or EVERY_BILL');
       return value;
     case 'lineDiscountMaxPercent':
     case 'billDiscountMaxPercent':

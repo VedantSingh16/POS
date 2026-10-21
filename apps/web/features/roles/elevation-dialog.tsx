@@ -37,9 +37,11 @@ export function RoleElevationDialog({ open, onOpenChange, roleName, assessment, 
   const [reason, setReason] = React.useState("");
   const [typedName, setTypedName] = React.useState("");
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   React.useEffect(() => {
     if (open) { setReason(""); setTypedName(""); }
   }, [open]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!assessment) return null;
   const flagged = dedupe([...assessment.elevated, ...assessment.newlyHighRisk]);

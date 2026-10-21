@@ -176,6 +176,13 @@ export const api = {
     const value = await read<any>(`/admin/stores/${id}/users`, { storeId: id });
     return real((value.users ?? []).map((user: any) => ({ id: user.id, name: `${user.firstName} ${user.lastName}`.trim(), email: user.email, role: (user.roles ?? []).map((role: any) => role.name).join(", ") || "No store role", storeRoleId: user.roles?.[0]?.id ?? "", scope: "This store", status: user.status, lastLogin: user.lastLoginAt ?? "" })) as (UserRow & { storeRoleId: string })[]);
   },
+  async storeCashiers(id: string) {
+    const value = await read<any>(`/admin/stores/${id}/cashiers`, { storeId: id });
+    return real((value.cashiers ?? []) as { id: string; displayName: string; employeeCode: string; status: string; hasPin: boolean; linkedUserId?: string | null; lastSelectedAt?: string | null }[]);
+  },
+  async storeTill(id: string) {
+    return real(await read<any>(`/admin/stores/${id}/till`, { storeId: id }) as { exists: boolean; id?: string; loginId: string; status?: string; activeSessions?: number });
+  },
   async storeAssignableRoles(id: string) {
     const value = await read<any>(`/admin/stores/${id}/assignable-roles`, { storeId: id });
     return real((value.roles ?? []) as { id: string; name: string; description: string }[]);

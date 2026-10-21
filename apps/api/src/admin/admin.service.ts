@@ -292,7 +292,7 @@ export class AdminService {
   async listUsers(context: UserContext) {
     this.requireOrganizationPermission(context, 'users.view');
     const users = await this.prisma.user.findMany({
-      where: { organizationId: context.organizationId },
+      where: { organizationId: context.organizationId, accountType: 'PERSON' },
       include: userInclude,
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { email: 'asc' }],
     });
@@ -306,6 +306,7 @@ export class AdminService {
     const users = await this.prisma.user.findMany({
       where: {
         organizationId: context.organizationId,
+        accountType: 'PERSON',
         OR: [
           { stores: { some: { storeId: id } } },
           { roles: { some: { scopeType: 'STORE', storeId: id } } },
@@ -355,7 +356,7 @@ export class AdminService {
         organizationId: context.organizationId,
         OR: [{ stores: { some: { storeId: id } } }, { roles: { some: { scopeType: 'STORE', storeId: id } } }],
       },
-      select: { id: true, status: true },
+      select: { id: true, status: true, accountType: true },
     });
     if (!user) throw new NotFoundException('Staff member not found in this store');
     if (user.status !== 'ACTIVE') throw new BadRequestException('Only active staff can be assigned a store role');
@@ -366,6 +367,9 @@ export class AdminService {
       include: { permissions: { select: { permissionCode: true, effect: true } } },
     }) : null;
     if (roleId && !role) throw new BadRequestException('Choose a role approved for store-manager assignment');
+    if (user.accountType === 'STORE_TILL' && role?.templateKey !== 'cashier') {
+      throw new BadRequestException('A shared till can only hold the Cashier role');
+    }
     if (role && !role.permissions.every((permission) => permission.effect === 'DENY' || this.authorization.hasPermission(context, permission.permissionCode, id))) {
       throw new ForbiddenException('This role grants permissions beyond your authority in this store');
     }

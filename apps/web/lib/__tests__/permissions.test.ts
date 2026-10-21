@@ -51,6 +51,9 @@ describe("permissions", () => {
     ["cashier", cashier, `/s/${A}/pos`],
     ["inventory user", inventory, `/s/${A}/inventory`],
   ])("lands %s on the right page", (_n, me, expected) => expect(landingPath(me)).toBe(expected));
+  it("always lands a shared till on its assigned POS", () => {
+    expect(landingPath({ ...cashier, user: user({ accountType: "STORE_TILL", tillStoreId: A, defaultStoreId: B }), stores: [stores[1]] })).toBe(`/s/${A}/pos`);
+  });
   it("routes a first-time organisation administrator into required onboarding", () => {
     expect(landingPath({ ...admin, onboardingRequired: true })).toBe("/onboarding/welcome");
   });

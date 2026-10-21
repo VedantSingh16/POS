@@ -27,10 +27,11 @@ export default async function StoreReports({ params, searchParams }: PageProps<"
     ...(typeof query.registerId === "string" ? { registerId: query.registerId } : {}),
     ...(typeof query.cashierId === "string" ? { cashierId: query.cashierId } : {}),
   };
-  const [{ data }, { data: report }, { data: dayCloses }, registersResult, staffResult] = await Promise.all([
+  const [{ data }, { data: report }, { data: dayCloses }, registersResult, staffResult, cashiersResult] = await Promise.all([
     api.charts(storeId, filters), api.reports(storeId, filters), api.dayCloses(storeId),
     api.registers(storeId).catch(() => ({ data: [] as { id: string; name: string; code?: string }[] })),
     hasPermission(me, "store.staff.view", storeId) ? api.storeStaff(storeId).catch(() => ({ data: [] as { id: string; name: string }[] })) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    hasPermission(me, "store.staff.view", storeId) ? api.storeCashiers(storeId).catch(() => ({ data: [] as { id: string; displayName: string }[] })) : Promise.resolve({ data: [] as { id: string; displayName: string }[] }),
   ]);
   return (
     <>
@@ -39,11 +40,12 @@ export default async function StoreReports({ params, searchParams }: PageProps<"
         <label className="grid gap-1 text-sm"><LocalizedText value={"From"} /><Input name="from" type="date" defaultValue={filters.from ?? ""} /></label>
         <label className="grid gap-1 text-sm"><LocalizedText value={"To"} /><Input name="to" type="date" defaultValue={filters.to ?? ""} /></label>
         <label className="grid gap-1 text-sm"><LocalizedText value={"Register"} /><NativeSelect name="registerId" defaultValue={filters.registerId ?? ""}><option value=""><LocalizedText value={"All registers"} /></option>{registersResult.data.map((register) => <option key={register.id} value={register.id}>{register.name} {register.code ? `(${register.code})` : ""}</option>)}</NativeSelect></label>
-        <label className="grid gap-1 text-sm"><LocalizedText value={"Cashier / bill handler"} /><NativeSelect name="cashierId" defaultValue={filters.cashierId ?? ""}><option value=""><LocalizedText value={"All staff"} /></option>{staffResult.data.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</NativeSelect></label>
+        <label className="grid gap-1 text-sm"><LocalizedText value={"Cashier / bill handler"} /><NativeSelect name="cashierId" defaultValue={filters.cashierId ?? ""}><option value=""><LocalizedText value={"All staff"} /></option>{cashiersResult.data.map((person) => <option key={`cashier:${person.id}`} value={`cashier:${person.id}`}>{person.displayName} (named cashier)</option>)}{staffResult.data.map((person) => <option key={`user:${person.id}`} value={`user:${person.id}`}>{person.name} (user)</option>)}</NativeSelect></label>
         <Button><LocalizedText value={"Apply filters"} /></Button>
       </form>
       <p className="mb-3 text-xs text-muted-foreground"><LocalizedText value={"Period shown in "} />{report.timezone}: {formatDateTime(report.period.from, locale, report.timezone)} – {formatDateTime(report.period.to, locale, report.timezone)} <LocalizedText value={"· Data as of "} />{formatDateTime(report.asOf, locale, report.timezone)}.</p>
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-lg border bg-card p-4"><p className="text-sm text-muted-foreground"><LocalizedText value={"Sales"} /></p><Money minor={report.sales.totalCents} /><p className="text-xs text-muted-foreground">{report.sales.count} <LocalizedText value={"transactions"} /></p></div><div className="rounded-lg border bg-card p-4"><p className="text-sm text-muted-foreground"><LocalizedText value={"Average order"} /></p><Money minor={report.kpis.averageOrderValueCents} /></div><div className="rounded-lg border bg-card p-4"><p className="text-sm text-muted-foreground"><LocalizedText value={"Gross margin"} /></p><Money minor={report.kpis.grossMarginCents} /></div><div className="rounded-lg border bg-card p-4"><p className="text-sm text-muted-foreground"><LocalizedText value={"Returns"} /></p><Money minor={report.returns.totalCents} /></div></div>
+      {report.salesByCashier?.length > 0 && <section className="mb-5 rounded-lg border bg-card p-4"><h2 className="mb-3 font-semibold"><LocalizedText value="Sales by cashier" /></h2><div className="divide-y text-sm">{report.salesByCashier.map((cashier: { cashierId: string; cashierType: string; cashier: string; salesCents: number; transactions: number }) => <div key={`${cashier.cashierType}:${cashier.cashierId}`} className="flex items-center justify-between gap-3 py-2"><span>{cashier.cashier}</span><span className="text-muted-foreground"><Money minor={cashier.salesCents} /> · {cashier.transactions} <LocalizedText value="transactions" /></span></div>)}</div></section>}
       <div className="grid gap-4 lg:grid-cols-2"><TrendChart data={data.trend} /><HourChart data={data.byHour} /><TenderChart data={data.tender} /></div>
       <div className="mt-5"><ReportOperations storeId={storeId} canExport={canExport} canDayClose={canDayClose} dayCloses={dayCloses} /></div>
     </>

@@ -13,6 +13,7 @@ import { clientApi } from "@/features/client-api";
 import { formatDateTime, formatMoney as formatMoneyValue, currencyCode, currencyNotes, minorPerUnit, toMinor } from "@/lib/format";
 import { useLocale } from "@/components/i18n/locale-provider";
 import { safeRandomUUID } from "@/lib/uuid";
+import { useMe } from "@/components/app/session-context";
 
 export type BoardRegister = { id: string; name: string; code?: string; status: string; sessionId: string; cashier: string; openedAt: string; expectedMinor: number; active: boolean };
 
@@ -59,6 +60,12 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
   const router = useRouter();
   const { locale } = useLocale();
   const formatMoney = (minor: number) => formatMoneyValue(minor, locale);
+  const me = useMe();
+  const isTill = me.user.accountType === "STORE_TILL";
+  const cashierToken = React.useCallback(() => {
+    try { const value = JSON.parse(sessionStorage.getItem(`pos.cashier.${storeId}.${register.id}`) ?? "null") as { token?: string } | null; return value?.token; }
+    catch { return undefined; }
+  }, [register.id, storeId]);
   const isOpen = register.status === "OPEN";
   const [busy, setBusy] = React.useState(false);
   const [panel, setPanel] = React.useState<"" | "cash" | "close">("");
@@ -98,7 +105,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
     setBusy(true);
     for (const item of queued) {
       try {
-        await clientApi(`/pos/v1/sessions/${item.sessionId}/cash`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify({ type: item.type, amountCents: item.amountCents, reason: item.reason, clientMovementId: item.clientMovementId, ...(managerPin ? { managerPin } : {}) }) });
+        await clientApi(`/pos/v1/sessions/${item.sessionId}/cash`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify({ type: item.type, amountCents: item.amountCents, reason: item.reason, clientMovementId: item.clientMovementId, cashierToken: cashierToken(), ...(managerPin ? { managerPin } : {}) }) });
         storeQueue((items) => items.filter((row) => row.clientMovementId !== item.clientMovementId));
         toast.success(`Pending cash movement from ${formatDateTime(item.createdAt, locale)} synced.`);
         router.refresh();
@@ -109,7 +116,7 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
       }
     }
     setBusy(false);
-  }, [locale, managerPin, register.id, router, storeId, storeQueue]);
+  }, [cashierToken, locale, managerPin, register.id, router, storeId, storeQueue]);
 
   const retryPendingRef = React.useRef(retryPending);
   React.useEffect(() => { retryPendingRef.current = retryPending; }, [retryPending]);
@@ -129,7 +136,8 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
 
   const open = () => {
     if (!float.trim()) { toast.error("Enter the counted opening float. Enter 0 if the drawer is empty."); return; }
-    return act(() => clientApi("/pos/v1/sessions", { method: "POST", body: JSON.stringify({ storeId, registerId: register.id, openingFloatCents: toMinor(float) }) }), `${register.name} is open. You can start selling.`);
+    if (isTill && !cashierToken()) { toast.error("Choose a cashier on the POS screen before opening this register."); return; }
+    return act(() => clientApi("/pos/v1/sessions", { method: "POST", body: JSON.stringify({ storeId, registerId: register.id, cashierToken: cashierToken(), openingFloatCents: toMinor(float) }) }), `${register.name} is open. You can start selling.`);
   };
   const record = async () => {
     const cents = toMinor(amount);
@@ -139,11 +147,11 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
     setBusy(true);
     const queuedItem: PendingCashMovement = { storeId, registerId: register.id, sessionId: register.sessionId, type, amountCents: cents, reason: reason.trim(), clientMovementId: movementId.current, createdAt: new Date().toISOString() };
     try {
-      await clientApi(`/pos/v1/sessions/${register.sessionId}/cash`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify({ type, amountCents: cents, reason: reason.trim(), managerPin: managerPin || undefined, clientMovementId: movementId.current }) });
+      await clientApi(`/pos/v1/sessions/${register.sessionId}/cash`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify({ type, amountCents: cents, reason: reason.trim(), managerPin: managerPin || undefined, clientMovementId: movementId.current, cashierToken: cashierToken() }) });
       toast.success("Cash movement recorded"); setPanel(""); router.refresh(); setAmount(""); setReason(""); setManagerPin(""); movementId.current = "";
     } catch (error) {
       const detail = error as Error & { status?: number; payload?: { code?: string } };
-      if (!managerPin && (detail.status === undefined || detail.status >= 500)) {
+      if (!isTill && !managerPin && (detail.status === undefined || detail.status >= 500)) {
         const saved = storeQueue((items) => items.some((row) => row.clientMovementId === queuedItem.clientMovementId) ? items : [...items, queuedItem]);
         if (saved) { toast.warning("Movement is pending sync. It is not recorded in the register ledger yet."); setAmount(""); setReason(""); movementId.current = ""; }
       } else toast.error(detail.message || "Cash movement failed");
@@ -158,7 +166,8 @@ function RegisterCard({ storeId, register }: { storeId: string; register: BoardR
     if (mode === "notes" && (body.denominations as unknown[]).length === 0) delete (body as { denominations?: unknown }).denominations;
     setBusy(true);
     try {
-      const result = await clientApi<{ expectedCashCents: number; countedCashCents: number; varianceCents: number }>(`/pos/v1/sessions/${register.sessionId}/close`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify(body) });
+      if (isTill && !cashierToken()) { toast.error("Choose a cashier on the POS screen before closing this register."); return; }
+      const result = await clientApi<{ expectedCashCents: number; countedCashCents: number; varianceCents: number }>(`/pos/v1/sessions/${register.sessionId}/close`, { method: "POST", headers: { "x-store-id": storeId }, body: JSON.stringify({ ...body, cashierToken: cashierToken() }) });
       const v = result.varianceCents;
       toast.success(`Register closed. Counted ${formatMoney(result.countedCashCents)}, expected ${formatMoney(result.expectedCashCents)}${v === 0 ? " — no difference." : `, difference ${v > 0 ? "+" : ""}${formatMoney(v)}.`}`, { duration: 9000 });
       setPanel(""); router.refresh();

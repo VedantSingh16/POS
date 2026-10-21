@@ -41,6 +41,7 @@ import { verifyPassword } from '../security/password.js';
 import { isStoreOpenAt, validateStoreHours } from '@pos/shared/store-hours';
 
 type LineInput = { variantId?: unknown; quantity?: unknown; note?: unknown; discountCents?: unknown; discountPercent?: unknown; discountReason?: unknown; unitPriceCents?: unknown; priceIncludesTax?: unknown };
+type ResolvedCashier = { cashierId: string | null; handledById: string | null; name: string };
 
 const SELLABLE_STATUSES = ['ACTIVE', 'SEASONAL'] as const;
 const TENDERS = Object.values(TenderType) as TenderType[];
@@ -59,6 +60,8 @@ const TRANSFER_FLOW: Record<TransferStatus, TransferStatus[]> = {
 const SESSION_INCLUDE = {
   register: { select: { code: true, name: true } },
   openedBy: { select: { firstName: true, lastName: true } },
+  openedByCashier: { select: { displayName: true } },
+  closedByCashier: { select: { displayName: true } },
 } satisfies Prisma.RegisterSessionInclude;
 
 const TRANSFER_INCLUDE = {
@@ -634,6 +637,7 @@ export class PosService {
     if (!register || register.storeId !== storeId) throw new NotFoundException('Active register not found in store');
     if (input.openingFloatCents === undefined || input.openingFloatCents === null) throw new BadRequestException('Count and enter the opening float before opening this register');
     const openingFloatCents = money(input.openingFloatCents, 'openingFloatCents');
+    const cashier = await this.resolveCashier(context, storeId, input);
 
     try {
       const session = await this.prisma.$transaction(async (tx) => {
@@ -643,12 +647,13 @@ export class PosService {
             storeId,
             registerId,
             openedById: context.userId,
+            openedByCashierId: cashier.cashierId,
             openingFloatCents,
             expectedCashCents: openingFloatCents,
           },
           include: SESSION_INCLUDE,
         });
-        await this.audit.record(context, 'register-session.opened', 'RegisterSession', created.id, { storeId, registerId, openingFloatCents }, tx);
+        await this.audit.record(context, 'register-session.opened', 'RegisterSession', created.id, { storeId, registerId, openingFloatCents, cashierId: cashier.cashierId }, tx);
         return created;
       });
       return this.sessionDto(session);
@@ -680,6 +685,7 @@ export class PosService {
     }
     const session = await this.openSessionRow(context, sessionKey);
     this.authorization.assertPermissions(context, ['cash.manage'], session.storeId);
+    const cashier = await this.resolveCashier(context, session.storeId, input);
     const settings = await this.orgSettings(context.organizationId, session.storeId);
     const approvalThreshold = Number(settings.cashMovementApprovalCents ?? 0);
     const requiresApproval = Number.isFinite(approvalThreshold) && approvalThreshold > 0 && amountCents > approvalThreshold;
@@ -700,7 +706,7 @@ export class PosService {
         });
         if (!changed.count) throw new ConflictException(signed < 0 ? 'Cash out cannot exceed the expected cash in the drawer' : 'Register session is already closed');
         await tx.cashMovement.create({
-          data: { organizationId: context.organizationId, sessionId, type, amountCents: signed, reason, actorUserId: context.userId, approvedById, clientMovementId },
+          data: { organizationId: context.organizationId, sessionId, type, amountCents: signed, reason, actorUserId: context.userId, cashierId: cashier.cashierId, approvedById, clientMovementId },
         });
         if (approvedById && !approvalToken) await tx.approval.create({ data: {
           organizationId: context.organizationId,
@@ -708,6 +714,7 @@ export class PosService {
           action: 'CASH_MOVEMENT',
           referenceId: sessionId,
           requestedById: context.userId,
+          requestedByCashierId: cashier.cashierId,
           approvedById,
           reason,
           status: 'APPROVED',
@@ -716,7 +723,7 @@ export class PosService {
           consumedAt: new Date(),
           payloadHash: this.approvalPayloadHash('CASH_MOVEMENT', session.storeId, sessionId, approvalPayload),
         } });
-        await this.audit.record(context, 'cash-movement.recorded', 'RegisterSession', sessionId, { type, amountCents: signed, reason, approvedById, clientMovementId }, tx);
+        await this.audit.record(context, 'cash-movement.recorded', 'RegisterSession', sessionId, { type, amountCents: signed, reason, approvedById, cashierId: cashier.cashierId, clientMovementId }, tx);
       });
     } catch (error) {
       if (clientMovementId && isUniqueViolation(error)) {
@@ -735,6 +742,7 @@ export class PosService {
       : money(input.countedCashCents, 'countedCashCents');
     const initial = await this.findSession(context, sessionId);
     this.authorization.assertPermissions(context, ['register.close'], initial.storeId);
+    const cashier = await this.resolveCashier(context, initial.storeId, input);
     const settings = await this.orgSettings(context.organizationId, initial.storeId);
     const tolerance = Math.max(0, Number(settings.cashVarianceToleranceCents ?? 0) || 0);
     const expectedCash = await this.calculateExpectedCash(this.prisma, initial);
@@ -759,7 +767,7 @@ export class PosService {
       // `status: OPEN` in the filter makes a concurrent double-close a no-op instead of a second close.
       const result = await tx.registerSession.updateMany({
         where: { id: sessionId, status: 'OPEN' },
-        data: { status: 'CLOSED', expectedCashCents: recalculatedExpectedCash, countedCashCents: counted, varianceCents: variance, closedAt: new Date(), closedById: context.userId, closeApprovedById, closeReason, forcedClosed: false },
+        data: { status: 'CLOSED', expectedCashCents: recalculatedExpectedCash, countedCashCents: counted, varianceCents: variance, closedAt: new Date(), closedById: context.userId, closedByCashierId: cashier.cashierId, closeApprovedById, closeReason, forcedClosed: false },
       });
       if (result.count === 0) throw new ConflictException('Register session is already closed');
       await tx.alert.updateMany({ where: { organizationId: context.organizationId, type: 'REGISTER_NOT_CLOSED', referenceId: sessionId, status: { in: ['OPEN', 'ACKNOWLEDGED'] } }, data: { status: 'RESOLVED', resolvedAt: new Date(), resolvedById: context.userId, resolutionNote: 'Register session closed', activeDedupeKey: null } });
@@ -772,6 +780,7 @@ export class PosService {
         action: 'REGISTER_VARIANCE',
         referenceId: sessionId,
         requestedById: context.userId,
+        requestedByCashierId: cashier.cashierId,
         approvedById: closeApprovedById,
         reason: closeReason,
         status: 'APPROVED',
@@ -780,7 +789,7 @@ export class PosService {
         consumedAt: new Date(),
         payloadHash: this.approvalPayloadHash('REGISTER_VARIANCE', session.storeId, sessionId, closePayload),
       } });
-      await this.audit.record(context, 'register-session.closed', 'RegisterSession', sessionId, { counted, expected: recalculatedExpectedCash, variance, denominations: denominationCount?.items ?? null, reason: closeReason, approvedById: closeApprovedById }, tx);
+      await this.audit.record(context, 'register-session.closed', 'RegisterSession', sessionId, { counted, expected: recalculatedExpectedCash, variance, denominations: denominationCount?.items ?? null, reason: closeReason, approvedById: closeApprovedById, cashierId: cashier.cashierId }, tx);
       return session.id;
     });
     return { ...(await this.sessionById(context, closed)), countedByDenomination: denominationCount?.items ?? null };
@@ -920,6 +929,7 @@ export class PosService {
     if (!register) throw new NotFoundException('Register not found in store');
     const clientHoldId = optionalString(input.clientHoldId) || undefined;
     const settings = await this.orgSettings(context.organizationId, storeId);
+    const cashier = await this.resolveCashier(context, storeId, input);
     const ttlHours = Number.isFinite(Number(settings.holdTtlHours)) && Number(settings.holdTtlHours) > 0 ? Math.min(720, Number(settings.holdTtlHours)) : 24;
     try {
       const held = await this.prisma.heldSale.create({
@@ -930,10 +940,11 @@ export class PosService {
           clientHoldId: clientHoldId ?? randomUUID(),
           payload: (input.payload ?? {}) as Prisma.InputJsonValue,
           createdById: context.userId,
+          cashierId: cashier.cashierId,
           expiresAt: new Date(Date.now() + ttlHours * 3_600_000),
         },
       });
-      return { id: held.id, clientHoldId: held.clientHoldId, payload: held.payload, createdAt: held.createdAt, expiresAt: held.expiresAt };
+      return { id: held.id, clientHoldId: held.clientHoldId, payload: held.payload, cashierName: cashier.name, createdAt: held.createdAt, expiresAt: held.expiresAt };
     } catch (error) {
       if (isUniqueViolation(error)) throw new ConflictException('A held sale with this clientHoldId already exists');
       throw error;
@@ -950,9 +961,10 @@ export class PosService {
     const permitted = store ? [store] : await this.authorization.permittedStoreIds(context, 'sale.hold');
     const holds = await this.prisma.heldSale.findMany({
       where: { organizationId: context.organizationId, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }], ...(permitted ? { storeId: { in: permitted } } : {}) },
+      include: { cashier: { select: { displayName: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    return holds.map((held) => ({ id: held.id, clientHoldId: held.clientHoldId, registerId: held.registerId, payload: held.payload, createdAt: held.createdAt, expiresAt: held.expiresAt }));
+    return holds.map((held) => ({ id: held.id, clientHoldId: held.clientHoldId, registerId: held.registerId, payload: held.payload, cashierName: held.cashier?.displayName ?? null, createdAt: held.createdAt, expiresAt: held.expiresAt }));
   }
 
   async resumeHold(context: UserContext, holdId: string) {
@@ -964,7 +976,7 @@ export class PosService {
     // Deleting by id is the claim: only one concurrent resume can succeed.
     const deleted = await this.prisma.heldSale.deleteMany({ where: { id: held.id } });
     if (deleted.count === 0) throw new ConflictException('Held sale was already resumed');
-    return { id: held.id, payload: held.payload };
+    return { id: held.id, payload: held.payload, cashierName: null };
   }
 
   // ───────────── Checkout ─────────────
@@ -973,15 +985,16 @@ export class PosService {
     const storeId = uuid(requestedStoreId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
     this.authorization.assertPermissions(context, ['sale.create'], storeId);
-    const [settings, handlers, discountReasons] = await Promise.all([
+    const [settings, handlers, discountReasons, cashiers] = await Promise.all([
       this.orgSettings(context.organizationId, storeId),
-      this.eligibleSaleHandlers(context, storeId),
+      context.accountType === 'STORE_TILL' ? Promise.resolve([] as { id: string; firstName: string; lastName: string }[]) : this.eligibleSaleHandlers(context, storeId),
       this.prisma.discountReason.findMany({
         where: { organizationId: context.organizationId, storeId, status: 'ACTIVE' },
         select: { code: true, name: true },
         orderBy: { name: 'asc' },
         take: 100,
       }),
+      this.listActiveCashiers(context, storeId),
     ]);
     const fields = cleanFieldSet(settings.checkoutFields, 'CHECKOUT');
     const productFields = cleanFieldSet(settings.productFields);
@@ -989,6 +1002,11 @@ export class PosService {
       fields: fields.fields,
       coreFields: fields.coreFields,
       requireBillHandler: settings.requireBillHandler === true,
+      cashierSelection: settings.cashierSelection === 'EVERY_BILL' ? 'EVERY_BILL' : 'STICKY',
+      cashierPinRequired: settings.cashierPinRequired === true,
+      cashierAutoClearOnIdleLock: settings.cashierAutoClearOnIdleLock !== false,
+      isTill: context.accountType === 'STORE_TILL',
+      cashiers,
       requireDiscountReasonCode: settings.requireDiscountReasonCode === true,
       discountReasons,
       discounts: {
@@ -1004,9 +1022,96 @@ export class PosService {
     };
   }
 
+  async listActiveCashiers(context: UserContext, requestedStoreId: string) {
+    const storeId = uuid(requestedStoreId, 'storeId');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['sale.create'], storeId);
+    const rows = await this.prisma.storeCashier.findMany({
+      where: { organizationId: context.organizationId, storeId, status: 'ACTIVE' },
+      select: { id: true, displayName: true, employeeCode: true, lastSelectedAt: true },
+      orderBy: [{ displayName: 'asc' }, { employeeCode: 'asc' }],
+      take: 500,
+    });
+    rows.sort((a, b) => (b.lastSelectedAt?.getTime() ?? 0) - (a.lastSelectedAt?.getTime() ?? 0) || a.displayName.localeCompare(b.displayName));
+    return rows.map((row) => ({ id: row.id, name: row.displayName, employeeCode: row.employeeCode }));
+  }
+
+  async activeCashierConfig(context: UserContext, requestedStoreId: string) {
+    const storeId = uuid(requestedStoreId, 'storeId');
+    const [settings, cashiers] = await Promise.all([this.orgSettings(context.organizationId, storeId), this.listActiveCashiers(context, storeId)]);
+    return { cashiers, pinRequired: settings.cashierPinRequired === true, selection: settings.cashierSelection === 'EVERY_BILL' ? 'EVERY_BILL' : 'STICKY' };
+  }
+
+  async verifyCashier(context: UserContext, requestedStoreId: string, requestedCashierId: string, input: JsonObject) {
+    if (context.accountType !== 'STORE_TILL') throw new ForbiddenException('Cashier verification is only available to a shared till');
+    const storeId = uuid(requestedStoreId, 'storeId');
+    const cashierId = uuid(requestedCashierId, 'cashierId');
+    if (context.tillStoreId !== storeId) throw new ForbiddenException('This till is assigned to another store');
+    this.authorization.assertStoreAccess(context, storeId);
+    this.authorization.assertPermissions(context, ['sale.create'], storeId);
+    const settings = await this.orgSettings(context.organizationId, storeId);
+    const cashier = await this.prisma.storeCashier.findFirst({ where: { id: cashierId, organizationId: context.organizationId, storeId } });
+    if (!cashier || cashier.status !== 'ACTIVE') throw new NotFoundException('Active cashier not found');
+    const now = new Date();
+    if (cashier.pinLockedUntil && cashier.pinLockedUntil > now) throw new BadRequestException('This cashier PIN is temporarily locked; try again shortly');
+    const pinRequired = settings.cashierPinRequired === true;
+    const pin = optionalString(input.pin);
+    if (pinRequired && (!pin || !cashier.pinHash || !verifyPassword(pin, cashier.pinHash))) {
+      const lockUntil = new Date(Date.now() + 90_000);
+      const rows = await this.prisma.$queryRaw<{ failed_pin_attempts: number; pin_locked_until: Date | null }[]>(Prisma.sql`
+        UPDATE store_cashiers
+        SET failed_pin_attempts = CASE WHEN failed_pin_attempts >= 4 THEN 0 ELSE failed_pin_attempts + 1 END,
+            pin_locked_until = CASE WHEN failed_pin_attempts >= 4 THEN ${lockUntil} ELSE NULL END
+        WHERE id = ${cashier.id} AND (pin_locked_until IS NULL OR pin_locked_until <= NOW())
+        RETURNING failed_pin_attempts, pin_locked_until
+      `);
+      if (!rows[0]) throw new BadRequestException('This cashier PIN is temporarily locked; try again shortly');
+      const attempts = rows[0].pin_locked_until ? 5 : Number(rows[0].failed_pin_attempts);
+      await this.audit.record(context, 'pos.cashier.pin-failed', 'StoreCashier', cashier.id, { storeId, attempts });
+      throw new BadRequestException(attempts >= 5 ? 'Too many incorrect PINs; try again in 90 seconds' : 'Incorrect cashier PIN');
+    }
+    const rawToken = randomUUID();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.cashierToken.deleteMany({ where: { tillUserId: context.userId, storeId, expiresAt: { lte: now } } });
+      await tx.cashierToken.create({ data: {
+        tokenHash: createHash('sha256').update(rawToken).digest('hex'),
+        organizationId: context.organizationId,
+        storeId,
+        cashierId: cashier.id,
+        tillUserId: context.userId,
+        expiresAt: new Date(Date.now() + 12 * 60 * 60_000),
+      } });
+      await tx.storeCashier.update({ where: { id: cashier.id }, data: { failedPinAttempts: 0, pinLockedUntil: null, lastSelectedAt: now } });
+      await this.audit.record(context, 'pos.cashier.selected', 'StoreCashier', cashier.id, { storeId }, tx);
+    });
+    return { token: rawToken, cashierId: cashier.id, name: cashier.displayName, expiresAt: new Date(Date.now() + 12 * 60 * 60_000), pinRequired, selection: settings.cashierSelection === 'EVERY_BILL' ? 'EVERY_BILL' : 'STICKY' };
+  }
+
+  private async resolveCashier(context: UserContext, storeId: string, input: JsonObject): Promise<ResolvedCashier> {
+    if (context.accountType === 'STORE_TILL') {
+      if (context.tillStoreId !== storeId) throw new ForbiddenException('This till is assigned to another store');
+      const token = optionalString(input.cashierToken);
+      if (!token) throw new BadRequestException('Select the cashier before billing');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const verified = await this.prisma.cashierToken.findFirst({
+        where: { tokenHash, tillUserId: context.userId, organizationId: context.organizationId, storeId, expiresAt: { gt: new Date() }, cashier: { status: 'ACTIVE' } },
+        include: { cashier: { select: { id: true, displayName: true } } },
+      });
+      if (!verified) throw new BadRequestException('Select the cashier before billing');
+      return { cashierId: verified.cashier.id, handledById: null, name: verified.cashier.displayName };
+    }
+    const handledById = input.handledById ? uuid(input.handledById, 'handledById') : context.userId;
+    const eligibleHandlers = await this.eligibleSaleHandlers(context, storeId);
+    const handledBy = eligibleHandlers.find((user) => user.id === handledById);
+    if (!handledBy) throw new BadRequestException('The selected bill handler is not an active cashier for this store');
+    return { cashierId: null, handledById, name: `${handledBy.firstName} ${handledBy.lastName}`.trim() };
+  }
+
   private async eligibleSaleHandlers(context: UserContext, storeId: string) {
     const users = await this.prisma.user.findMany({
-      where: { organizationId: context.organizationId, status: 'ACTIVE', stores: { some: { storeId } } },
+      // Shared till logins are not named people and must never appear as bill handlers.
+      // The selected StoreCashier is resolved from its scoped token instead.
+      where: { organizationId: context.organizationId, status: 'ACTIVE', accountType: 'PERSON', stores: { some: { storeId } } },
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
       take: 500,
@@ -1041,11 +1146,9 @@ export class PosService {
     const settingsForCheckout = await this.orgSettings(context.organizationId, storeId);
     const fieldConfig = cleanFieldSet(settingsForCheckout.checkoutFields, 'CHECKOUT');
     const customFields = cleanFieldValues(fieldConfig.fields, input.customFields);
-    const handledById = input.handledById ? uuid(input.handledById, 'handledById') : context.userId;
-    if (settingsForCheckout.requireBillHandler === true && !input.handledById) throw new BadRequestException('Select who handled this bill');
-    const eligibleHandlers = await this.eligibleSaleHandlers(context, storeId);
-    if (!eligibleHandlers.some((user) => user.id === handledById)) throw new BadRequestException('The selected bill handler is not an active cashier for this store');
-    const handledBy = eligibleHandlers.find((user) => user.id === handledById)!;
+    if (context.accountType !== 'STORE_TILL' && settingsForCheckout.requireBillHandler === true && !input.handledById) throw new BadRequestException('Select who handled this bill');
+    const cashier = await this.resolveCashier(context, storeId, input);
+    const handledById = cashier.handledById;
     const checkoutFieldSnapshot = fieldConfig.fields.flatMap((field) => customFields[field.key] === undefined ? [] : [{ key: field.key, label: field.label, type: field.type, showOnReceipt: field.showOnReceipt, value: customFields[field.key] }]);
 
     const session = await this.openSessionRow(context, sessionId);
@@ -1078,7 +1181,7 @@ export class PosService {
     const snapshot: JsonObject = await this.documentSnapshot(context, storeId, customer, settings);
     snapshot.checkoutFields = checkoutFieldSnapshot;
     snapshot.checkoutFieldsVersion = fieldConfig.version;
-    snapshot.billHandler = `${handledBy.firstName} ${handledBy.lastName}`.trim();
+    snapshot.billHandler = cashier.name;
     const attemptIds = paymentPlan.payments.flatMap((payment) => (payment.attemptId ? [payment.attemptId] : []));
 
     try {
@@ -1113,7 +1216,8 @@ export class PosService {
             promotions: promotions.applied as unknown as Prisma.InputJsonValue,
             documentSnapshot: snapshot as unknown as Prisma.InputJsonValue,
             customFields: customFields as Prisma.InputJsonObject,
-            handledById,
+             handledById,
+             cashierId: cashier.cashierId,
             roundingCents: paymentPlan.roundingCents,
             totalCents: total,
             notes: [optionalString(input.notes), discountReason ? `Discount reason: ${discountReason}` : undefined].filter(Boolean).join(' | '),
@@ -1186,6 +1290,7 @@ export class PosService {
             action: 'SALE_DISCOUNT',
             referenceId: sale.id,
             requestedById: context.userId,
+            requestedByCashierId: cashier.cashierId,
             approvedById: managerApprovalUserId,
             reason: discountReason || 'Manager PIN approval',
             status: 'APPROVED',
@@ -1201,7 +1306,8 @@ export class PosService {
             storeId,
             action: 'OPEN_PRICE',
             referenceId: sale.id,
-            requestedById: context.userId,
+             requestedById: context.userId,
+             requestedByCashierId: cashier.cashierId,
             approvedById: openPriceManagerId,
             reason: `Open price: ${openPriceLines.map((line) => `${line.sku} @ ${formatMinor(line.unitPriceCents, currency)}`).join(', ')}`,
             status: 'APPROVED',
@@ -1401,6 +1507,7 @@ export class PosService {
     this.authorization.assertStoreAccess(context, storeId);
     this.authorization.assertPermissions(context, ['approval.request'], storeId);
     await this.ensureStore(context.organizationId, storeId);
+    const cashier = await this.resolveCashier(context, storeId, input);
     const action = oneOf(String(input.action ?? '').toUpperCase(), ['SALE_DISCOUNT', 'RETURN_REFUND', 'CASH_MOVEMENT', 'REGISTER_VARIANCE'] as const, 'action');
     if (action === 'RETURN_REFUND') {
       const exists = await this.prisma.sale.findFirst({ where: { id: referenceId, organizationId: context.organizationId, storeId }, select: { id: true } });
@@ -1419,6 +1526,7 @@ export class PosService {
         action,
         referenceId,
         requestedById: context.userId,
+        requestedByCashierId: cashier.cashierId,
         reason,
         payloadHash: this.approvalPayloadHash(action, storeId, referenceId, payload),
         payload: payload as Prisma.InputJsonObject,
@@ -1718,6 +1826,7 @@ export class PosService {
     this.authorization.assertPermissions(context, ['refund.create'], sale.storeId);
     const session = await this.openSessionRow(context, uuid(input.sessionId, 'sessionId'));
     if (session.storeId !== sale.storeId) throw new BadRequestException('Return session must belong to the store of the original sale');
+    const cashier = await this.resolveCashier(context, sale.storeId, input);
 
     const rawLines = Array.isArray(input.lines) ? input.lines as JsonObject[] : [];
     if (!rawLines.length) throw new BadRequestException('At least one return line is required');
@@ -1777,6 +1886,7 @@ export class PosService {
           totalCents: total,
           reason,
           createdById: context.userId,
+          cashierId: cashier.cashierId,
           lines: {
             create: returnLines.map((line) => ({
               saleLineId: line.saleLineId,
@@ -1804,6 +1914,7 @@ export class PosService {
           action: 'RETURN_REFUND',
           referenceId: created.id,
           requestedById: context.userId,
+          requestedByCashierId: cashier.cashierId,
           approvedById: managerApprovalUserId,
           reason,
           status: 'APPROVED',
@@ -1814,7 +1925,7 @@ export class PosService {
         } });
       }
       await this.flagClosedDayForRestatement(tx, context, sale.storeId, created.createdAt);
-      await this.audit.record(context, 'return.completed', 'Return', created.id, { saleId, total, creditNoteNumber }, tx);
+      await this.audit.record(context, 'return.completed', 'Return', created.id, { saleId, total, creditNoteNumber, cashierId: cashier.cashierId }, tx);
       return created;
     });
     return {
@@ -2072,13 +2183,19 @@ export class PosService {
     }
     const accessibleStores = store ? [store] : await this.authorization.permittedStoreIds(context, 'report.view');
     const scopedStore = store ?? (accessibleStores ? { in: accessibleStores } : undefined);
+    const reportStoreIds = accessibleStores ? new Set(accessibleStores) : store ? new Set([store]) : null;
     const register = registerId ? uuid(registerId, 'registerId') : undefined;
-    const cashier = cashierId ? uuid(cashierId, 'cashierId') : undefined;
+    const cashierFilter = cashierId?.startsWith('cashier:') ? { kind: 'cashier' as const, id: uuid(cashierId.slice('cashier:'.length), 'cashierId') }
+      : cashierId?.startsWith('user:') ? { kind: 'user' as const, id: uuid(cashierId.slice('user:'.length), 'userId') }
+      : cashierId ? { kind: 'user' as const, id: uuid(cashierId, 'cashierId') } : undefined;
     if (register && !(await this.prisma.register.findFirst({ where: { id: register, organizationId: orgId, ...(store ? { storeId: store } : {}) }, select: { id: true } }))) {
       throw new NotFoundException('Register not found');
     }
-    if (cashier && !(await this.prisma.user.findFirst({ where: { id: cashier, organizationId: orgId }, select: { id: true } }))) {
+    if (cashierFilter?.kind === 'user' && !(await this.prisma.user.findFirst({ where: { id: cashierFilter.id, organizationId: orgId }, select: { id: true } }))) {
       throw new NotFoundException('Cashier not found');
+    }
+    if (cashierFilter?.kind === 'cashier' && !(await this.prisma.storeCashier.findFirst({ where: { id: cashierFilter.id, organizationId: orgId, ...(store ? { storeId: store } : {}) }, select: { id: true } }))) {
+      throw new NotFoundException('Named cashier not found');
     }
 
     const saleWhere: Prisma.SaleWhereInput = {
@@ -2087,13 +2204,13 @@ export class PosService {
       createdAt: period,
       ...(scopedStore ? { storeId: scopedStore } : {}),
       ...(register ? { registerId: register } : {}),
-      ...(cashier ? { OR: [{ handledById: cashier }, { handledById: null, createdById: cashier }] } : {}),
+      ...(cashierFilter ? cashierFilter.kind === 'cashier' ? { cashierId: cashierFilter.id } : { OR: [{ handledById: cashierFilter.id }, { handledById: null, createdById: cashierFilter.id }] } : {}),
     };
     const returnWhere: Prisma.SaleReturnWhereInput = {
       organizationId: orgId,
       createdAt: period,
       ...(scopedStore ? { storeId: scopedStore } : {}),
-      ...(cashier ? { createdById: cashier } : {}),
+      ...(cashierFilter ? cashierFilter.kind === 'cashier' ? { cashierId: cashierFilter.id } : { createdById: cashierFilter.id } : {}),
       ...(register ? { session: { registerId: register } } : {}),
     };
 
@@ -2126,6 +2243,12 @@ export class PosService {
           id: true,
           createdAt: true,
           totalCents: true,
+          createdById: true,
+          handledById: true,
+          cashierId: true,
+          createdBy: { select: { firstName: true, lastName: true } },
+          handledBy: { select: { firstName: true, lastName: true } },
+          cashier: { select: { displayName: true } },
           lines: { select: { quantity: true, lineTotalCents: true, taxCents: true, unitCostCents: true, taxRateBps: true, hsnCode: true } },
         },
         orderBy: { createdAt: 'asc' },
@@ -2136,9 +2259,9 @@ export class PosService {
           openedAt: period,
           ...(scopedStore ? { storeId: scopedStore } : {}),
           ...(register ? { registerId: register } : {}),
-          ...(cashier ? { openedById: cashier } : {}),
+          ...(cashierFilter ? cashierFilter.kind === 'cashier' ? { openedByCashierId: cashierFilter.id } : { openedById: cashierFilter.id } : {}),
         },
-          include: { register: { select: { name: true, code: true } }, openedBy: { select: { id: true, firstName: true, lastName: true } } },
+          include: { register: { select: { name: true, code: true } }, openedBy: { select: { id: true, firstName: true, lastName: true } }, openedByCashier: { select: { id: true, displayName: true } } },
         orderBy: { openedAt: 'desc' },
       }),
     ]);
@@ -2181,6 +2304,28 @@ export class PosService {
     const today = trend.get(todayKey) ?? { sales: 0, transactions: 0 };
     const previousWeek = trend.get(previousWeekKey) ?? { sales: 0, transactions: 0 };
     const tenderTotal = tenders.reduce((sum, tender) => sum + (tender._sum.amountCents ?? 0), 0);
+    const salesByCashier = new Map<string, { cashierId: string; cashierType: 'cashier' | 'user'; cashier: string; salesCents: number; transactions: number }>();
+    for (const sale of saleRows) {
+      const cashierId = sale.cashierId ?? sale.handledById ?? sale.createdById;
+      const cashierType = sale.cashierId ? 'cashier' : 'user';
+      const cashier = sale.cashier?.displayName ?? `${sale.handledBy?.firstName ?? sale.createdBy.firstName} ${sale.handledBy?.lastName ?? sale.createdBy.lastName}`.trim();
+      const key = `${cashierType}:${cashierId}`;
+      const row = salesByCashier.get(key) ?? { cashierId, cashierType, cashier, salesCents: 0, transactions: 0 };
+      row.salesCents += sale.totalCents;
+      row.transactions += 1;
+      salesByCashier.set(key, row);
+    }
+    const cashierSwitchLogs = await this.prisma.auditLog.findMany({
+      where: { organizationId: orgId, action: 'pos.cashier.selected', createdAt: period },
+      select: { entityId: true, createdAt: true, metadata: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    const cashierSwitches = cashierSwitchLogs.flatMap((log) => {
+      const metadata = log.metadata;
+      if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata) || typeof metadata.storeId !== 'string') return [];
+      if (reportStoreIds && !reportStoreIds.has(metadata.storeId)) return [];
+      return [{ cashierId: log.entityId, storeId: metadata.storeId, selectedAt: log.createdAt }];
+    });
 
     return {
       period: { from: start.toISOString(), to: end.toISOString() },
@@ -2206,13 +2351,15 @@ export class PosService {
       byHour: [...byHour.entries()].sort(([a], [b]) => a - b).map(([hour, value]) => ({ hour: `${String(hour).padStart(2, '0')}:00`, sales: value.sales, transactions: value.transactions })),
       gst: [...gst.values()].sort((a, b) => a.rateBps - b.rateBps || a.hsnCode.localeCompare(b.hsnCode)),
       tenderTotalCents: tenderTotal,
+      salesByCashier: [...salesByCashier.values()].sort((a, b) => b.salesCents - a.salesCents || a.cashier.localeCompare(b.cashier)),
+      cashierSwitches,
       cashReconciliation: sessions.map((session) => ({
         sessionId: session.id,
         storeId: session.storeId,
         registerId: session.registerId,
-        cashierId: session.openedBy.id,
+        cashierId: session.openedByCashier?.id ?? session.openedBy.id,
         register: session.register.name || session.register.code,
-        cashier: `${session.openedBy.firstName} ${session.openedBy.lastName}`.trim(),
+        cashier: session.openedByCashier?.displayName ?? `${session.openedBy.firstName} ${session.openedBy.lastName}`.trim(),
         status: session.status,
         openedAt: session.openedAt,
         closedAt: session.closedAt,
@@ -2242,6 +2389,7 @@ export class PosService {
       ['returns', 'totalCents', report.returns.totalCents, ''],
       ...report.tenders.map((tender) => ['tender', tender.tenderType, tender.amountCents, '']),
       ...report.gst.map((item) => ['gst', item.hsnCode || 'UNSPECIFIED', item.taxCents, item.rateBps / 100]),
+      ...report.salesByCashier.map((cashier) => ['cashier', `${cashier.cashierType}:${cashier.cashierId}`, cashier.salesCents, cashier.transactions]),
       ...report.cashReconciliation.map((session) => ['cashReconciliation', session.sessionId, session.varianceCents, session.status]),
     ];
     return rows.map((row) => row.map((value) => this.csvCell(value)).join(',')).join('\n') + '\n';
@@ -3614,6 +3762,10 @@ export class PosService {
       registerCode: session.register.code,
       registerName: session.register.name,
       openedByName: `${session.openedBy.firstName} ${session.openedBy.lastName}`.trim(),
+      openedByCashierId: session.openedByCashier ? session.openedByCashierId : null,
+      openedByCashierName: session.openedByCashier?.displayName ?? null,
+      closedByCashierId: session.closedByCashier ? session.closedByCashierId : null,
+      closedByCashierName: session.closedByCashier?.displayName ?? null,
       status: session.status,
       openingFloatCents: session.openingFloatCents,
       expectedCashCents: session.expectedCashCents,
@@ -3644,6 +3796,7 @@ export class PosService {
         notes: sale.notes,
         customerId: sale.customerId,
         handledById: sale.handledById,
+        cashierId: sale.cashierId,
         customFields: objectField(sale.customFields),
         createdAt: sale.createdAt,
         lines: sale.lines.map((line) => ({

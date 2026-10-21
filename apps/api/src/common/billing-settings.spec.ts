@@ -27,4 +27,16 @@ describe('store billing settings', () => {
     expect(() => applyBillingPatch(current, { lineDiscountMaxPercent: 101 })).toThrow(/between 0 and 100/);
     expect(() => applyBillingPatch(current, { billDiscountEnabled: 'yes' })).toThrow(/true or false/);
   });
+
+  it('provides safe defaults and accepts the cashier controls', () => {
+    expect(DEFAULT_BILLING_SETTINGS.cashierSelection).toBe('STICKY');
+    expect(DEFAULT_BILLING_SETTINGS.cashierPinRequired).toBe(false);
+    expect(applyBillingPatch({}, { cashierSelection: 'EVERY_BILL', cashierPinRequired: true, cashierAutoClearOnIdleLock: false })).toMatchObject({
+      cashierSelection: 'EVERY_BILL', cashierPinRequired: true, cashierAutoClearOnIdleLock: false,
+    });
+  });
+
+  it('rejects invalid cashier selection modes', () => {
+    expect(() => applyBillingPatch({}, { cashierSelection: 'RANDOM' })).toThrow('cashierSelection must be STICKY or EVERY_BILL');
+  });
 });
