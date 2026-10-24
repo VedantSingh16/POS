@@ -26,7 +26,7 @@ export default async function StoreBillingSettings({ params }: PageProps<"/s/[st
       </nav>
       <Card id="billing-behavior" className="scroll-mt-24"><CardContent className="grid gap-4">
         <div><h2 className="font-semibold"><LocalizedText value={"Billing behavior"} /></h2><p className="text-sm text-muted-foreground"><LocalizedText value={"Each store keeps its own complete configuration. Amounts use the organization currency, "} />{data.currency ?? "OMR"}.</p></div>
-        <BillingForm storeId={storeId} own={(data.billing ?? {}) as never} canEdit={canEdit} />
+        <BillingForm storeId={storeId} own={(data.billing ?? {}) as never} canEdit={canEdit} store={{ name: store?.name ?? "Store" }} />
       </CardContent></Card>
       <Card id="checkout-fields" className="scroll-mt-24"><CardContent className="grid gap-4"><StoreCheckoutFieldEditor storeId={storeId} initial={(data.checkoutFieldSettings ?? {}) as never} canEdit={canEdit} /></CardContent></Card>
     </div>

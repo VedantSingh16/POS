@@ -70,6 +70,11 @@
       "types": "./src/locale.ts",
       "node": "./dist/locale.js",
       "default": "./src/locale.ts"
+    },
+    "./document-totals": {
+      "types": "./src/document-totals.ts",
+      "node": "./dist/document-totals.js",
+      "default": "./src/document-totals.ts"
     }
   },
   "scripts": {

@@ -93,6 +93,12 @@ export class PosController {
     return this.pos.dispatchDistribution(request.user!, id);
   }
 
+  @Get('registers/:registerId/printer')
+  registerPrinter(@Req() request: AuthenticatedRequest, @Param('registerId') registerId: string) { return this.pos.registerPrinter(request.user!, registerId); }
+
+  @Patch('registers/:registerId/printer')
+  updateRegisterPrinter(@Req() request: AuthenticatedRequest, @Param('registerId') registerId: string, @Body() body: JsonObject) { return this.pos.updateRegisterPrinter(request.user!, registerId, body ?? {}); }
+
   @Get('sessions')
   @RequirePermissions('registers.view')
   async sessions(@Req() request: AuthenticatedRequest, @Query('storeId') storeId?: string) { return { sessions: await this.pos.listSessions(request.user!, storeId) }; }
@@ -223,6 +229,12 @@ export class PosController {
     response.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${filename}"`, 'Cache-Control': 'no-store' });
     return new StreamableFile(buffer);
   }
+
+  @Get('sales/:saleId/receipt')
+  receipt(@Req() request: AuthenticatedRequest, @Param('saleId') saleId: string) { return this.pos.receipt(request.user!, saleId); }
+
+  @Post('sales/:saleId/printed')
+  receiptPrinted(@Req() request: AuthenticatedRequest, @Param('saleId') saleId: string, @Body() body: JsonObject) { return this.pos.recordReceiptPrint(request.user!, saleId, body ?? {}); }
 
   @Get('sales/:saleId')
   saleDetail(@Req() request: AuthenticatedRequest, @Param('saleId') saleId: string) { return this.pos.getSale(request.user!, saleId); }

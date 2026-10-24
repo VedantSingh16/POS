@@ -25,14 +25,16 @@ import {
   TransferStatus,
 } from '../generated/prisma/client.js';
 import { PHASES } from './pos-features.js';
-import { buildInvoicePdf } from './invoice-pdf.js';
+import { buildInvoicePdf, type InvoiceData } from './invoice-pdf.js';
 import { buildReportPdf } from './report-pdf.js';
 import { splitInclusive, taxOnExclusive } from '@pos/shared/gst';
 import { evaluatePromotions, resolveUnitPrice, type PriceRule, type PromotionDef } from '@pos/shared/pricing';
 import { financialYearLabel } from '@pos/shared/fiscal';
-import { formatMinor, minorFactor } from '@pos/shared/currency';
+import { currencyInfo, formatMinor, minorFactor } from '@pos/shared/currency';
+import { documentTotals } from '@pos/shared/document-totals';
 import { currencyFromSettings } from '../common/org-currency.js';
-import { DEFAULT_BILLING_SETTINGS } from '../common/billing-settings.js';
+import { DEFAULT_BILLING_SETTINGS, RECEIPT_AUTO_PRINT, RECEIPT_LANGUAGES, RECEIPT_PAPERS } from '../common/billing-settings.js';
+import { applyPrinterPatch, readPrinterProfile } from '../common/printer-profile.js';
 import { cleanFieldSet, cleanFieldValues, objectField } from '../common/field-config.js';
 import { GST_STATES, gstinStateCode, isIntraState, validateGstin, validateTaxNumber } from '@pos/shared/tax-id';
 import { createHash } from 'node:crypto';
@@ -1024,7 +1026,7 @@ export class PosService {
     const storeId = uuid(requestedStoreId, 'storeId');
     this.authorization.assertStoreAccess(context, storeId);
     this.authorization.assertPermissions(context, ['sale.create'], storeId);
-    const [settings, handlers, discountReasons, cashiers] = await Promise.all([
+    const [settings, handlers, discountReasons, cashiers, registers] = await Promise.all([
       this.orgSettings(context.organizationId, storeId),
       context.accountType === 'STORE_TILL' ? Promise.resolve([] as { id: string; firstName: string; lastName: string }[]) : this.eligibleSaleHandlers(context, storeId),
       this.prisma.discountReason.findMany({
@@ -1034,6 +1036,7 @@ export class PosService {
         take: 100,
       }),
       this.listActiveCashiers(context, storeId),
+      this.prisma.register.findMany({ where: { organizationId: context.organizationId, storeId }, select: { id: true, printerProfile: true } }),
     ]);
     const fields = cleanFieldSet(settings.checkoutFields, 'CHECKOUT');
     const productFields = cleanFieldSet(settings.productFields);
@@ -1044,6 +1047,13 @@ export class PosService {
       cashierSelection: settings.cashierSelection === 'EVERY_BILL' ? 'EVERY_BILL' : 'STICKY',
       cashierPinRequired: settings.cashierPinRequired === true,
       cashierAutoClearOnIdleLock: settings.cashierAutoClearOnIdleLock !== false,
+      receipt: {
+        autoPrint: (RECEIPT_AUTO_PRINT as readonly string[]).includes(String(settings.receiptAutoPrint)) ? String(settings.receiptAutoPrint) : 'ASK',
+        paper: (RECEIPT_PAPERS as readonly string[]).includes(String(settings.receiptPaper)) ? String(settings.receiptPaper) : '80mm',
+        copies: Number.isInteger(settings.receiptCopies) ? Math.min(3, Math.max(1, Number(settings.receiptCopies))) : 1,
+      },
+      /** Receipt printer set up on each register of this store (paper and whether a test print was confirmed). */
+      registerPrinters: Object.fromEntries(registers.map((register) => [register.id, readPrinterProfile(register.printerProfile)])),
       isTill: context.accountType === 'STORE_TILL',
       cashiers,
       requireDiscountReasonCode: settings.requireDiscountReasonCode === true,
@@ -1471,8 +1481,11 @@ export class PosService {
     };
   }
 
-  /** GST tax invoice for a sale as a PDF. Uses the details frozen at sale time, so a reprint is identical to the original. */
-  async invoicePdf(context: UserContext, saleId: string) {
+  /**
+   * Everything printed on a sale document (A4 invoice PDF and the till receipt), from the details frozen at sale time,
+   * so a reprint is identical to the original and the receipt always shows the same figures as the PDF.
+   */
+  private async saleDocument(context: UserContext, saleId: string) {
     const sale = await this.prisma.sale.findFirst({
       where: { id: uuid(saleId, 'saleId'), organizationId: context.organizationId },
       include: {
@@ -1483,12 +1496,13 @@ export class PosService {
         createdBy: { select: { firstName: true, lastName: true } },
         handledBy: { select: { firstName: true, lastName: true } },
         store: { select: { name: true, code: true, address: true, timezone: true, taxNumber: true } },
+        cashier: { select: { displayName: true } },
       },
     });
     if (!sale) throw new NotFoundException('Sale not found');
     this.authorization.assertStoreAccess(context, sale.storeId);
     this.authorization.assertPermissions(context, ['sale.view'], sale.storeId);
-    type Snapshot = { countryCode?: string; taxRegime?: 'GST' | 'VAT' | 'TAX'; seller: { name: string; address: string; taxNumber: string; stateCode: string; storeName: string; storeCode: string; storeAddress: string; timezone: string }; buyer: { name: string; phone: string; isBusiness: boolean; legalName: string; taxNumber: string; address: string; stateCode: string } | null; placeOfSupply: { stateCode: string; stateName: string; intraState: boolean }; footer: string; billHandler?: string; checkoutFields?: { key: string; label: string; type: string; value: string | number | boolean; showOnReceipt?: boolean }[] };
+    type Snapshot = { countryCode?: string; taxRegime?: 'GST' | 'VAT' | 'TAX'; seller: { name: string; address: string; taxNumber: string; stateCode: string; storeName: string; storeCode: string; storeAddress: string; timezone: string }; buyer: { name: string; phone: string; isBusiness: boolean; legalName: string; taxNumber: string; address: string; stateCode: string } | null; placeOfSupply: { stateCode: string; stateName: string; intraState: boolean }; footer: string; header?: string; billHandler?: string; checkoutFields?: { key: string; label: string; type: string; value: string | number | boolean; showOnReceipt?: boolean }[] };
     let snapshot = sale.documentSnapshot as Snapshot | null;
     if (!snapshot) {
       // Sales made before invoices were frozen: build the same shape from today's details.
@@ -1506,10 +1520,11 @@ export class PosService {
         buyer: sale.customer ? { name: sale.customer.name, phone: sale.customer.phone, isBusiness: sale.customer.isBusiness, legalName: sale.customer.legalName, taxNumber: sale.customer.taxNumber, address: sale.customer.billingAddress, stateCode: buyerState } : null,
         placeOfSupply: { stateCode: buyerState || sellerState, stateName: GST_STATES[buyerState || sellerState] ?? '', intraState: isIntraState(sellerState, buyerState) },
         footer: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
+        header: typeof settings.receiptHeader === 'string' ? settings.receiptHeader : '',
       };
     }
     const charges = (Array.isArray(sale.charges) ? sale.charges : []) as { name: string; amountCents: number; taxCents: number; taxRateBps: number }[];
-    const buffer = buildInvoicePdf({
+    const data: InvoiceData = {
       currency: (sale.documentSnapshot as { currency?: string } | null)?.currency ?? currencyFromSettings(await this.orgSettings(context.organizationId)),
       countryCode: snapshot.countryCode,
       taxRegime: snapshot.taxRegime,
@@ -1522,7 +1537,7 @@ export class PosService {
       buyer: snapshot.buyer ? { legalName: snapshot.buyer.legalName, taxNumber: snapshot.buyer.taxNumber, address: snapshot.buyer.address, isBusiness: snapshot.buyer.isBusiness } : null,
       placeOfSupply: snapshot.placeOfSupply,
       cashier: `${sale.createdBy.firstName} ${sale.createdBy.lastName}`.trim(),
-      billHandler: snapshot.billHandler ?? `${sale.handledBy?.firstName ?? sale.createdBy.firstName} ${sale.handledBy?.lastName ?? sale.createdBy.lastName}`.trim(),
+      billHandler: snapshot.billHandler ?? sale.cashier?.displayName ?? `${sale.handledBy?.firstName ?? sale.createdBy.firstName} ${sale.handledBy?.lastName ?? sale.createdBy.lastName}`.trim(),
       customFields: (snapshot.checkoutFields ?? []).filter((field) => field.showOnReceipt === true).map((field) => ({ label: field.label, value: String(field.value) })),
       register: sale.register.name || sale.register.code,
       lines: sale.lines.map((line) => ({ name: line.name, sku: line.sku, hsnCode: line.hsnCode, quantity: num(line.quantity), unitPriceCents: line.unitPriceCents, discountCents: line.discountCents, taxRateBps: line.taxRateBps, taxCents: line.taxCents, lineTotalCents: line.lineTotalCents })),
@@ -1534,8 +1549,109 @@ export class PosService {
       totalCents: sale.totalCents,
       payments: sale.payments.map((payment) => ({ tenderType: payment.tenderType, amountCents: payment.amountCents, reference: payment.reference })),
       footer: snapshot.footer ?? '',
-    });
+    };
+    return { sale, snapshot, data };
+  }
+
+  /** GST tax invoice for a sale as a PDF. Uses the details frozen at sale time, so a reprint is identical to the original. */
+  async invoicePdf(context: UserContext, saleId: string) {
+    const { sale, data } = await this.saleDocument(context, saleId);
+    const buffer = buildInvoicePdf(data);
     return { filename: `${sale.receiptNumber.replace(/[^A-Za-z0-9._-]/g, '_')}.pdf`, buffer };
+  }
+
+  /**
+   * The till receipt for a sale as structured data. The web app lays it out for 80 mm / 58 mm thermal paper or A4 and
+   * prints it from the browser. Figures come from the same document data as the invoice PDF.
+   */
+  async receipt(context: UserContext, saleId: string) {
+    const { sale, snapshot, data } = await this.saleDocument(context, saleId);
+    const settings = await this.orgSettings(context.organizationId, sale.storeId);
+    const info = currencyInfo(data.currency);
+    // Same totals as the invoice PDF: one price basis, the bill discount reflected in the tax summary, rows that add up.
+    const totals = documentTotals(data);
+    const paper = (RECEIPT_PAPERS as readonly string[]).includes(String(settings.receiptPaper)) ? String(settings.receiptPaper) : '80mm';
+    const autoPrint = (RECEIPT_AUTO_PRINT as readonly string[]).includes(String(settings.receiptAutoPrint)) ? String(settings.receiptAutoPrint) : 'ASK';
+    const language = (RECEIPT_LANGUAGES as readonly string[]).includes(String(settings.receiptLanguage)) ? String(settings.receiptLanguage) : 'en';
+    const copies = Number.isInteger(settings.receiptCopies) ? Math.min(3, Math.max(1, Number(settings.receiptCopies))) : 1;
+    return {
+      saleId: sale.id,
+      storeId: sale.storeId,
+      receiptNumber: data.invoiceNumber,
+      issuedAt: data.issuedAt.toISOString(),
+      timezone: data.timezone,
+      status: data.status,
+      currency: { code: info.code, symbol: info.symbol, decimals: info.decimals },
+      taxRegime: data.taxRegime ?? 'TAX',
+      seller: data.seller,
+      header: snapshot.header ?? '',
+      footer: data.footer,
+      customer: data.customer,
+      buyer: data.buyer ?? null,
+      cashier: data.billHandler || data.cashier,
+      register: data.register,
+      customFields: data.customFields ?? [],
+      lines: data.lines,
+      subtotalCents: data.subtotalCents,
+      discountCents: data.discountCents,
+      charges: data.charges,
+      taxCents: data.taxCents,
+      roundingCents: data.roundingCents,
+      totalCents: data.totalCents,
+      taxBreakdown: totals.byRate,
+      totals: { basis: totals.basis, rows: totals.rows, lineAmounts: totals.lineAmounts, savedCents: totals.savedCents },
+      payments: sale.payments.map((payment) => ({ tenderType: payment.tenderType, amountCents: payment.amountCents, tenderedCents: payment.tenderedCents, changeCents: payment.changeCents, reference: payment.reference })),
+      changeCents: sale.payments.reduce((sum, payment) => sum + payment.changeCents, 0),
+      printCount: sale.printCount,
+      isReprint: sale.printCount > 0,
+      settings: { paper, autoPrint, language, copies, showTaxBreakdown: settings.receiptShowTaxBreakdown !== false },
+    };
+  }
+
+  /** Records that the receipt was printed (or reprinted). Called by the till after the browser print finishes. */
+  async recordReceiptPrint(context: UserContext, saleId: string, input: JsonObject) {
+    const sale = await this.prisma.sale.findFirst({ where: { id: uuid(saleId, 'saleId'), organizationId: context.organizationId }, select: { id: true, storeId: true, registerId: true, printCount: true } });
+    if (!sale) throw new NotFoundException('Sale not found');
+    this.authorization.assertStoreAccess(context, sale.storeId);
+    this.authorization.assertPermissions(context, ['sale.view'], sale.storeId);
+    const copies = input.copies === undefined ? 1 : Number(input.copies);
+    if (!Number.isInteger(copies) || copies < 1 || copies > 3) throw new BadRequestException('copies must be a whole number from 1 to 3');
+    const channel = oneOf(String(input.channel ?? 'BROWSER').toUpperCase(), ['BROWSER', 'ESCPOS'] as const, 'channel');
+    const updated = await this.prisma.sale.update({ where: { id: sale.id }, data: { printCount: { increment: 1 }, lastPrintedAt: new Date() }, select: { printCount: true, lastPrintedAt: true } });
+    await this.audit.record(context, 'sale.receipt_printed', 'Sale', sale.id, { copies, channel, reprint: sale.printCount > 0, printCount: updated.printCount, registerId: sale.registerId });
+    return { printCount: updated.printCount, lastPrintedAt: updated.lastPrintedAt };
+  }
+
+  /** The receipt printer of one register, with the store's paper as the fallback. */
+  async registerPrinter(context: UserContext, registerId: string) {
+    const register = await this.registerForPrinter(context, registerId);
+    const settings = await this.orgSettings(context.organizationId, register.storeId);
+    const profile = readPrinterProfile(register.printerProfile);
+    const storePaper = (RECEIPT_PAPERS as readonly string[]).includes(String(settings.receiptPaper)) ? String(settings.receiptPaper) : '80mm';
+    return { registerId: register.id, registerName: register.name || register.code, storeId: register.storeId, ...profile, effectivePaper: profile.paper ?? storePaper };
+  }
+
+  /**
+   * Saves the printer chosen at a till and the result of its test print. Anyone who can bill at the store may do it
+   * (it only changes paper size and a "checked" flag), and every change is audited.
+   */
+  async updateRegisterPrinter(context: UserContext, registerId: string, input: JsonObject) {
+    const register = await this.registerForPrinter(context, registerId);
+    const before = readPrinterProfile(register.printerProfile);
+    const next = applyPrinterPatch(before, input, context.displayName || context.email, new Date());
+    await this.prisma.register.update({ where: { id: register.id }, data: { printerProfile: next as unknown as Prisma.InputJsonObject } });
+    await this.audit.record(context, 'register.printer_updated', 'Register', register.id, { before, after: next });
+    return this.registerPrinter(context, registerId);
+  }
+
+  private async registerForPrinter(context: UserContext, registerId: string) {
+    const register = await this.prisma.register.findFirst({ where: { id: uuid(registerId, 'registerId'), organizationId: context.organizationId }, select: { id: true, storeId: true, name: true, code: true, printerProfile: true } });
+    if (!register) throw new NotFoundException('Register not found');
+    this.authorization.assertStoreAccess(context, register.storeId);
+    if (context.accountType === 'STORE_TILL' && context.tillStoreId !== register.storeId) throw new ForbiddenException('This till is assigned to another store');
+    const allowed = ['sale.create', 'registers.manage', 'store.settings.manage'].some((code) => this.authorization.hasPermission(context, code, register.storeId));
+    if (!allowed) throw new ForbiddenException('Missing permission: sale.create');
+    return register;
   }
 
   // ───────────── Approvals ─────────────
@@ -3475,6 +3591,7 @@ export class PosService {
       buyer: customer ? { name: customer.name, phone: customer.phone, isBusiness: customer.isBusiness, legalName: customer.legalName, taxNumber: customer.taxNumber, address: customer.billingAddress, stateCode: buyerState } : null,
       placeOfSupply: { stateCode: supplyState, stateName: GST_STATES[supplyState] ?? '', intraState },
       footer: typeof settings.receiptFooter === 'string' ? settings.receiptFooter : '',
+      header: typeof settings.receiptHeader === 'string' ? settings.receiptHeader : '',
     };
   }
 

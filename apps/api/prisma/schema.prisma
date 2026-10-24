@@ -403,6 +403,8 @@ model Register {
   code           String
   name           String
   status         RecordStatus @default(ACTIVE)
+  /// Receipt printer on this till: { paper: "80mm" | "58mm" | "A4", setupConfirmedAt, setupConfirmedBy }. Empty = use the store default.
+  printerProfile Json         @default("{}") @map("printer_profile")
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -900,6 +902,9 @@ model Sale {
   handledById      String?    @map("handled_by_id") @db.Uuid
   /// Cashier selected on a shared till login when this sale was completed (StoreCashier). Mutually exclusive in practice with handledById, which is used for PERSON logins.
   cashierId        String?    @map("cashier_id") @db.Uuid
+  /// How many times the till receipt was printed. Above 0 the next print is marked "REPRINT".
+  printCount       Int        @default(0) @map("print_count")
+  lastPrintedAt    DateTime?  @map("last_printed_at") @db.Timestamptz(3)
   createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)

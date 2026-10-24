@@ -7,7 +7,9 @@ import { toast } from "@/lib/i18n/toast";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { clientApi } from "@/features/client-api";
-import { currencyCode, toInput, toMinor } from "@/lib/format";
+import { currencyCode, currencyDecimals, toInput, toMinor } from "@/lib/format";
+import { printHtml } from "@/features/sales/print-receipt";
+import { receiptHtml, sampleReceipt, type ReceiptLanguage, type ReceiptPaper } from "@/features/sales/receipt-html";
 
 const TENDERS: [string, string][] = [["CASH", "Cash"], ["CARD", "Card"], ["UPI", "UPI / QR"], ["WALLET", "Wallet"], ["POINTS", "Loyalty points"], ["OTHER", "Other"]];
 type Values = {
@@ -16,6 +18,7 @@ type Values = {
   requireBillHandler?: boolean; lineDiscountEnabled?: boolean; billDiscountEnabled?: boolean;
   lineDiscountMaxPercent?: number; billDiscountMaxPercent?: number; allowDiscountStacking?: boolean;
   cashierSelection?: "STICKY" | "EVERY_BILL"; cashierPinRequired?: boolean; cashierAutoClearOnIdleLock?: boolean;
+  receiptHeader?: string; receiptPaper?: ReceiptPaper; receiptAutoPrint?: "ASK" | "ALWAYS" | "NEVER"; receiptCopies?: number; receiptLanguage?: ReceiptLanguage; receiptShowTaxBreakdown?: boolean;
 };
 type Key = keyof Values;
 function SettingsGroup({ title, children, initiallyOpen = false }: { title: string; children: React.ReactNode; initiallyOpen?: boolean }) {
@@ -29,10 +32,11 @@ const DEFAULTS: Required<Values> = {
   requireBillHandler: false, lineDiscountEnabled: true, billDiscountEnabled: true,
   lineDiscountMaxPercent: 100, billDiscountMaxPercent: 100, allowDiscountStacking: true,
   cashierSelection: "STICKY", cashierPinRequired: false, cashierAutoClearOnIdleLock: true,
+  receiptHeader: "", receiptPaper: "80mm", receiptAutoPrint: "ASK", receiptCopies: 1, receiptLanguage: "en", receiptShowTaxBreakdown: true,
 };
 
 /** Every value is configured and stored by this store. */
-export function BillingForm({ storeId, own, canEdit = true }: { storeId: string; own: Values; canEdit?: boolean }) {
+export function BillingForm({ storeId, own, canEdit = true, store }: { storeId: string; own: Values; canEdit?: boolean; /** Used for the test receipt header. */ store?: { name: string; address?: string; taxNumber?: string } }) {
   const router = useRouter();
   const value = (key: Key) => (own[key] ?? DEFAULTS[key]) as never;
   const [footer, setFooter] = React.useState(String(value("receiptFooter")));
@@ -52,7 +56,21 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
   const [cashierSelection, setCashierSelection] = React.useState<"STICKY" | "EVERY_BILL">(value("cashierSelection") as "STICKY" | "EVERY_BILL");
   const [cashierPinRequired, setCashierPinRequired] = React.useState(Boolean(value("cashierPinRequired")));
   const [cashierAutoClearOnIdleLock, setCashierAutoClearOnIdleLock] = React.useState(Boolean(value("cashierAutoClearOnIdleLock")));
+  const [receiptHeader, setReceiptHeader] = React.useState(String(value("receiptHeader")));
+  const [receiptPaper, setReceiptPaper] = React.useState<ReceiptPaper>(value("receiptPaper"));
+  const [receiptAutoPrint, setReceiptAutoPrint] = React.useState<"ASK" | "ALWAYS" | "NEVER">(value("receiptAutoPrint"));
+  const [receiptCopies, setReceiptCopies] = React.useState(String(value("receiptCopies")));
+  const [receiptLanguage, setReceiptLanguage] = React.useState<ReceiptLanguage>(value("receiptLanguage"));
+  const [receiptShowTaxBreakdown, setReceiptShowTaxBreakdown] = React.useState(Boolean(value("receiptShowTaxBreakdown")));
   const [busy, setBusy] = React.useState(false);
+
+  async function testPrint() {
+    const sample = sampleReceipt({ name: store?.name ?? "Store", address: store?.address, taxNumber: store?.taxNumber, currency: currencyCode(), decimals: currencyDecimals() },
+      { paper: receiptPaper, autoPrint: receiptAutoPrint, language: receiptLanguage, copies: 1, showTaxBreakdown: receiptShowTaxBreakdown }, { header: receiptHeader, footer });
+    const outcome = await printHtml(receiptHtml(sample, { test: true }));
+    if (outcome === "timeout") toast.warning("The printer did not respond.");
+    else if (outcome === "failed") toast.error("Could not open the print dialog.");
+  }
 
   async function save() {
     const lineDiscountMaxPercent = Number(lineMax);
@@ -64,7 +82,9 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
       lineDiscountEnabled: lineEnabled, billDiscountEnabled: billEnabled, lineDiscountMaxPercent,
       billDiscountMaxPercent, allowDiscountStacking: stacking,
       cashierSelection, cashierPinRequired, cashierAutoClearOnIdleLock,
+      receiptHeader, receiptPaper, receiptAutoPrint, receiptCopies: Number(receiptCopies), receiptLanguage, receiptShowTaxBreakdown,
     };
+    if (!Number.isInteger(billing.receiptCopies) || billing.receiptCopies < 1 || billing.receiptCopies > 3) { toast.error("Receipt copies must be 1, 2 or 3."); return; }
     if (!billing.enabledTenders.length) { toast.error("Keep at least one payment method on."); return; }
     if (!Number.isInteger(billing.cashRounding) || billing.cashRounding < 0) { toast.error("Cash rounding must be 0 or a positive amount."); return; }
     if (!Number.isInteger(billing.holdTtlHours) || billing.holdTtlHours < 1 || billing.holdTtlHours > 720) { toast.error("Held bills expire after 1 to 720 hours."); return; }
@@ -116,7 +136,18 @@ export function BillingForm({ storeId, own, canEdit = true }: { storeId: string;
         {setting(`Cash count tolerance (${currencyCode()})`, "A larger difference needs manager review and a reason.", textInput(varianceTolerance, setVarianceTolerance, { inputMode: "decimal" }))}
       </>)}
     </div>
-    {details("Receipt", setting("Receipt footer", "Printed below the bill (up to 300 characters).", textInput(footer, setFooter, { maxLength: 300 })))}
+    {details("Receipt printing", <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {setting("Print receipt after a sale", "Ask lets the cashier switch printing on or off per bill; the choice is remembered on that till.", <NativeSelect aria-label="Print receipt after a sale" value={receiptAutoPrint} onChange={(event) => setReceiptAutoPrint(event.target.value as "ASK" | "ALWAYS" | "NEVER")}><option value="ASK">Cashier chooses (remembered per till)</option><option value="ALWAYS">Always print</option><option value="NEVER">Never print automatically</option></NativeSelect>)}
+        {setting("Paper", "Most receipt printers use 80 mm rolls.", <NativeSelect aria-label="Receipt paper" value={receiptPaper} onChange={(event) => setReceiptPaper(event.target.value as ReceiptPaper)}><option value="80mm">80 mm thermal roll</option><option value="58mm">58 mm thermal roll</option><option value="A4">A4 sheet</option></NativeSelect>)}
+        {setting("Copies", "Printed one after another; extra copies are marked as copies.", <NativeSelect aria-label="Receipt copies" value={receiptCopies} onChange={(event) => setReceiptCopies(event.target.value)}><option value="1">1</option><option value="2">2</option><option value="3">3</option></NativeSelect>)}
+        {setting("Receipt language", "Labels on the printed receipt. Product names print as entered.", <NativeSelect aria-label="Receipt language" value={receiptLanguage} onChange={(event) => setReceiptLanguage(event.target.value as ReceiptLanguage)}><option value="en">English</option><option value="ar">Arabic</option><option value="both">English and Arabic</option></NativeSelect>)}
+      </div>
+      {setting("Receipt header", "Printed under the store name, for example a phone number or opening hours (up to 200 characters).", textInput(receiptHeader, setReceiptHeader, { maxLength: 200 }))}
+      {setting("Receipt footer", "Printed below the bill (up to 300 characters).", textInput(footer, setFooter, { maxLength: 300 }))}
+      {toggle("Show tax summary by rate", receiptShowTaxBreakdown, setReceiptShowTaxBreakdown)}
+      <div className="flex flex-wrap items-center gap-3"><Button type="button" variant="outline" onClick={() => void testPrint()}><LocalizedText value={"Print test receipt"} /></Button><span className="text-xs text-muted-foreground"><LocalizedText value={"Uses the settings above before saving. For printing without the dialog, start Chrome with --kiosk-printing and set the receipt printer as the default printer."} /></span></div>
+    </>)}
     {canEdit && <Button className="w-fit" onClick={() => void save()} disabled={busy}><LocalizedText value={busy ? "Saving…" : "Save store billing"} /></Button>}
   </fieldset>;
 }

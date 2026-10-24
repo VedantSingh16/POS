@@ -2,6 +2,7 @@
  * Dependency-free GST tax invoice PDF (A4, standard Helvetica fonts).
  * Currency symbols the standard PDF fonts cannot draw (₹, €) are written as letters (Rs., EUR).
  */
+import { documentTotals } from '@pos/shared/document-totals';
 
 export type InvoiceData = {
   /** ISO code of the currency the sale was made in (OMR, INR...). Decides decimals, symbol and the words. */
@@ -232,10 +233,10 @@ export function buildInvoicePdf(data: InvoiceData): Buffer {
 
   if (y > H - 190) { page = new Page(); pages.push(page); y = M + 10; }
   y += 14;
-  // GST summary by rate (CGST / SGST split) on the left, totals on the right.
-  const byRate = new Map<number, { taxable: number; tax: number }>();
-  for (const line of data.lines) { const e = byRate.get(line.taxRateBps) ?? { taxable: 0, tax: 0 }; e.taxable += line.lineTotalCents - line.taxCents; e.tax += line.taxCents; byRate.set(line.taxRateBps, e); }
-  for (const charge of data.charges) { const e = byRate.get(charge.taxRateBps) ?? { taxable: 0, tax: 0 }; e.taxable += charge.amountCents; e.tax += charge.taxCents; byRate.set(charge.taxRateBps, e); }
+  // GST summary by rate (CGST / SGST split) on the left, totals on the right. Both come from documentTotals(), so the
+  // whole-bill discount is reflected in the taxable amounts and the totals block adds up to the grand total.
+  const totals = documentTotals(data);
+  const byRate = new Map<number, { taxable: number; tax: number }>(totals.byRate.map((entry) => [entry.taxRateBps, { taxable: entry.taxableCents, tax: entry.taxCents }]));
   let ly = y;
   page.text(M, ly, `${taxName} summary`, 8, true); ly += 11;
   page.text(M, ly, 'Rate', 7.5, true); page.text(150, ly, 'Taxable', 7.5, true, 'r');
@@ -252,9 +253,11 @@ export function buildInvoicePdf(data: InvoiceData): Buffer {
   const label = right - 120;
   let ry = y;
   const row = (name: string, value: string, bold = false) => { page.text(label, ry, name, bold ? 10 : 8.5, bold); page.text(right, ry, value, bold ? 10 : 8.5, bold, 'r'); ry += bold ? 15 : 11; };
-  row(`Subtotal (excl. ${taxName})`, amt(data.subtotalCents));
-  if (data.discountCents) row('Discount', `-${amt(data.discountCents)}`);
-  if (data.charges.length) row('Additional charges', amt(data.charges.reduce((sum, c) => sum + c.amountCents, 0)));
+  // A tax invoice always shows amounts before tax (the Taxable column), so the block is: line taxable amounts
+  // (already after line discounts, shown per line) − whole-bill discount + charges + tax + rounding = grand total.
+  row(`Subtotal (excl. ${taxName})`, amt(totals.itemsNetCents));
+  if (totals.billDiscountNetCents) row('Bill discount', `-${amt(totals.billDiscountNetCents)}`);
+  if (data.charges.length) row('Additional charges', amt(totals.chargesNetCents));
   row(`Total ${taxName}`, amt(data.taxCents));
   if (data.roundingCents) row('Rounding', amt(data.roundingCents));
   page.line(label, ry - 8, right, ry - 8, 0.6, 0.3);
@@ -262,6 +265,7 @@ export function buildInvoicePdf(data: InvoiceData): Buffer {
   row('Grand total', withSymbol(data.totalCents), true);
   y = Math.max(ly, ry) + 8;
 
+  if (totals.lineDiscountCents) { page.text(M, y, `Line discounts (shown on each line): ${amt(totals.lineDiscountCents)}`, 8); y += 12; }
   page.text(M, y, `Amount in words: ${amountInWords(data.totalCents, data.currency)}`, 8.5, true);
   y += 16;
   page.text(M, y, 'Payment', 8, true);

@@ -10,3 +10,4 @@ export * from './markets.js';
 export * from './locale.js';
 export * from './address-formats.js';
 export * from './store-hours.js';
+export * from './document-totals.js';
