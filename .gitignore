@@ -6,6 +6,7 @@ node_modules
 apps/api/data/
 apps/api/src/generated/
 _to_delete/
+_tmp_*
 *.tsbuildinfo
 apps/web/.next-stale-*/
 .turbo/
